@@ -16,10 +16,10 @@ builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
-        options.LoginPath        = "/Account/Login";
-        options.LogoutPath       = "/Account/Logout";
-        options.AccessDeniedPath = "/Account/Login";
-        options.ExpireTimeSpan   = TimeSpan.FromHours(8);
+        options.LoginPath         = "/Account/Login";
+        options.LogoutPath        = "/Account/Logout";
+        options.AccessDeniedPath  = "/Account/Login";
+        options.ExpireTimeSpan    = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });
 
@@ -27,28 +27,40 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Seed users and migrate new columns on startup
 using (var scope = app.Services.CreateScope())
 {
-    var db  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Add new AppUser columns if they don't exist yet
+    // Baseline: if the DB was created before EF migrations were introduced, seed
+    // __EFMigrationsHistory so MigrateAsync() doesn't try to recreate existing tables.
     var conn = db.Database.GetDbConnection();
     await conn.OpenAsync();
     using (var cmd = conn.CreateCommand())
     {
         cmd.CommandText = @"
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='Email')
-                ALTER TABLE AppUsers ADD Email NVARCHAR(200) NULL;
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='NotifyOnComment')
-                ALTER TABLE AppUsers ADD NotifyOnComment BIT NOT NULL DEFAULT 1;
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='NotifyOnBlocked')
-                ALTER TABLE AppUsers ADD NotifyOnBlocked BIT NOT NULL DEFAULT 1;";
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='__EFMigrationsHistory')
+            BEGIN
+                CREATE TABLE [__EFMigrationsHistory] (
+                    [MigrationId]    NVARCHAR(150) NOT NULL,
+                    [ProductVersion] NVARCHAR(32)  NOT NULL,
+                    CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY ([MigrationId])
+                );
+            END
+            -- Mark InitialCreate as already applied when the core tables exist
+            IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='Tasks')
+               AND NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] LIKE '%InitialCreate%')
+            BEGIN
+                INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                VALUES ('20260630094913_InitialCreate', '10.0.9');
+            END";
         await cmd.ExecuteNonQueryAsync();
     }
     await conn.CloseAsync();
 
+    // Apply any pending migrations (only AddUserEmailNotifications on existing DBs)
+    await db.Database.MigrateAsync();
+
+    // Seed default users on a brand-new DB
     if (!db.AppUsers.Any())
     {
         var hasher = new PasswordHasher<AppUser>();

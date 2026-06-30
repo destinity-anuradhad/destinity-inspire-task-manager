@@ -420,6 +420,62 @@ public class TasksController(AppDbContext db, IConfiguration config, IHubContext
         return Json(new { tasks, sprints }, opts);
     }
 
+    // GET /Tasks/GetBurndown?sprintId=X — burndown data for a sprint
+    [HttpGet]
+    public async Task<IActionResult> GetBurndown(int sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId);
+        if (sprint == null) return NotFound();
+
+        var taskIds = await _db.Tasks
+            .Where(t => t.SprintId == sprintId)
+            .Select(t => t.Id)
+            .ToListAsync();
+
+        var total = taskIds.Count;
+
+        // Parse sprint date range
+        var doneStatuses = new[] { "Done", "Resolved", "Closed" };
+        DateTime start = DateTime.TryParse(sprint.StartDate, out var s) ? s.Date : DateTime.Today.AddDays(-14);
+        DateTime end   = DateTime.TryParse(sprint.EndDate,   out var e) ? e.Date : DateTime.Today;
+        if (end < start) end = start.AddDays(14);
+
+        // Get first "done" status change per task from ActivityLog
+        var completions = await _db.ActivityLog
+            .Where(a => taskIds.Contains(a.TaskId)
+                     && a.Action == "Status Changed"
+                     && (a.Details.Contains("'Done'") || a.Details.Contains("'Resolved'") || a.Details.Contains("'Closed'")))
+            .Select(a => new { a.TaskId, a.ChangedAt })
+            .ToListAsync();
+
+        var firstDone = completions
+            .GroupBy(c => c.TaskId)
+            .ToDictionary(g => g.Key, g => g.Min(c => c.ChangedAt).Date);
+
+        // Build day-by-day remaining count
+        var days = new List<object>();
+        var ideal = new List<object>();
+        int totalDays = Math.Max(1, (end - start).Days + 1);
+
+        for (int i = 0; i < totalDays; i++)
+        {
+            var day = start.AddDays(i);
+            int doneSoFar = firstDone.Values.Count(d => d <= day);
+            int remaining = total - doneSoFar;
+            double idealRemaining = total - (total * i / (double)(totalDays - 1 < 1 ? 1 : totalDays - 1));
+
+            days.Add(new { date = day.ToString("MMM dd"), remaining });
+            ideal.Add(new { date = day.ToString("MMM dd"), remaining = Math.Round(idealRemaining, 1) });
+        }
+
+        return Json(new {
+            sprintName = sprint.Name,
+            total,
+            days,
+            ideal
+        });
+    }
+
     // GET /Tasks/GetSprints — all sprints for canvas dropdown
     [HttpGet]
     public async Task<IActionResult> GetSprints()

@@ -1124,6 +1124,22 @@
                             <div id="bd-progress-bar" class="h-full bg-white rounded-full transition-all" style="width:0%"></div>
                         </div>
                     </div>
+                    <button onclick="_bdToggleBurndown()" id="bd-burndown-btn"
+                            class="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors font-medium">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+                        Burndown
+                    </button>
+                </div>
+            </div>
+
+            <!-- Burndown chart panel (hidden by default) -->
+            <div id="bd-burndown-panel" class="hidden bg-white border border-gray-200 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-700">Sprint Burndown</h3>
+                    <button onclick="_bdToggleBurndown()" class="text-gray-400 hover:text-gray-600 text-xs">✕ Close</button>
+                </div>
+                <div style="height:220px;position:relative">
+                    <canvas id="bd-burndown-chart"></canvas>
                 </div>
             </div>
 
@@ -1145,28 +1161,40 @@
 
             <!-- Board columns -->
             <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="min-height:420px">
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-todo"   data-col="todo">
+                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-todo" data-col="todo">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-gray-50 border border-gray-200 border-b-0">
-                        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">To Do</span>
-                        <span id="bd-count-todo"   class="text-xs bg-gray-200 text-gray-600 font-semibold px-2 py-0.5 rounded-full"></span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">To Do</span>
+                            <span id="bd-count-todo" class="text-xs bg-gray-200 text-gray-600 font-semibold px-2 py-0.5 rounded-full"></span>
+                        </div>
+                        <button onclick="_bdAddTask('todo')" title="Add task"
+                                class="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors text-lg leading-none">+</button>
                     </div>
-                    <div id="bd-cards-todo"   class="bd-dropzone flex-1 space-y-2 p-2 border border-gray-200 border-t-0 rounded-b-xl bg-gray-50/60 overflow-y-auto"
+                    <div id="bd-cards-todo" class="bd-dropzone flex-1 space-y-2 p-2 border border-gray-200 border-t-0 rounded-b-xl bg-gray-50/60 overflow-y-auto"
                          ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'todo')" ondragleave="_bdDragLeave(event)"></div>
                 </div>
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-wip"    data-col="wip">
+                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-wip" data-col="wip">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-blue-50 border border-blue-200 border-b-0">
-                        <span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">In Progress</span>
-                        <span id="bd-count-wip"    class="text-xs bg-blue-200 text-blue-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">In Progress</span>
+                            <span id="bd-count-wip" class="text-xs bg-blue-200 text-blue-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                        </div>
+                        <button onclick="_bdAddTask('wip')" title="Add task"
+                                class="w-6 h-6 flex items-center justify-center rounded-md text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition-colors text-lg leading-none">+</button>
                     </div>
-                    <div id="bd-cards-wip"    class="bd-dropzone flex-1 space-y-2 p-2 border border-blue-200 border-t-0 rounded-b-xl bg-blue-50/40 overflow-y-auto"
+                    <div id="bd-cards-wip" class="bd-dropzone flex-1 space-y-2 p-2 border border-blue-200 border-t-0 rounded-b-xl bg-blue-50/40 overflow-y-auto"
                          ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'wip')" ondragleave="_bdDragLeave(event)"></div>
                 </div>
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-done"   data-col="done">
+                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-done" data-col="done">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-green-50 border border-green-200 border-b-0">
-                        <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Done</span>
-                        <span id="bd-count-done"   class="text-xs bg-green-200 text-green-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Done</span>
+                            <span id="bd-count-done" class="text-xs bg-green-200 text-green-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                        </div>
+                        <button onclick="_bdAddTask('done')" title="Add task"
+                                class="w-6 h-6 flex items-center justify-center rounded-md text-green-400 hover:bg-green-200 hover:text-green-700 transition-colors text-lg leading-none">+</button>
                     </div>
-                    <div id="bd-cards-done"   class="bd-dropzone flex-1 space-y-2 p-2 border border-green-200 border-t-0 rounded-b-xl bg-green-50/40 overflow-y-auto"
+                    <div id="bd-cards-done" class="bd-dropzone flex-1 space-y-2 p-2 border border-green-200 border-t-0 rounded-b-xl bg-green-50/40 overflow-y-auto"
                          ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'done')" ondragleave="_bdDragLeave(event)"></div>
                 </div>
             </div>
@@ -1211,6 +1239,7 @@
                 _bdRenderSprintTabs();
                 _bdUpdateInfo();
                 _bdRender();
+                if (_bdBurndownVisible) _bdLoadBurndown();
             } catch(e) { console.error(e); }
         }
 
@@ -1333,6 +1362,99 @@
         }
 
         function _bdSetSprint(val) { _bdSprint = val; _bdLoad(); }
+
+        // ── Add task from column ──────────────────────────────────────────────
+        function _bdAddTask(colKey) {
+            openCanvas(null);
+            setTimeout(() => {
+                // Pre-set status for the target column
+                const statusMap = {
+                    todo: { Task:'To Do', '':'To Do' },
+                    wip:  { Task:'In Progress', '':'In Progress' },
+                    done: { Task:'Done', '':'Done' },
+                };
+                const defaultStatus = statusMap[colKey][''] || 'To Do';
+                const statusSel = document.getElementById('cf-status');
+                if (statusSel) {
+                    // Populate options if empty (new task has no item type yet)
+                    if (!statusSel.options.length)
+                        ['New','To Do','Active','In Progress','Resolved','Done','Closed'].forEach(s => {
+                            const o = document.createElement('option'); o.value = o.text = s;
+                            statusSel.appendChild(o);
+                        });
+                    statusSel.value = defaultStatus;
+                }
+                // Pre-set sprint to currently selected sprint
+                const activeSprint = _bdSprints.find(s => s.isActive);
+                const sprintId = _bdSprint === 'active' ? activeSprint?.id
+                               : (_bdSprint !== 'backlog' ? _bdSprint : null);
+                if (sprintId) {
+                    const sprintHidden = document.getElementById('cf-sprint-id');
+                    if (sprintHidden) sprintHidden.value = sprintId;
+                    const sprintSel = document.getElementById('cf-sprint-sel');
+                    if (sprintSel) sprintSel.value = sprintId;
+                }
+            }, 100);
+        }
+
+        // ── Burndown chart ────────────────────────────────────────────────────
+        let _bdChart = null;
+        let _bdBurndownVisible = false;
+
+        function _bdToggleBurndown() {
+            _bdBurndownVisible = !_bdBurndownVisible;
+            const panel = document.getElementById('bd-burndown-panel');
+            panel.classList.toggle('hidden', !_bdBurndownVisible);
+            if (_bdBurndownVisible) _bdLoadBurndown();
+        }
+
+        async function _bdLoadBurndown() {
+            const activeSprint = _bdSprints.find(s => s.isActive);
+            const sprintId = _bdSprint === 'active' ? activeSprint?.id
+                           : (_bdSprint !== 'backlog' && _bdSprint ? _bdSprint : activeSprint?.id);
+            if (!sprintId) {
+                document.getElementById('bd-burndown-chart').closest('div').innerHTML =
+                    '<p class="text-xs text-gray-400 text-center py-8">Select a sprint to view burndown.</p>';
+                return;
+            }
+            try {
+                const r = await fetch('/Tasks/GetBurndown?sprintId=' + sprintId);
+                if (!r.ok) { showToast('No burndown data yet.', 'info'); return; }
+                const d = await r.json();
+                _bdRenderBurndown(d);
+            } catch { showToast('Could not load burndown.', 'error'); }
+        }
+
+        function _bdRenderBurndown(d) {
+            const ctx = document.getElementById('bd-burndown-chart');
+            if (!ctx) return;
+            if (_bdChart) { _bdChart.destroy(); _bdChart = null; }
+            const labels  = d.days.map(x => x.date);
+            const actual  = d.days.map(x => x.remaining);
+            const ideal   = d.ideal.map(x => x.remaining);
+            _bdChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Ideal', data: ideal, borderColor: '#94a3b8', borderDash: [5,4], borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false },
+                        { label: 'Actual', data: actual, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.07)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#2563eb', tension: 0.3, fill: true },
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 20 } },
+                               tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} remaining` } } },
+                    scales: {
+                        x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { color: '#f1f5f9' } },
+                        y: { beginAtZero: true, ticks: { font: { size: 10 }, stepSize: 1 }, grid: { color: '#f1f5f9' },
+                             title: { display: true, text: 'Tasks remaining', font: { size: 10 }, color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         function _bdSetType(type) {
             _bdType = type;
             document.querySelectorAll('.bd-type-btn').forEach(b => {
