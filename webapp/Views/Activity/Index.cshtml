@@ -1,0 +1,195 @@
+@{
+    ViewData["Title"] = "Activity Log";
+    var logs        = ViewBag.Logs as List<TaskTracker.Models.ActivityLog> ?? [];
+    var projects    = ViewBag.Projects as List<string> ?? [];
+    var users       = ViewBag.Users    as List<string> ?? [];
+    var userColors  = ViewBag.UserColors as Dictionary<string, string> ?? new();
+    int page        = (int)(ViewBag.Page       ?? 1);
+    int totalCount  = (int)(ViewBag.TotalCount ?? 0);
+    int totalPages  = (int)(ViewBag.TotalPages ?? 0);
+    int pageSize    = (int)(ViewBag.PageSize   ?? 50);
+    string fProject  = (string)(ViewBag.FilterProject  ?? "");
+    string fUser     = (string)(ViewBag.FilterUser     ?? "");
+    string fDateFrom = (string)(ViewBag.FilterDateFrom ?? "");
+    string fDateTo   = (string)(ViewBag.FilterDateTo   ?? "");
+
+    bool hasFilter = fProject != "" || fUser != "" || fDateFrom != "" || fDateTo != "";
+
+    string PageUrl(int p) {
+        var q = new System.Text.StringBuilder($"?page={p}");
+        if (fProject  != "") q.Append($"&project={Uri.EscapeDataString(fProject)}");
+        if (fUser     != "") q.Append($"&user={Uri.EscapeDataString(fUser)}");
+        if (fDateFrom != "") q.Append($"&dateFrom={Uri.EscapeDataString(fDateFrom)}");
+        if (fDateTo   != "") q.Append($"&dateTo={Uri.EscapeDataString(fDateTo)}");
+        return q.ToString();
+    }
+}
+
+@functions {
+    static (string bg, string color, string icon) ActionStyle(string action) => action switch
+    {
+        "Created"        => ("bg-green-100",  "text-green-600",  "+"),
+        "Deleted"        => ("bg-red-100",    "text-red-600",    "×"),
+        "Status Changed" => ("bg-blue-100",   "text-blue-600",   "↔"),
+        "Comment"        => ("bg-purple-100", "text-purple-600", "💬"),
+        _                => ("bg-amber-100",  "text-amber-600",  "✎")
+    };
+
+    static string RelTime(DateTime dt)
+    {
+        var d = DateTime.Now - dt;
+        if (d.TotalMinutes < 1)  return "just now";
+        if (d.TotalHours   < 1)  return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalDays    < 1)  return $"{(int)d.TotalHours}h ago";
+        if (d.TotalDays    < 7)  return $"{(int)d.TotalDays}d ago";
+        return dt.ToString("dd MMM yyyy");
+    }
+}
+
+<div class="space-y-4">
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Activity Log</h1>
+            <p>@totalCount @(hasFilter ? "matching" : "total") entries</p>
+        </div>
+    </div>
+
+    @* Filter bar *@
+    <form method="get" class="bg-white border border-gray-200 rounded-xl p-4">
+        <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">Project</label>
+                <select name="project" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Projects</option>
+                    @foreach (var p in projects)
+                    {
+                        <option value="@p" selected="@(p == fProject)">@p</option>
+                    }
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">User</label>
+                <select name="user" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Users</option>
+                    @foreach (var u in users)
+                    {
+                        <option value="@u" selected="@(u == fUser)">@u</option>
+                    }
+                </select>
+            </div>
+            <div class="flex-1 min-w-[130px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">From Date</label>
+                <input type="date" name="dateFrom" value="@fDateFrom"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="flex-1 min-w-[130px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">To Date</label>
+                <input type="date" name="dateTo" value="@fDateTo"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    Filter
+                </button>
+                @if (hasFilter)
+                {
+                    <a href="/Activity" class="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                        Clear
+                    </a>
+                }
+            </div>
+        </div>
+    </form>
+
+    @if (ViewBag.SetupRequired == true)
+    {
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <p class="font-semibold mb-1">Activity log table not set up</p>
+            <p>Run this SQL on your <code class="bg-amber-100 px-1 rounded">TaskM</code> database:</p>
+            <pre class="bg-amber-100 rounded-lg p-3 mt-2 text-xs overflow-x-auto">CREATE TABLE ActivityLog (
+    Id        INT IDENTITY(1,1) PRIMARY KEY,
+    TaskId    INT NOT NULL,
+    TaskGoal  NVARCHAR(500) NOT NULL DEFAULT '',
+    Project   NVARCHAR(200) NOT NULL DEFAULT '',
+    ChangedBy NVARCHAR(200) NOT NULL DEFAULT '',
+    Action    NVARCHAR(50)  NOT NULL,
+    Details   NVARCHAR(MAX) NOT NULL DEFAULT '',
+    ChangedAt DATETIME2     NOT NULL DEFAULT GETDATE()
+);</pre>
+        </div>
+    }
+
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        @if (!logs.Any())
+        {
+            <div class="text-center py-16 text-gray-400">
+                <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                <p class="font-medium">@(hasFilter ? "No entries match your filters" : "No activity recorded yet")</p>
+                @if (!hasFilter)
+                {
+                    <p class="text-xs mt-1">Actions on tasks will appear here</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="divide-y divide-gray-50">
+                @foreach (var log in logs)
+                {
+                    var (bg, color, icon) = ActionStyle(log.Action);
+                    var userClr  = !string.IsNullOrEmpty(log.ChangedBy) && userColors.TryGetValue(log.ChangedBy, out var uc) ? uc : "#64748b";
+                    var userInit = !string.IsNullOrEmpty(log.ChangedBy) ? log.ChangedBy[0].ToString().ToUpper() : "?";
+                    <div class="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-colors">
+                        <div class="w-7 h-7 rounded-full @bg @color flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">@icon</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-medium text-gray-900 truncate">@log.TaskGoal</p>
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                                        <span class="text-xs font-medium @color">@log.Action</span>
+                                        @if (!string.IsNullOrEmpty(log.Project))
+                                        {
+                                            <span class="text-gray-300">·</span>
+                                            <span class="text-xs text-blue-600 font-medium">@log.Project</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(log.Details))
+                                        {
+                                            <span class="text-gray-300">·</span>
+                                            <span class="text-xs text-gray-400">@log.Details</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3 flex-shrink-0">
+                                    @if (!string.IsNullOrEmpty(log.ChangedBy))
+                                    {
+                                        <div class="flex items-center gap-1.5" title="@log.ChangedBy">
+                                            <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
+                                                 style="background:@userClr">@userInit</div>
+                                            <span class="text-xs text-gray-600 font-medium hidden sm:block">@log.ChangedBy</span>
+                                        </div>
+                                    }
+                                    <div class="text-right min-w-[90px]">
+                                        <p class="text-xs font-medium text-gray-500">@log.ChangedAt.ToString("dd MMM yyyy")</p>
+                                        <p class="text-xs text-gray-400">@log.ChangedAt.ToString("HH:mm")</p>
+                                        <p class="text-[10px] text-gray-300 mt-0.5">@RelTime(log.ChangedAt)</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (totalPages > 1)
+    {
+        <div class="flex items-center justify-center gap-1">
+            @if (page > 1) { <a href="@PageUrl(page - 1)" class="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100">‹ Prev</a> }
+            <span class="px-3 py-1.5 text-sm text-gray-500">Page @(page) of @totalPages</span>
+            @if (page < totalPages) { <a href="@PageUrl(page + 1)" class="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100">Next ›</a> }
+        </div>
+    }
+</div>

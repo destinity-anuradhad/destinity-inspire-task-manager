@@ -1,0 +1,302 @@
+@using TaskTracker.Models.ViewModels
+@{
+    ViewData["Title"] = "Team Performance";
+    var activity   = ViewBag.RecentActivity as List<TaskTracker.Models.ActivityLog> ?? [];
+    var ownerStats = ViewBag.OwnerStats     as List<OwnerStat> ?? [];
+
+    int totalCount   = ViewBag.TotalCount   != null ? (int)ViewBag.TotalCount   : 0;
+    int doneCount    = ViewBag.DoneCount    != null ? (int)ViewBag.DoneCount    : 0;
+    int overdueCount = ViewBag.OverdueCount != null ? (int)ViewBag.OverdueCount : 0;
+    int inProgress   = ViewBag.InProgress   != null ? (int)ViewBag.InProgress   : 0;
+    int teamPct      = totalCount > 0 ? (int)Math.Round((double)doneCount / totalCount * 100) : 0;
+}
+
+<div class="space-y-6">
+
+    <!-- Header -->
+    <div class="page-hd" style="display:flex;align-items:center;justify-content:space-between">
+        <div class="page-hd-left">
+            <h1>Team Performance</h1>
+            <p>Scienter PMS · Destinity Inspire · Overall team progress</p>
+        </div>
+        <a href="/Dashboard"
+           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
+           style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            My Dashboard
+        </a>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">Total Tasks</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:var(--brand-pale)">
+                    <svg style="color:var(--brand);width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:var(--text-1)">@totalCount</p>
+            <p class="stat-card-note">All tracked tasks</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">Completed</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#f0fdf4">
+                    <svg style="color:#16a34a;width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:#16a34a">@doneCount</p>
+            <p class="stat-card-note">@teamPct% of total</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">In Progress</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:var(--brand-pale)">
+                    <svg style="color:var(--brand);width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:var(--brand)">@inProgress</p>
+            <p class="stat-card-note">On track &amp; Testing</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label" style="@(overdueCount > 0 ? "color:#ef4444" : "")">Overdue</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                     style="background:@(overdueCount > 0 ? "#fef2f2" : "var(--brand-pale)")">
+                    <svg style="color:@(overdueCount > 0 ? "#ef4444" : "var(--text-3)");width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:@(overdueCount > 0 ? "#ef4444" : "var(--text-3)")">@overdueCount</p>
+            <p class="stat-card-note">Past target date</p>
+        </div>
+
+    </div>
+
+    <!-- Charts row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="dash-panel">
+            <div class="dash-panel-hd"><h3>Tasks by Status</h3></div>
+            <div class="p-5 flex items-center justify-center" style="height:260px">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+        <div class="dash-panel">
+            <div class="dash-panel-hd"><h3>Tasks by Project</h3></div>
+            <div class="p-5" style="height:260px">
+                <canvas id="projectChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Team members table -->
+    <div class="dash-panel">
+        <div class="dash-panel-hd">
+            <h3>Team Members</h3>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full" style="background:var(--brand-pale);color:var(--brand)">@ownerStats.Count member(s)</span>
+        </div>
+        @if (!ownerStats.Any())
+        {
+            <div class="text-center py-12" style="color:var(--text-3)">
+                <p class="text-sm">No task assignments found.</p>
+            </div>
+        }
+        else
+        {
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border)">
+                        <th class="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3)">Member</th>
+                        <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3)">Total</th>
+                        <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide" style="color:#16a34a">Done</th>
+                        <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style="color:var(--brand)">Active</th>
+                        <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style="color:#ef4444">Overdue</th>
+                        <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3);min-width:160px">Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var stat in ownerStats)
+                {
+                    var barClr = stat.CompletionPct >= 70 ? "#16a34a" : stat.CompletionPct >= 40 ? "var(--brand)" : "#f59e0b";
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td class="px-5 py-3.5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
+                                     style="background:var(--brand)">
+                                    @(stat.Name.Length > 0 ? stat.Name[0].ToString().ToUpper() : "?")
+                                </div>
+                                <div>
+                                    <p class="text-sm font-semibold" style="color:var(--text-1)">@stat.Name</p>
+                                    <a href="/Tasks?Owner=@Uri.EscapeDataString(stat.Name)"
+                                       class="text-[10px] hover:underline" style="color:var(--brand)">View tasks →</a>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3.5 text-center">
+                            <span class="text-sm font-semibold" style="color:var(--text-1)">@stat.Total</span>
+                        </td>
+                        <td class="px-4 py-3.5 text-center">
+                            <span class="text-sm font-semibold" style="color:#16a34a">@stat.Done</span>
+                        </td>
+                        <td class="px-4 py-3.5 text-center hidden sm:table-cell">
+                            <span class="text-sm font-medium" style="color:var(--brand)">@stat.InProgress</span>
+                        </td>
+                        <td class="px-4 py-3.5 text-center hidden sm:table-cell">
+                            @if (stat.Overdue > 0)
+                            {
+                                <span class="text-sm font-bold" style="color:#ef4444">@stat.Overdue</span>
+                            }
+                            else
+                            {
+                                <span style="color:var(--text-3)">—</span>
+                            }
+                        </td>
+                        <td class="px-5 py-3.5">
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 rounded-full overflow-hidden" style="height:7px;background:var(--border)">
+                                    <div class="h-full rounded-full transition-all" style="width:@stat.CompletionPct%;background:@barClr"></div>
+                                </div>
+                                <span class="text-xs font-bold w-9 text-right flex-shrink-0" style="color:var(--text-2)">@stat.CompletionPct%</span>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        }
+    </div>
+
+    <!-- Owner chart + Recent activity -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div class="dash-panel">
+            <div class="dash-panel-hd"><h3>Tasks per Member</h3></div>
+            <div class="p-5" style="height:@(ownerStats.Count > 4 ? 280 : 220)px">
+                <canvas id="ownerChart"></canvas>
+            </div>
+        </div>
+        <div class="dash-panel">
+            <div class="dash-panel-hd">
+                <h3>Recent Team Activity</h3>
+                <a href="/Activity" class="text-xs font-medium" style="color:var(--brand)">View all →</a>
+            </div>
+            <div class="p-4">
+            @if (!activity.Any())
+            {
+                <div class="text-center py-10" style="color:var(--text-3)">
+                    <p class="text-xs">No activity yet.</p>
+                </div>
+            }
+            else
+            {
+                <div class="space-y-1 overflow-y-auto" style="max-height:220px">
+                @foreach (var log in activity)
+                {
+                    var (dotC, actL) = log.Action switch
+                    {
+                        "Created"        => ("#22c55e", "Created"),
+                        "Deleted"        => ("#ef4444", "Deleted"),
+                        "Status Changed" => ("var(--brand)", "Status"),
+                        _                => ("var(--accent)", "Updated")
+                    };
+                    <div class="flex items-start gap-3 py-2 px-1 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0" style="background:@dotC"></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-medium truncate" style="color:var(--text-1)">@log.TaskGoal</p>
+                            <p class="text-[11px] mt-0.5" style="color:var(--text-3)">@actL@(string.IsNullOrEmpty(log.Details) ? "" : " · " + log.Details)</p>
+                        </div>
+                        <span class="text-[10px] whitespace-nowrap flex-shrink-0 font-medium" style="color:var(--text-3)">@log.ChangedAt.ToString("dd MMM HH:mm")</span>
+                    </div>
+                }
+                </div>
+            }
+            </div>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const STATUS_COLORS = {
+    'On track':    '#094f70',
+    'Delayed':     '#EF4444',
+    'On hold':     '#9CA3AF',
+    'Done':        '#22C55E',
+    'Testing':     '#F59E0B',
+    'Not Started': '#8B5CF6',
+};
+
+const statusLabels  = @Html.Raw(ViewBag.StatusLabels  ?? "[]");
+const statusValues  = @Html.Raw(ViewBag.StatusValues  ?? "[]");
+const projectLabels = @Html.Raw(ViewBag.ProjectLabels ?? "[]");
+const projectValues = @Html.Raw(ViewBag.ProjectValues ?? "[]");
+const ownerNames    = @Html.Raw(ViewBag.OwnerNames    ?? "[]");
+const ownerDone     = @Html.Raw(ViewBag.OwnerDone     ?? "[]");
+const ownerPending  = @Html.Raw(ViewBag.OwnerPending  ?? "[]");
+
+new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: {
+        labels: statusLabels,
+        datasets: [{
+            data: statusValues,
+            backgroundColor: statusLabels.map(l => STATUS_COLORS[l] ?? '#CBD5E1'),
+            borderWidth: 2, borderColor: '#fff'
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 10 } } }
+    }
+});
+
+new Chart(document.getElementById('projectChart'), {
+    type: 'bar',
+    data: { labels: projectLabels, datasets: [{ data: projectValues, backgroundColor: '#094f70', borderRadius: 4 }] },
+    options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#F3F4F6' } },
+            y: { ticks: { font: { size: 11 } }, grid: { display: false } }
+        }
+    }
+});
+
+new Chart(document.getElementById('ownerChart'), {
+    type: 'bar',
+    data: {
+        labels: ownerNames,
+        datasets: [
+            { label: 'Done',    data: ownerDone,    backgroundColor: '#22C55E', borderRadius: 4 },
+            { label: 'Pending', data: ownerPending, backgroundColor: '#E2E8F0', borderRadius: 4 }
+        ]
+    },
+    options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 8 } } },
+        scales: {
+            x: { beginAtZero: true, stacked: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#F3F4F6' } },
+            y: { stacked: true, ticks: { font: { size: 11 } }, grid: { display: false } }
+        }
+    }
+});
+</script>
+}

@@ -1,0 +1,439 @@
+@{
+    Layout = null;
+    ViewData["Title"] = "Sign In";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In – Team Destinity Inspire</title>
+    <link rel="icon" type="image/x-icon" href="/assets/img/destinity-inspire.ico" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* ── Left panel base ── */
+        .login-left {
+            background: #042233;
+            overflow: hidden;
+        }
+
+        .gradient-mesh {
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 70% 50% at 15% 25%, rgba(9,79,112,0.75) 0%, transparent 60%),
+                radial-gradient(ellipse 55% 65% at 85% 75%, rgba(6,55,80,0.70)  0%, transparent 55%),
+                radial-gradient(ellipse 45% 45% at 50% 5%,  rgba(10,100,140,0.4) 0%, transparent 50%),
+                radial-gradient(ellipse 60% 35% at 5%  90%, rgba(3,38,58,0.90)  0%, transparent 60%);
+        }
+
+        .dot-grid {
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+            background-size: 26px 26px;
+        }
+
+        /* ── Very slow gentle float ── */
+        @@keyframes floatCard {
+            0%,100% { transform: translateY(0px) rotate(var(--rot)); }
+            50%      { transform: translateY(-6px) rotate(var(--rot)); }
+        }
+
+        /* ── Task cards ── */
+        .task-card {
+            position: absolute;
+            width: 220px;
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 14px 16px;
+            color: #fff;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .tc-header   { display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+        .tc-priority { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+        .tc-title    { font-size:12px; font-weight:600; color:rgba(255,255,255,0.92); line-height:1.3;
+                       overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .tc-badge    { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600;
+                       padding:2px 8px; border-radius:20px; margin-bottom:9px; }
+        .tc-footer   { display:flex; align-items:center; justify-content:space-between; margin-top:9px; }
+        .tc-owner    { width:22px; height:22px; border-radius:50%; display:flex; align-items:center;
+                       justify-content:center; font-size:10px; font-weight:700; color:#fff; flex-shrink:0; }
+        .tc-progress-bar { height:4px; border-radius:9999px; background:rgba(255,255,255,0.15); overflow:hidden; }
+        .tc-pct          { font-size:10px; color:rgba(255,255,255,0.5); white-space:nowrap; }
+
+        /* Card entrance — slow fade + rise */
+        @@keyframes cardIn {
+            from { opacity:0; transform: translateY(18px) rotate(var(--rot)); }
+            to   { opacity:1; transform: translateY(0)    rotate(var(--rot)); }
+        }
+
+        /* Progress bar fill — very slow */
+        @@keyframes fillBar {
+            from { width: 0%; }
+        }
+
+        /* Checkmark draw */
+        .check-path {
+            stroke-dasharray: 20;
+            stroke-dashoffset: 20;
+            animation: drawCheck 2s ease forwards;
+        }
+        @@keyframes drawCheck {
+            to { stroke-dashoffset: 0; }
+        }
+        .check-circle {
+            width:28px; height:28px; border-radius:50%;
+            background:rgba(34,197,94,0.2);
+            border:1.5px solid rgba(34,197,94,0.5);
+            display:flex; align-items:center; justify-content:center;
+            margin:8px auto 0;
+        }
+
+        /* Kanban mini */
+        .kanban-mini { position:absolute; display:flex; gap:6px; }
+        .km-col {
+            width:58px;
+            background:rgba(255,255,255,0.06);
+            border:1px solid rgba(255,255,255,0.10);
+            border-radius:8px; padding:6px 5px;
+        }
+        .km-label { font-size:8px; font-weight:700; color:rgba(255,255,255,0.45);
+                    text-transform:uppercase; letter-spacing:.04em; margin-bottom:5px; }
+        .km-chip  { height:22px; border-radius:5px; margin-bottom:4px; }
+
+        /* Chip slide — very gradual move, long pause at each end */
+        @@keyframes slideChip {
+            0%,50%  { transform: translateX(0px);  opacity:1; }
+            70%     { transform: translateX(66px);  opacity:0.7; }
+            75%     { transform: translateX(66px);  opacity:0; }
+            76%     { transform: translateX(0px);   opacity:0; }
+            90%,100%{ transform: translateX(0px);   opacity:1; }
+        }
+
+        /* Notification ping — very slow */
+        @@keyframes ping {
+            0%     { transform:scale(1);   opacity:0.8; }
+            80%,100%{ transform:scale(2.4); opacity:0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex">
+
+    <!-- ── Left panel ── -->
+    <div class="hidden lg:flex lg:w-3/5 xl:w-2/3 relative login-left">
+        <div class="gradient-mesh"></div>
+        <div class="dot-grid"></div>
+
+        <!-- Card 1: Hotel Booking — On track -->
+        <div class="task-card" style="
+                top:8%; left:6%; --rot:-2deg;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) .3s both,
+                           floatCard 36s cubic-bezier(0.45,0,0.55,1) 2.1s infinite;">
+            <div class="tc-header">
+                <span class="tc-priority" style="background:#f47920"></span>
+                <span class="tc-title">Hotel Booking Module</span>
+            </div>
+            <span class="tc-badge" style="background:rgba(34,197,94,0.15);color:#86efac;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block"></span>
+                On track
+            </span>
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                    <span style="font-size:10px;color:rgba(255,255,255,0.4)">Progress</span>
+                    <span class="tc-pct">72%</span>
+                </div>
+                <div class="tc-progress-bar">
+                    <div style="height:100%;border-radius:9999px;width:72%;
+                                background:linear-gradient(90deg,#094f70,#1a8ab5);
+                                animation:fillBar 6s cubic-bezier(0.16,1,0.3,1) 2.2s both;"></div>
+                </div>
+            </div>
+            <div class="tc-footer">
+                <div class="tc-owner" style="background:#094f70">A</div>
+                <span style="font-size:10px;color:rgba(255,255,255,0.35)">Due Jun 28</span>
+            </div>
+        </div>
+
+        <!-- Card 2: Payment Gateway — Testing -->
+        <div class="task-card" style="
+                top:20%; right:5%; --rot:2.5deg;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) .8s both,
+                           floatCard 44s cubic-bezier(0.45,0,0.55,1) 2.6s infinite;">
+            <div class="tc-header">
+                <span class="tc-priority" style="background:#ef4444"></span>
+                <span class="tc-title">Payment Gateway Integration</span>
+            </div>
+            <span class="tc-badge" style="background:rgba(168,85,247,0.15);color:#d8b4fe;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#a855f7;display:inline-block"></span>
+                Testing
+            </span>
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                    <span style="font-size:10px;color:rgba(255,255,255,0.4)">Progress</span>
+                    <span class="tc-pct">88%</span>
+                </div>
+                <div class="tc-progress-bar">
+                    <div style="height:100%;border-radius:9999px;width:88%;
+                                background:linear-gradient(90deg,#7c3aed,#a855f7);
+                                animation:fillBar 6s cubic-bezier(0.16,1,0.3,1) 2.8s both;"></div>
+                </div>
+            </div>
+            <div class="tc-footer">
+                <div style="display:flex">
+                    <div class="tc-owner" style="background:#f47920">S</div>
+                    <div class="tc-owner" style="background:#0891b2;margin-left:-6px">P</div>
+                </div>
+                <span style="font-size:10px;color:rgba(255,255,255,0.35)">Due Jul 2</span>
+            </div>
+        </div>
+
+        <!-- Card 3: DB Migration — Done -->
+        <div class="task-card" style="
+                top:52%; left:8%; --rot:-1.5deg; opacity:0.85;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) 1.2s both,
+                           floatCard 40s cubic-bezier(0.45,0,0.55,1) 3s infinite;">
+            <div class="tc-header">
+                <span class="tc-priority" style="background:#94a3b8"></span>
+                <span class="tc-title">DB Schema Migration</span>
+            </div>
+            <span class="tc-badge" style="background:rgba(34,197,94,0.12);color:#86efac;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block"></span>
+                Done
+            </span>
+            <div class="check-circle">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path class="check-path" d="M2.5 7L5.5 10L11.5 4"
+                          stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                          style="animation-delay:2.5s"/>
+                </svg>
+            </div>
+            <div class="tc-footer" style="margin-top:8px">
+                <div class="tc-owner" style="background:#6366f1">K</div>
+                <span style="font-size:10px;color:rgba(255,255,255,0.35)">Completed</span>
+            </div>
+        </div>
+
+        <!-- Card 4: Report Generator — Delayed -->
+        <div class="task-card" style="
+                top:62%; right:6%; --rot:1.8deg;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) 1.6s both,
+                           floatCard 48s cubic-bezier(0.45,0,0.55,1) 3.4s infinite;">
+            <div class="tc-header">
+                <span class="tc-priority" style="background:#3b82f6"></span>
+                <span class="tc-title">Report Generator API</span>
+            </div>
+            <span class="tc-badge" style="background:rgba(239,68,68,0.15);color:#fca5a5;">
+                <span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block"></span>
+                Delayed
+            </span>
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                    <span style="font-size:10px;color:rgba(255,255,255,0.4)">Progress</span>
+                    <span class="tc-pct">34%</span>
+                </div>
+                <div class="tc-progress-bar">
+                    <div style="height:100%;border-radius:9999px;width:34%;
+                                background:linear-gradient(90deg,#dc2626,#ef4444);
+                                animation:fillBar 6s cubic-bezier(0.16,1,0.3,1) 3.4s both;"></div>
+                </div>
+            </div>
+            <div class="tc-footer">
+                <div class="tc-owner" style="background:#0891b2">C</div>
+                <span style="font-size:10px;color:rgba(255,255,255,0.35)">Due Jun 25</span>
+            </div>
+        </div>
+
+        <!-- Mini Kanban -->
+        <div class="kanban-mini" style="
+                top:38%; left:50%; transform:translateX(-50%); --rot:-1deg;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) 2s both,
+                           floatCard 52s cubic-bezier(0.45,0,0.55,1) 3.8s infinite;">
+            <div class="km-col">
+                <div class="km-label">To Do</div>
+                <div class="km-chip" style="background:rgba(148,163,184,0.25)"></div>
+                <div class="km-chip" style="background:rgba(9,79,112,0.5);
+                     animation:slideChip 22s ease-in-out 4s infinite;"></div>
+            </div>
+            <div class="km-col">
+                <div class="km-label">On Track</div>
+                <div class="km-chip" style="background:rgba(34,197,94,0.25)"></div>
+                <div class="km-chip" style="background:rgba(34,197,94,0.15)"></div>
+            </div>
+            <div class="km-col">
+                <div class="km-label">Testing</div>
+                <div class="km-chip" style="background:rgba(168,85,247,0.3)"></div>
+            </div>
+            <div class="km-col">
+                <div class="km-label">Done</div>
+                <div class="km-chip" style="background:rgba(34,197,94,0.20)"></div>
+                <div class="km-chip" style="background:rgba(34,197,94,0.12)"></div>
+            </div>
+        </div>
+
+        <!-- Notification pill -->
+        <div style="
+                position:absolute; top:5%; right:6%;
+                background:rgba(255,255,255,0.07);
+                border:1px solid rgba(255,255,255,0.12);
+                border-radius:12px; padding:10px 14px;
+                display:flex; align-items:center; gap:10px;
+                backdrop-filter:blur(10px);
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) 2.4s both,
+                           floatCard 38s cubic-bezier(0.45,0,0.55,1) 4.2s infinite;
+                --rot:1deg;">
+            <div style="position:relative;width:32px;height:32px;border-radius:50%;
+                        background:rgba(244,121,32,0.2);
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="16" height="16" fill="none" stroke="rgba(255,255,255,0.8)" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                </svg>
+                <span style="position:absolute;top:2px;right:2px;
+                             width:8px;height:8px;border-radius:50%;
+                             background:#f47920;border:1.5px solid rgba(4,34,51,0.9);
+                             animation:ping 5s ease-in-out 3s infinite;"></span>
+            </div>
+            <div>
+                <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.9);margin:0">Task assigned</p>
+                <p style="font-size:10px;color:rgba(255,255,255,0.45);margin:0">"UI Redesign" → you</p>
+            </div>
+        </div>
+
+        <!-- Stats bar -->
+        <div style="
+                position:absolute; bottom:7%; left:50%; transform:translateX(-50%);
+                background:rgba(255,255,255,0.06);
+                border:1px solid rgba(255,255,255,0.10);
+                border-radius:14px; padding:12px 20px;
+                display:flex; gap:20px;
+                backdrop-filter:blur(10px);
+                white-space:nowrap;
+                --rot:0deg;
+                animation: cardIn 1.8s cubic-bezier(0.16,1,0.3,1) 2.8s both,
+                           floatCard 42s cubic-bezier(0.45,0,0.55,1) 4.6s infinite;">
+            <div style="text-align:center">
+                <span style="display:block;font-size:18px;font-weight:700;color:#fff" id="cntDone">0</span>
+                <span style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em">Done</span>
+            </div>
+            <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
+            <div style="text-align:center">
+                <span style="display:block;font-size:18px;font-weight:700;color:#86efac" id="cntTrack">0</span>
+                <span style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em">On Track</span>
+            </div>
+            <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
+            <div style="text-align:center">
+                <span style="display:block;font-size:18px;font-weight:700;color:#fca5a5" id="cntDelay">0</span>
+                <span style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em">Delayed</span>
+            </div>
+            <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
+            <div style="text-align:center">
+                <span style="display:block;font-size:18px;font-weight:700;color:#d8b4fe" id="cntTest">0</span>
+                <span style="font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em">Testing</span>
+            </div>
+        </div>
+
+        <!-- Brand overlay at bottom -->
+        <div class="absolute bottom-0 left-0 right-0 z-10 px-10 pb-10 pt-24"
+             style="background:linear-gradient(to top, rgba(4,34,51,0.95) 0%, transparent 100%)">
+            <img src="/assets/img/destinity-inspire-full.png" alt="Destinity Inspire"
+                 class="h-12 w-auto mb-4 drop-shadow-xl" onerror="this.style.display='none'" />
+            <h1 class="text-2xl font-bold text-white tracking-tight">Team Destinity Inspire</h1>
+            <p class="text-sm text-white/50 mt-1">Task management for hotel software teams</p>
+        </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="w-full lg:w-2/5 xl:w-1/3 flex items-center justify-center bg-white px-8 py-12 relative">
+
+        <div class="absolute top-6 left-8 lg:hidden flex items-center gap-2">
+            <img src="/assets/img/destinity-inspire.svg" alt="" class="h-7 w-auto"
+                 onerror="this.style.display='none'" />
+            <span class="font-bold text-[#094f70] text-sm">Team Destinity Inspire</span>
+        </div>
+
+        <div class="w-full max-w-sm">
+            <div class="mb-8">
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-5 shadow-md"
+                     style="background-color:#094f70">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zM19 20a7 7 0 00-14 0" />
+                    </svg>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900">Welcome back</h2>
+                <p class="text-sm text-gray-500 mt-1">Sign in to your account to continue</p>
+            </div>
+
+            @if (ViewBag.Error != null)
+            {
+                <div class="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    @ViewBag.Error
+                </div>
+            }
+
+            <form method="post"
+                  action="/Account/Login@(ViewBag.ReturnUrl != null ? "?returnUrl=" + Uri.EscapeDataString(ViewBag.ReturnUrl) : "")">
+                @Html.AntiForgeryToken()
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+                        <input type="text" name="username" required autofocus autocomplete="username"
+                               class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
+                                      focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                               onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                               onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                               placeholder="Enter your username" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                        <input type="password" name="password" required autocomplete="current-password"
+                               class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
+                                      focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                               onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                               onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                               placeholder="Enter your password" />
+                    </div>
+                </div>
+
+                <button type="submit"
+                        class="w-full mt-6 text-white font-semibold py-3 rounded-xl text-sm
+                               shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
+                        style="background-color:#094f70"
+                        onmouseover="this.style.backgroundColor='#063d57'"
+                        onmouseout="this.style.backgroundColor='#094f70'">
+                    Sign In
+                </button>
+            </form>
+
+            <p class="text-center text-xs text-gray-400 mt-10">&copy; 2026 Team Destinity Inspire</p>
+        </div>
+    </div>
+
+    <script>
+    function countUp(id, target, delay) {
+        setTimeout(() => {
+            let n = 0;
+            const el = document.getElementById(id);
+            if (!el) return;
+            const t = setInterval(() => {
+                n = Math.min(n + 1, target);
+                el.textContent = n;
+                if (n >= target) clearInterval(t);
+            }, 180);
+        }, delay);
+    }
+    countUp('cntDone',  12, 4500);
+    countUp('cntTrack',  8, 5000);
+    countUp('cntDelay',  3, 5500);
+    countUp('cntTest',   5, 6000);
+    </script>
+</body>
+</html>
