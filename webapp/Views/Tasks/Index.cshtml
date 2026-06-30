@@ -1431,6 +1431,42 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
                 </button>
             </div>
         </div>
+        <!-- Links — shown for existing tasks -->
+        <div id="cf-links-section" class="hidden border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    Links
+                </h3>
+                <span id="cf-link-count" class="text-[10px] text-gray-400"></span>
+            </div>
+            <!-- Link rows -->
+            <div id="cf-links-list" class="space-y-1.5 mb-3"></div>
+            <!-- Add link form -->
+            <div class="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200">
+                <div class="relative">
+                    <input id="cf-link-search" type="text" placeholder="Search task by ID or title…"
+                           oninput="_linkSearch(this.value)" autocomplete="off"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                    <div id="cf-link-results" class="hidden absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto"></div>
+                </div>
+                <div id="cf-link-selected" class="hidden items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
+                    <span id="cf-link-selected-label" class="text-sm text-blue-700 flex-1 truncate"></span>
+                    <button type="button" onclick="_clearLinkSearch()" class="text-blue-400 hover:text-blue-600 text-xs ml-auto">✕</button>
+                </div>
+                <div class="flex gap-2">
+                    <select id="cf-link-type" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="Related">Related</option>
+                        <option value="Blocks">Blocks</option>
+                        <option value="Blocked By">Blocked By</option>
+                        <option value="Duplicate">Duplicate</option>
+                        <option value="Predecessor">Predecessor</option>
+                        <option value="Successor">Successor</option>
+                    </select>
+                    <button type="button" onclick="_addLink()" class="px-4 py-2 text-sm btn-primary rounded-lg whitespace-nowrap">Add Link</button>
+                </div>
+            </div>
+        </div>
     </form>
     <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 shrink-0">
         <button type="button" onclick="closeCanvas()"
@@ -1790,13 +1826,18 @@ function openCanvas(task) {
     // Toggle edit / view-only mode
     _applyCanvasMode(isEditable, task);
 
-    // Show comments for existing tasks
-    const commSection = document.getElementById('cf-comments-section');
+    // Show comments + links for existing tasks
+    const commSection  = document.getElementById('cf-comments-section');
+    const linksSection = document.getElementById('cf-links-section');
     if (task) {
         commSection.classList.remove('hidden');
         _loadComments(task.id);
+        linksSection.classList.remove('hidden');
+        _clearLinkSearch();
+        _loadLinks(task.id);
     } else {
         commSection.classList.add('hidden');
+        linksSection.classList.add('hidden');
     }
 
     // Open canvas immediately — dropdowns load in background
@@ -1949,6 +1990,116 @@ async function submitComment() {
     finally { btn.disabled = false; ta.focus(); }
 }
 
+// ─── Task Links (Phase 5) ────────────────────────────────────────────────────
+const LINK_INVERSE = { 'Blocks':'Blocked By','Blocked By':'Blocks','Predecessor':'Successor','Successor':'Predecessor','Related':'Related','Duplicate':'Duplicate' };
+const LINK_COLORS  = { 'Related':'bg-gray-100 text-gray-600','Blocks':'bg-red-100 text-red-700','Blocked By':'bg-orange-100 text-orange-700','Duplicate':'bg-amber-100 text-amber-700','Predecessor':'bg-violet-100 text-violet-700','Successor':'bg-blue-100 text-blue-700' };
+
+let _linkSearchTimer   = null;
+let _linkSelectedTask  = null;
+
+async function _loadLinks(taskId) {
+    const list  = document.getElementById('cf-links-list');
+    const count = document.getElementById('cf-link-count');
+    list.innerHTML = '<div class="flex items-center gap-2 py-2 justify-center"><svg class="w-4 h-4 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg><span class="text-xs text-gray-400">Loading…</span></div>';
+    try {
+        const r = await fetch('/Tasks/GetLinks?taskId=' + taskId);
+        const links = await r.json();
+        count.textContent = links.length ? links.length + ' link' + (links.length !== 1 ? 's' : '') : '';
+        if (!links.length) {
+            list.innerHTML = '<p class="text-xs text-gray-400 py-1">No links yet.</p>';
+        } else {
+            list.innerHTML = links.map(l => _renderLinkRow(l)).join('');
+        }
+    } catch(e) { list.innerHTML = `<p class="text-xs text-red-400 py-1">Could not load links.</p>`; }
+}
+
+function _renderLinkRow(l) {
+    const displayType = l.isFrom ? l.linkType : (LINK_INVERSE[l.linkType] || l.linkType);
+    const colorClass  = LINK_COLORS[displayType] || 'bg-gray-100 text-gray-600';
+    const typeLabel   = l.linkedTaskItemType ? `<span class="text-[10px] text-gray-400 font-medium">${_esc(l.linkedTaskItemType)}</span>` : '';
+    return `<div class="flex items-center gap-2 group py-1 px-2 rounded-lg hover:bg-gray-50">
+        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${colorClass}">${_esc(displayType)}</span>
+        <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+            ${typeLabel}
+            <span class="text-sm text-gray-700 truncate">#${l.linkedTaskId} ${_esc(l.linkedTaskGoal)}</span>
+        </div>
+        <span class="text-[10px] text-gray-400 flex-shrink-0">${_esc(l.linkedTaskStatus)}</span>
+        <button type="button" onclick="_removeLink(${l.id})"
+                class="opacity-0 group-hover:opacity-100 flex-shrink-0 w-5 h-5 text-gray-400 hover:text-red-500 transition-opacity"
+                title="Remove link">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+    </div>`;
+}
+
+function _linkSearch(q) {
+    clearTimeout(_linkSearchTimer);
+    const res = document.getElementById('cf-link-results');
+    if (!q || q.trim().length < 1) { res.classList.add('hidden'); return; }
+    _linkSearchTimer = setTimeout(async () => {
+        try {
+            const r = await fetch('/Tasks/SearchTasks?q=' + encodeURIComponent(q.trim()));
+            const tasks = await r.json();
+            if (!tasks.length) { res.innerHTML = '<div class="px-3 py-2 text-xs text-gray-400">No results</div>'; }
+            else { res.innerHTML = tasks.map(t => `<div class="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 flex items-center gap-2" onclick="_selectLinkedTask(${JSON.stringify(t).replace(/</g,'\\u003c')})">
+                <span class="text-[10px] text-gray-400 w-8 text-right flex-shrink-0">#${t.id}</span>
+                <span class="flex-1 truncate">${_esc(t.goal || '—')}</span>
+                ${t.itemType ? `<span class="text-[10px] text-gray-400 flex-shrink-0">${_esc(t.itemType)}</span>` : ''}
+            </div>`).join(''); }
+            res.classList.remove('hidden');
+        } catch { res.classList.add('hidden'); }
+    }, 280);
+}
+
+function _selectLinkedTask(task) {
+    _linkSelectedTask = task;
+    document.getElementById('cf-link-search').value = '';
+    document.getElementById('cf-link-results').classList.add('hidden');
+    const sel = document.getElementById('cf-link-selected');
+    sel.classList.remove('hidden');
+    sel.classList.add('flex');
+    document.getElementById('cf-link-selected-label').textContent = '#' + task.id + ' ' + (task.goal || '—');
+}
+
+function _clearLinkSearch() {
+    _linkSelectedTask = null;
+    document.getElementById('cf-link-search').value = '';
+    document.getElementById('cf-link-results').classList.add('hidden');
+    const sel = document.getElementById('cf-link-selected');
+    sel.classList.add('hidden');
+    sel.classList.remove('flex');
+}
+
+async function _addLink() {
+    if (!_linkSelectedTask) { showToast('Search and select a task first.', 'error'); return; }
+    if (!_cvTaskId)          { showToast('No task open.', 'error'); return; }
+    const linkType = document.getElementById('cf-link-type').value;
+    const token    = document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value;
+    const fd = new FormData();
+    fd.append('fromTaskId', _cvTaskId);
+    fd.append('toTaskId',   _linkSelectedTask.id);
+    fd.append('linkType',   linkType);
+    fd.append('__RequestVerificationToken', token);
+    try {
+        const r = await fetch('/Tasks/AddLink', { method:'POST', body: fd });
+        if (r.ok) { _clearLinkSearch(); await _loadLinks(_cvTaskId); }
+        else { const e = await r.json().catch(()=>({})); showToast(e.message || 'Failed to add link.', 'error'); }
+    } catch { showToast('Failed to add link.', 'error'); }
+}
+
+async function _removeLink(id) {
+    const token = document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value;
+    const fd = new FormData();
+    fd.append('id', id);
+    fd.append('__RequestVerificationToken', token);
+    try {
+        const r = await fetch('/Tasks/RemoveLink?id=' + id, { method:'POST', body: fd });
+        if (r.ok) await _loadLinks(_cvTaskId);
+        else showToast('Failed to remove link.', 'error');
+    } catch { showToast('Failed to remove link.', 'error'); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function closeCanvas() {
     backdrop.classList.add('opacity-0','pointer-events-none');
     backdrop.classList.remove('opacity-100');
@@ -2093,6 +2244,11 @@ async function setTaskStatus(taskId, status) {
 document.addEventListener('click', e => {
     if (!e.target.closest('#status-dropdown') && !e.target.closest('[data-task-id]'))
         closeStatusDropdown();
+});
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#cf-link-results') && !e.target.closest('#cf-link-search'))
+        document.getElementById('cf-link-results')?.classList.add('hidden');
 });
 document.addEventListener('scroll', closeStatusDropdown, true);
 
