@@ -24,4 +24,8 @@ public class TaskItem
     public decimal? Weight      { get; set; }
     public int? ModuleId        { get; set; }
     public int? ClientId        { get; set; }
+    public string? ItemType     { get; set; }   // Epic | Feature | Story | Task | Bug
+    public int?    ParentId     { get; set; }   // self-reference for hierarchy
+    public int?    SprintId     { get; set; }   // null = Backlog
+    public int?    ExternalId   { get; set; }   // ADO Work Item ID (future sync)
 }

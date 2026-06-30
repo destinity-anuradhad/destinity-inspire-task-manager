@@ -13,12 +13,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AppUser>      AppUsers      { get; set; }
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<WorkState>    WorkStates    { get; set; }
+    public DbSet<Sprint>       Sprints       { get; set; }
+    public DbSet<TaskLink>     TaskLinks     { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<TaskItem>()
             .Property(t => t.Weight)
             .HasColumnType("decimal(18,2)");
+
+        // Self-referencing hierarchy (ParentId → Tasks.Id)
+        modelBuilder.Entity<TaskItem>()
+            .HasOne<TaskItem>()
+            .WithMany()
+            .HasForeignKey(t => t.ParentId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Indexes for new hierarchy columns
+        modelBuilder.Entity<TaskItem>().HasIndex(t => t.ItemType);
+        modelBuilder.Entity<TaskItem>().HasIndex(t => t.ParentId);
+        modelBuilder.Entity<TaskItem>().HasIndex(t => t.SprintId);
+
+        // TaskLinks indexes
+        modelBuilder.Entity<TaskLink>().HasIndex(l => l.FromTaskId);
+        modelBuilder.Entity<TaskLink>().HasIndex(l => l.ToTaskId);
 
         // Indexes for common filter/sort columns
         modelBuilder.Entity<TaskItem>().HasIndex(t => t.Owner);
