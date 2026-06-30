@@ -899,6 +899,18 @@
 const CV_ME     = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(myDisplayName));
 const CV_COLORS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(ownerColorMap));
 const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
+
+// Statuses available per item type
+const ITEM_STATUSES = {
+    'Epic':    ['New', 'Active', 'Closed'],
+    'Feature': ['New', 'Active', 'Closed'],
+    'Story':   ['New', 'Active', 'Resolved', 'Closed'],
+    'Task':    ['To Do', 'In Progress', 'Done'],
+    'Bug':     ['New', 'Active', 'Resolved', 'Closed'],
+    '':        ['New', 'To Do', 'Active', 'In Progress', 'Resolved', 'Done', 'Closed'],
+};
+// Valid parent type for each item type
+const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'Story' };
 </script>
 
 <!-- ═══ OFF-CANVAS BACKDROP ═══ -->
@@ -950,8 +962,33 @@ const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
             <textarea id="cf-goal" name="Goal" rows="3" required placeholder="Describe the task goal…"
                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         </div>
-        <input type="hidden" id="cf-module-id" name="ModuleId" value="" />
-        <input type="hidden" id="cf-client-id" name="ClientId" value="" />
+        <input type="hidden" id="cf-module-id"  name="ModuleId"  value="" />
+        <input type="hidden" id="cf-client-id"  name="ClientId"  value="" />
+        <input type="hidden" id="cf-item-type"  name="ItemType"  value="" />
+        <input type="hidden" id="cf-parent-id"  name="ParentId"  value="" />
+        <input type="hidden" id="cf-sprint-id"  name="SprintId"  value="" />
+        <!-- Item Type + Parent -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Item Type</label>
+                <select id="cf-item-type-sel" onchange="onItemTypeChange(this.value)"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— None —</option>
+                    <option value="Epic">🟦 Epic</option>
+                    <option value="Feature">🟩 Feature</option>
+                    <option value="Story">📋 Story</option>
+                    <option value="Task">✅ Task</option>
+                    <option value="Bug">🐛 Bug</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Parent</label>
+                <select id="cf-parent-sel" onchange="document.getElementById('cf-parent-id').value = this.value"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— None —</option>
+                </select>
+            </div>
+        </div>
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Module</label>
@@ -1023,7 +1060,6 @@ const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
                 <select id="cf-status" name="Status" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
-                    @foreach (var ws in Model.WorkStates) { <option value="@ws.Name">@ws.Name</option> }
                 </select>
             </div>
             <div>
@@ -1401,9 +1437,52 @@ function _restoreOwner(ownerValue) {
     }
 }
 
+// ── Item Type / Status / Parent helpers ──────────────────────────────────────
+
+function _updateStatusOptions(itemType, currentVal) {
+    const sel = document.getElementById('cf-status');
+    const opts = ITEM_STATUSES[itemType] || ITEM_STATUSES[''];
+    sel.innerHTML = '<option value="">— None —</option>' +
+        opts.map(s => `<option value="${s}"${s === currentVal ? ' selected' : ''}>${s}</option>`).join('');
+}
+
+async function _loadParentPicker(itemType, currentParentId) {
+    const sel = document.getElementById('cf-parent-sel');
+    const parentType = PARENT_TYPE[itemType];
+    if (!parentType) {
+        sel.innerHTML = '<option value="">— None —</option>';
+        sel.disabled = true;
+        sel.classList.add('bg-gray-50', 'cursor-default');
+        document.getElementById('cf-parent-id').value = '';
+        return;
+    }
+    sel.disabled = false;
+    sel.classList.remove('bg-gray-50', 'cursor-default');
+    sel.innerHTML = '<option value="">— Loading… —</option>';
+    try {
+        const r = await fetch('/Tasks/GetParentItems?itemType=' + encodeURIComponent(itemType));
+        const items = await r.json();
+        sel.innerHTML = '<option value="">— None —</option>' +
+            items.map(i => `<option value="${i.id}"${i.id == currentParentId ? ' selected' : ''}>${i.goal}</option>`).join('');
+        if (currentParentId) sel.value = currentParentId;
+    } catch {
+        sel.innerHTML = '<option value="">— Error loading —</option>';
+    }
+}
+
+function onItemTypeChange(val) {
+    document.getElementById('cf-item-type').value = val;
+    const currentStatus = document.getElementById('cf-status').value;
+    _updateStatusOptions(val, currentStatus);
+    _loadParentPicker(val, document.getElementById('cf-parent-id').value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function openCanvas(task) {
-    const isNew      = !task;
-    const isEditable = isNew || task.status === 'Not Started';
+    const isNew   = !task;
+    const _owners = (task?.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const isEditable = isNew || CV_ADMIN || _owners.includes((CV_ME || '').toLowerCase());
     _cvTaskId = task ? task.id : null;
     _cvTask   = task || null;
 
@@ -1415,11 +1494,15 @@ function openCanvas(task) {
      'cf-actualStartDate-vis','cf-actualStartTime',
      'cf-actualEndDate-vis','cf-actualEndTime',
      'cf-actualStartDate','cf-actualEndDate',
-     'cf-relatedFiles','cf-notes']
+     'cf-relatedFiles','cf-notes',
+     'cf-item-type','cf-parent-id','cf-sprint-id']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('cf-comment-text').value = '';
     document.getElementById('cf-module-id').value = '';
     document.getElementById('cf-client-id').value = '';
+    document.getElementById('cf-item-type-sel').value = '';
+    _updateStatusOptions('', '');
+    _loadParentPicker('', null);
     // Reset owner field
     _restoreOwner('');
 
@@ -1451,6 +1534,14 @@ function openCanvas(task) {
         document.getElementById('cf-weight').value       = task.weight       ?? '';
         document.getElementById('cf-relatedFiles').value = task.relatedFiles ?? '';
         document.getElementById('cf-notes').value        = task.notes        ?? '';
+        // Item type, parent, sprint
+        const itemType = task.itemType ?? '';
+        document.getElementById('cf-item-type').value     = itemType;
+        document.getElementById('cf-item-type-sel').value = itemType;
+        document.getElementById('cf-parent-id').value     = task.parentId ?? '';
+        document.getElementById('cf-sprint-id').value     = task.sprintId ?? '';
+        _updateStatusOptions(itemType, task.status ?? '');
+        _loadParentPicker(itemType, task.parentId ?? null);
     } else {
         document.getElementById('canvas-title').textContent = 'New Task';
         document.getElementById('canvas-subtitle').classList.add('hidden');
@@ -1461,6 +1552,7 @@ function openCanvas(task) {
         document.getElementById('cf-createdDate-display').textContent = todayStr;
         // Non-admin: default owner to themselves; admin: clear selection
         _restoreOwner(CV_ADMIN ? '' : CV_ME);
+        _updateStatusOptions('', '');
     }
 
     // Toggle edit / view-only mode
@@ -1514,6 +1606,15 @@ function _applyCanvasMode(isEditable, task) {
             });
         const ownerPicker = document.getElementById('cf-owner-picker');
         if (ownerPicker) ownerPicker.style.pointerEvents = isEditable ? '' : 'none';
+        // ItemType select is a plain select — handled by querySelectorAll above
+        // but parent select may be disabled from _loadParentPicker; re-enable if editing
+        if (isEditable) {
+            const ps = document.getElementById('cf-parent-sel');
+            if (ps && PARENT_TYPE[document.getElementById('cf-item-type-sel').value]) {
+                ps.disabled = false;
+                ps.classList.remove('bg-gray-50', 'cursor-default');
+            }
+        }
     }
 
     document.getElementById('canvas-save-btn').classList.toggle('hidden', !isEditable);

@@ -315,6 +315,8 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
                 existing.ActualEndDate = task.ActualEndDate; existing.RelatedFiles = task.RelatedFiles;
                 existing.Notes = task.Notes; existing.Weight = task.Weight;
                 existing.ModuleId = task.ModuleId; existing.ClientId = task.ClientId;
+                existing.ItemType = task.ItemType; existing.ParentId = task.ParentId;
+                existing.SprintId = task.SprintId;
 
                 await _db.SaveChangesAsync();
                 action  = "Updated";
@@ -374,6 +376,28 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         while (await rdr.ReadAsync())
             list.Add(new { id = rdr.GetInt32(0), code = rdr.GetString(1), name = rdr.GetString(2) });
         return Json(list);
+    }
+
+    // GET /Tasks/GetParentItems?itemType=Feature — returns valid parent items for the given type
+    [HttpGet]
+    public async Task<IActionResult> GetParentItems(string itemType = "")
+    {
+        var parentType = itemType switch {
+            "Feature" => "Epic",
+            "Story"   => "Feature",
+            "Task"    => "Story",
+            "Bug"     => "Story",
+            _         => ""
+        };
+        if (string.IsNullOrEmpty(parentType))
+            return Json(Array.Empty<object>());
+
+        var items = await _db.Tasks
+            .Where(t => t.ItemType == parentType)
+            .OrderBy(t => t.Goal)
+            .Select(t => new { id = t.Id, goal = t.Goal, status = t.Status })
+            .ToListAsync();
+        return Json(items);
     }
 
     // GET /Tasks/GetClients?moduleId=X — clients for module (0 = all clients); CompanyDetails preferred
