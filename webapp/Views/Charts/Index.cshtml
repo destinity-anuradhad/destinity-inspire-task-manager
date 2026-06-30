@@ -1,0 +1,228 @@
+@{
+    ViewData["Title"] = "Charts";
+}
+
+<div class="space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold text-gray-900">Charts</h1>
+            <p class="text-sm text-gray-500">Visual overview — @ViewBag.TotalTasks tasks total</p>
+        </div>
+        <a href="/Tasks" class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Tasks
+        </a>
+    </div>
+
+    <!-- Top Row: Status + Priority -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        <!-- By Status -->
+        <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-4">Tasks by Status</h2>
+            <div class="relative h-64 flex items-center justify-center">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+
+        <!-- By Priority -->
+        <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-4">Tasks by Priority</h2>
+            <div class="relative h-64 flex items-center justify-center">
+                <canvas id="priorityChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Row: Owner + Property -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        <!-- By Owner -->
+        <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-4">Tasks by Owner <span class="text-xs text-gray-400 font-normal">(top 15)</span></h2>
+            <div class="relative" style="height: 300px;">
+                <canvas id="ownerChart"></canvas>
+            </div>
+        </div>
+
+        <!-- By Property -->
+        <div class="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-4">Tasks by Property</h2>
+            <div class="relative" style="height: 300px;">
+                <canvas id="propertyChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Full-width: By Project -->
+    <div class="bg-white border border-gray-200 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-4">Tasks by Project</h2>
+        <div class="relative" style="height: 280px;">
+            <canvas id="projectChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const statusData   = @Html.Raw(ViewBag.StatusJson);
+    const priorityData = @Html.Raw(ViewBag.PriorityJson);
+    const ownerData    = @Html.Raw(ViewBag.OwnerJson);
+    const propertyData = @Html.Raw(ViewBag.PropertyJson);
+    const projectData  = @Html.Raw(ViewBag.ProjectJson);
+
+    const palette = [
+        '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+        '#06b6d4','#f97316','#84cc16','#ec4899','#6366f1',
+        '#14b8a6','#a855f7','#eab308','#64748b','#0ea5e9'
+    ];
+
+    const statusColors = {
+        'Done':        '#10b981',
+        'On track':    '#3b82f6',
+        'Delayed':     '#ef4444',
+        'On hold':     '#94a3b8',
+        'Testing':     '#f59e0b',
+        'Not Started': '#8b5cf6',
+        'Unknown':     '#e2e8f0'
+    };
+
+    const priorityColors = {
+        'P0':   '#ef4444',
+        'P1':   '#f97316',
+        'P2':   '#eab308',
+        'P3':   '#94a3b8',
+        'None': '#e2e8f0'
+    };
+
+    function getColors(data, colorMap) {
+        return Object.keys(data).map(k => colorMap[k] || palette[0]);
+    }
+
+    // Status Doughnut
+    new Chart(document.getElementById('statusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(statusData),
+            datasets: [{
+                data: Object.values(statusData),
+                backgroundColor: getColors(statusData, statusColors),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { font: { size: 11 }, padding: 12, boxWidth: 12 } }
+            },
+            cutout: '65%'
+        }
+    });
+
+    // Priority Doughnut
+    new Chart(document.getElementById('priorityChart'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(priorityData),
+            datasets: [{
+                data: Object.values(priorityData),
+                backgroundColor: getColors(priorityData, priorityColors),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { font: { size: 11 }, padding: 12, boxWidth: 12 } }
+            },
+            cutout: '65%'
+        }
+    });
+
+    // Owner Bar (vertical)
+    new Chart(document.getElementById('ownerChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(ownerData),
+            datasets: [{
+                label: 'Tasks',
+                data: Object.values(ownerData),
+                backgroundColor: '#3b82f6',
+                borderRadius: 4,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, font: { size: 10 } } }
+            }
+        }
+    });
+
+    // Property Horizontal Bar
+    new Chart(document.getElementById('propertyChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(propertyData),
+            datasets: [{
+                label: 'Tasks',
+                data: Object.values(propertyData),
+                backgroundColor: '#8b5cf6',
+                borderRadius: 4,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, font: { size: 10 } } },
+                y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+
+    // Project Bar (horizontal)
+    new Chart(document.getElementById('projectChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(projectData),
+            datasets: [{
+                label: 'Tasks',
+                data: Object.values(projectData),
+                backgroundColor: palette.slice(0, Object.keys(projectData).length),
+                borderRadius: 4,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, font: { size: 10 } } },
+                y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+</script>
+}

@@ -1,0 +1,38 @@
+@model ErrorViewModel
+@{
+    ViewData["Title"] = "Something went wrong";
+}
+
+<div class="min-h-[60vh] flex items-center justify-center">
+    <div class="text-center max-w-md px-4">
+        <div class="w-20 h-20 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-6">
+            <svg class="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h1>
+        <p class="text-sm text-gray-500 mb-6">An unexpected error occurred. Please try again or return to the dashboard.</p>
+
+        @if (Model?.ShowRequestId == true)
+        {
+            <div class="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-6 text-left">
+                <p class="text-xs text-gray-500 font-medium mb-1">Request ID</p>
+                <code class="text-xs text-gray-700 font-mono break-all">@Model.RequestId</code>
+            </div>
+        }
+
+        <div class="flex items-center justify-center gap-3">
+            <button onclick="history.back()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                ← Go Back
+            </button>
+            <a href="/Dashboard"
+               class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+               style="background:var(--brand)">
+                Dashboard
+            </a>
+        </div>
+    </div>
+</div>

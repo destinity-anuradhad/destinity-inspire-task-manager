@@ -1,0 +1,31 @@
+@model List<TaskTracker.Models.Notification>
+
+@functions {
+    static string RelTime(DateTime dt)
+    {
+        var d = DateTime.Now - dt;
+        if (d.TotalMinutes < 1)  return "just now";
+        if (d.TotalHours   < 1)  return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalDays    < 1)  return $"{(int)d.TotalHours}h ago";
+        if (d.TotalDays    < 7)  return $"{(int)d.TotalDays}d ago";
+        return dt.ToString("dd MMM");
+    }
+}
+
+@if (!Model.Any())
+{
+    <div class="py-8 text-center text-gray-400 text-sm">No notifications</div>
+}
+else
+{
+    @foreach (var n in Model)
+    {
+        <div class="flex items-start gap-3 px-3 py-2.5 rounded-lg @(n.IsRead ? "" : "bg-blue-50") hover:bg-gray-50 transition-colors">
+            <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 @(n.IsRead ? "bg-gray-300" : "bg-blue-500")"></div>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs text-gray-800 leading-snug">@n.Message</p>
+                <p class="text-[10px] text-gray-400 mt-0.5">@RelTime(n.CreatedAt)</p>
+            </div>
+        </div>
+    }
+}

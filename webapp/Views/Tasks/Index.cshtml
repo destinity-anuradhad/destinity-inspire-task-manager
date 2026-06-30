@@ -1,0 +1,1860 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Tasks";
+    var jsonOpts     = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var today        = DateTime.Today;
+    var ownerColorMap = Model.Owners.ToDictionary(
+        o => o.Name, o => o.Color ?? "#094f70", StringComparer.OrdinalIgnoreCase);
+    var myDisplayName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
+}
+
+@functions {
+    static string PriorityBadge(string? p) => p switch
+    {
+        "P0" => "bg-red-100 text-red-700 border border-red-200",
+        "P1" => "bg-orange-100 text-orange-700 border border-orange-200",
+        "P2" => "bg-yellow-100 text-yellow-700 border border-yellow-200",
+        "P3" => "bg-gray-100 text-gray-600 border border-gray-200",
+        _    => "bg-gray-100 text-gray-500 border border-gray-200"
+    };
+
+    static string StatusBadge(string? s) => s switch
+    {
+        "Done"        => "bg-green-100 text-green-700 border border-green-200",
+        "On track"    => "bg-blue-100 text-blue-700 border border-blue-200",
+        "Delayed"     => "bg-red-100 text-red-700 border border-red-200",
+        "On hold"     => "bg-gray-100 text-gray-600 border border-gray-200",
+        "Testing"     => "bg-amber-100 text-amber-700 border border-amber-200",
+        "Not Started" => "bg-purple-100 text-purple-700 border border-purple-200",
+        _             => "bg-gray-100 text-gray-500 border border-gray-200"
+    };
+
+    static bool IsOverdue(string? expectedEnd, string? status)
+    {
+        if (status is "Done" or "On hold") return false;
+        if (string.IsNullOrEmpty(expectedEnd)) return false;
+        return DateTime.TryParse(expectedEnd, out var d) && d.Date < DateTime.Today;
+    }
+
+    static IEnumerable<string> SplitOwners(string? owner) =>
+        (owner ?? "").Split(',').Select(o => o.Trim()).Where(o => o.Length > 0);
+
+    static string WeightLabel(decimal? w) => w switch {
+        null or 0 => "",
+        0.5m      => "30 min",
+        1m        => "1 h",
+        2m        => "2 h",
+        3m        => "3 h",
+        4m        => "4 h",
+        8m        => "1 day",
+        16m       => "2 days",
+        24m       => "3 days",
+        40m       => "1 week",
+        _         => $"{w} h"
+    };
+}
+
+@{
+    var workStatesJson = JsonSerializer.Serialize(
+        Model.WorkStates.Select(ws => new { name = ws.Name, color = ws.Color }),
+        jsonOpts);
+}
+
+@{
+    string SortUrl(string col)
+    {
+        var dir = Model.Sort == col && Model.SortDir == "asc" ? "desc" : "asc";
+        return Url.Action("Index", new {
+            search=Model.Search, project=Model.Project, property=Model.Property,
+            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+            page=1, pageSize=Model.PageSize, sort=col, sortDir=dir,
+            view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth
+        }) ?? "#";
+    }
+    string SortIcon(string col)  => Model.Sort != col ? "⇅" : Model.SortDir == "asc" ? "↑" : "↓";
+    string SortClass(string col) => Model.Sort == col ? "text-blue-600" : "text-gray-300 group-hover:text-blue-400";
+
+    string ViewUrl(string v) => Url.Action("Index", new {
+        search=Model.Search, project=Model.Project, property=Model.Property,
+        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+        pageSize=Model.PageSize, view=v, calYear=Model.CalYear, calMonth=Model.CalMonth
+    }) ?? "#";
+
+    string exportUrl = Url.Action("Export", new {
+        search=Model.Search, project=Model.Project, property=Model.Property,
+        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        dateFrom=Model.DateFrom, dateTo=Model.DateTo
+    }) ?? "#";
+}
+
+<div class="space-y-4">
+
+    <!-- ── Header ── -->
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Tasks</h1>
+            <p>@Model.TotalCount task@(Model.TotalCount != 1 ? "s" : "") total</p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex rounded-lg border border-gray-200 bg-white overflow-hidden text-sm">
+                <a href="@ViewUrl("table")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 transition-colors @(Model.ViewMode=="table"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 6h18M3 14h18M3 18h18"/></svg>
+                    Table
+                </a>
+                <a href="@ViewUrl("kanban")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-x border-gray-200 transition-colors @(Model.ViewMode=="kanban"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+                    Kanban
+                </a>
+                <a href="@ViewUrl("calendar")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 transition-colors @(Model.ViewMode=="calendar"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h7M3 12h11M3 16h8M12 8h9M16 12h5M13 16h8"/></svg>
+                    Timeline
+                </a>
+                <a href="@ViewUrl("team")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-l border-gray-200 transition-colors @(Model.ViewMode=="team"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Team
+                </a>
+            </div>
+            <a href="@exportUrl"
+               class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                CSV
+            </a>
+            <button onclick="openCanvas(null)"
+                    class="inline-flex items-center gap-2 btn-accent text-sm px-4 py-1.5 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Task
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Status Chips ── -->
+    <div class="flex flex-wrap gap-2">
+        @foreach (var ws in Model.WorkStates)
+        {
+            var cnt = Model.StatusCounts.GetValueOrDefault(ws.Name, 0);
+            var act = Model.Status == ws.Name;
+            var cc  = act ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-600";
+            <a href="@Url.Action("Index", new { search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status=act?"":ws.Name, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, page=1, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors @cc">
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:@ws.Color"></span>
+                @ws.Name
+                <span class="@(act?"bg-white/20 text-white":"bg-gray-100 text-gray-600") rounded-full px-1.5 py-0.5 text-[10px] font-bold">@cnt</span>
+            </a>
+        }
+        @if (!string.IsNullOrEmpty(Model.Status))
+        {
+            <a href="@Url.Action("Index", new { search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status="", priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, page=1, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-200 bg-white text-gray-500 hover:text-red-600">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> Clear
+            </a>
+        }
+    </div>
+
+    <!-- ── Filter Bar ── -->
+    <form method="get" action="/Tasks" class="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap gap-2 items-end">
+        <input type="hidden" name="view"     value="@Model.ViewMode" />
+        <input type="hidden" name="sort"     value="@Model.Sort" />
+        <input type="hidden" name="sortDir"  value="@Model.SortDir" />
+        <input type="hidden" name="calYear"  value="@Model.CalYear" />
+        <input type="hidden" name="calMonth" value="@Model.CalMonth" />
+        <div class="flex-1 min-w-48">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Search</label>
+            <input type="text" name="search" value="@Model.Search" placeholder="Search goals, projects…"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div class="min-w-36">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Project</label>
+            <select name="project" asp-items="@(new SelectList(Model.Projects,"Name","Name",Model.Project))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Projects</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Property</label>
+            <select name="property" asp-items="@(new SelectList(Model.Properties,"Name","Name",Model.Property))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Properties</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Owner</label>
+            <select name="owner" class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="">All owners</option>
+                @foreach (var o in Model.Owners)
+                {
+                    var sel = o.Name == Model.Owner ? "selected" : null;
+                    <option value="@o.Name" selected="@sel">@o.Name</option>
+                }
+            </select>
+        </div>
+        <div class="min-w-32">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Status</option>
+                @foreach (var ws in Model.WorkStates)
+                {
+                    <option value="@ws.Name" selected="@(Model.Status == ws.Name ? "selected" : null)">@ws.Name</option>
+                }
+            </select>
+        </div>
+        <div class="min-w-28">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Priority</label>
+            <select name="priority" asp-items="@(new SelectList(TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities.Select(p=>new SelectListItem(p,p)),"Value","Text",Model.Priority))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Priority</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Target Date From</label>
+            <input type="date" name="dateFrom" value="@Model.DateFrom"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div class="min-w-36">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Target Date To</label>
+            <input type="date" name="dateTo" value="@Model.DateTo"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <input type="hidden" name="pageSize" value="@Model.PageSize" />
+        <div class="flex gap-2">
+            <button type="submit" class="btn-primary text-sm font-medium px-4 py-1.5 rounded-lg">Filter</button>
+            <a href="@Url.Action("Index", new { owner=myDisplayName, search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="@(Model.Owner == myDisplayName ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">My Tasks</a>
+            <a href="@Url.Action("Index", new { owner="", search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="@(string.IsNullOrEmpty(Model.Owner) ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">All Tasks</a>
+        </div>
+    </form>
+
+    @* ════════════════════ TABLE VIEW ════════════════════ *@
+    @if (Model.ViewMode == "table")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Goal <span class="@SortClass("goal") text-xs">@SortIcon("goal")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Project <span class="@SortClass("project") text-xs">@SortIcon("project")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("property")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Client <span class="@SortClass("property") text-xs">@SortIcon("property")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-14">
+                            <a href="@SortUrl("priority")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Pri <span class="@SortClass("priority") text-xs">@SortIcon("priority")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("owner")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Owner <span class="@SortClass("owner") text-xs">@SortIcon("owner")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("status")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Status <span class="@SortClass("status") text-xs">@SortIcon("status")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Created Date</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            <span class="flex items-center gap-1" title="Estimated effort">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Weight
+                            </span>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Exp. Start</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Exp. End</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Act. Start</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Act. End</th>
+                        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!Model.Tasks.Any())
+                    {
+                        <tr>
+                            <td colspan="14" class="text-center py-16 text-gray-400">
+                                <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                                <p class="font-medium">No tasks found</p>
+                                <p class="text-xs mt-1">Try adjusting filters or <button onclick="openCanvas(null)" class="text-blue-600 hover:underline">create a new task</button></p>
+                            </td>
+                        </tr>
+                    }
+                    @{
+                        int rowNum = (Model.Page - 1) * Model.PageSize + 1;
+                        bool isAdmin = User.IsInRole("Admin");
+                        string curDisplay = User.FindFirst("DisplayName")?.Value ?? "";
+                        string curUser    = User.Identity?.Name ?? "";
+                    }
+                    @foreach (var task in Model.Tasks)
+                    {
+                        var detailId  = $"detail-{task.Id}";
+                        var taskJson  = JsonSerializer.Serialize(task, jsonOpts);
+                        var overdue   = IsOverdue(task.EndDate, task.Status);
+                        var rowCls    = overdue ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-gray-50";
+                        var tCanEdit   = task.Status == "Not Started";
+                        var tCanDelete = task.Status == "Not Started";
+                        <tr class="border-b border-gray-50 cursor-pointer transition-colors @rowCls"
+                            data-overdue="@overdue.ToString().ToLower()"
+                            data-task="@taskJson"
+                            onclick="openCanvas(JSON.parse(this.dataset.task))">
+                            <td class="px-4 py-3 text-gray-400 text-xs">@rowNum</td>
+                            <td class="px-4 py-3 max-w-xs">
+                                <span class="font-medium text-gray-900 line-clamp-2">@task.Goal</span>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">@task.Project</td>
+                            <td class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">@task.Property</td>
+                            <td class="px-4 py-3">
+                                @if (!string.IsNullOrEmpty(task.Priority))
+                                {
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold @PriorityBadge(task.Priority)">@task.Priority</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap gap-1">
+                                    @if (string.IsNullOrEmpty(task.Owner))
+                                    {
+                                        <span class="text-gray-300 text-xs">—</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var ow in SplitOwners(task.Owner))
+                                        {
+                                            var owClr = ownerColorMap.GetValueOrDefault(ow, "#64748b");
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background:@owClr">@ow</span>
+                                        }
+                                    }
+                                </div>
+                            </td>
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                <button type="button"
+                                        data-task-id="@task.Id"
+                                        data-cur-status="@task.Status"
+                                        onclick="toggleStatusMenu(this)"
+                                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity @StatusBadge(task.Status)">
+                                    @task.Status
+                                    <svg class="w-2.5 h-2.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                @task.CreatedAt.ToString("yyyy-MM-dd")
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                @if (!string.IsNullOrEmpty(WeightLabel(task.Weight)))
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        @WeightLabel(task.Weight)
+                                    </span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.StartDate</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.EndDate</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.ActualStartDate</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.ActualEndDate</td>
+                            <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+                                <div class="flex items-center justify-end gap-1">
+                                    <button data-task="@taskJson" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                            class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                                            title="@(tCanEdit ? "Edit" : "View / Comment")">
+                                        @if (tCanEdit)
+                                        {
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        }
+                                        else
+                                        {
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                        }
+                                    </button>
+                                    @if (tCanDelete)
+                                    {
+                                        <form method="post" action="/Tasks/Delete/@task.Id" id="del-task-@task.Id">
+                                            @Html.AntiForgeryToken()
+                                            <button type="button" onclick="swalDelete(document.getElementById('del-task-@task.Id'), null)" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        <tr id="@detailId" class="hidden bg-blue-50/30">
+                            <td colspan="14" class="px-6 py-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    @if (!string.IsNullOrEmpty(task.Notes))
+                                    {
+                                        <div><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Notes</p><p class="text-sm text-gray-700 whitespace-pre-wrap">@task.Notes</p></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(task.RelatedFiles))
+                                    {
+                                        <div><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Related Files</p><p class="text-sm text-gray-700 break-all">@task.RelatedFiles</p></div>
+                                    }
+                                    @if (string.IsNullOrEmpty(task.Notes) && string.IsNullOrEmpty(task.RelatedFiles))
+                                    {
+                                        <p class="text-sm text-gray-400 col-span-2">No notes or related files.</p>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        rowNum++;
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (Model.TotalPages > 1 || Model.Tasks.Any())
+        {
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <span>Rows per page:</span>
+                    <form method="get" action="/Tasks">
+                        <input type="hidden" name="search"   value="@Model.Search" />
+                        <input type="hidden" name="project"  value="@Model.Project" />
+                        <input type="hidden" name="property" value="@Model.Property" />
+                        <input type="hidden" name="owner"    value="@Model.Owner" />
+                        <input type="hidden" name="status"   value="@Model.Status" />
+                        <input type="hidden" name="priority" value="@Model.Priority" />
+                        <input type="hidden" name="dateFrom" value="@Model.DateFrom" />
+                        <input type="hidden" name="dateTo"   value="@Model.DateTo" />
+                        <input type="hidden" name="sort"     value="@Model.Sort" />
+                        <input type="hidden" name="sortDir"  value="@Model.SortDir" />
+                        <input type="hidden" name="page"     value="1" />
+                        <select name="pageSize" onchange="this.form.submit()"
+                                asp-items="@(new SelectList(new[]{10,20,50,100}.Select(n=>new SelectListItem(n.ToString(),n.ToString())),"Value","Text",Model.PageSize.ToString()))"
+                                class="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </select>
+                    </form>
+                    <span>Showing @((Model.Page-1)*Model.PageSize+1)–@(Math.Min(Model.Page*Model.PageSize,Model.TotalCount)) of @Model.TotalCount</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    @{
+                        string PageUrl(int p) => Url.Action("Index", new {
+                            search=Model.Search, project=Model.Project, property=Model.Property,
+                            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+                            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+                            page=p, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir
+                        }) ?? "#";
+                        int sp2 = Math.Max(1, Model.Page-2);
+                        int ep2 = Math.Min(Model.TotalPages, Model.Page+2);
+                    }
+                    <a href="@PageUrl(1)"              class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">«</a>
+                    <a href="@PageUrl(Model.Page-1)"   class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">‹</a>
+                    @for (int pg = sp2; pg <= ep2; pg++)
+                    {
+                        <a href="@PageUrl(pg)" class="px-3 py-1.5 rounded-lg text-sm font-medium @(pg==Model.Page?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-100")">@pg</a>
+                    }
+                    <a href="@PageUrl(Model.Page+1)"    class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">›</a>
+                    <a href="@PageUrl(Model.TotalPages)" class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">»</a>
+                </div>
+            </div>
+        }
+    }
+
+    @* ════════════════════ KANBAN VIEW ════════════════════ *@
+    @if (Model.ViewMode == "kanban")
+    {
+        <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="height:calc(100vh - 260px);min-height:400px">
+            @for (int ci = 0; ci < Model.WorkStates.Count; ci++)
+            {
+                var colWs   = Model.WorkStates[ci];
+                var colSt   = colWs.Name;
+                var colClr  = colWs.Color;
+                var colTs   = Model.Tasks.Where(t => t.Status == colSt).ToList();
+                var colStJs = colSt.Replace("'", "\\'");
+                <div data-kanban-col class="flex-shrink-0 w-72 bg-gray-50 rounded-xl border border-gray-200 overflow-hidden flex flex-col h-full">
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:@colClr"></div>
+                            <span class="text-sm font-semibold text-gray-800">@colSt</span>
+                        </div>
+                        <span class="kanban-count text-xs font-bold bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">@colTs.Count</span>
+                    </div>
+                    <div class="kanban-col-body p-3 space-y-2 overflow-y-auto flex-1 min-h-20 rounded-b-xl transition-all duration-150"
+                         data-col-status="@colSt"
+                         ondragover="event.preventDefault();this.classList.add('ring-2','ring-inset','ring-blue-400','bg-blue-50/40')"
+                         ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('ring-2','ring-inset','ring-blue-400','bg-blue-50/40')"
+                         ondrop="handleKanbanDrop(event,this,'@Html.Raw(colStJs)')">
+                        <div class="kanban-empty text-center py-8 text-gray-300 text-xs @(colTs.Any() ? "hidden" : "")">Drop tasks here</div>
+                        @{
+                            bool kIsAdmin = User.IsInRole("Admin");
+                            string kCurDisplay = User.FindFirst("DisplayName")?.Value ?? "";
+                        }
+                        @foreach (var kt in colTs)
+                        {
+                            var kj  = JsonSerializer.Serialize(kt, jsonOpts);
+                            var kov = IsOverdue(kt.TargetDate, kt.Status);
+                            var kCanEdit = kIsAdmin || SplitOwners(kt.Owner).Any(o => string.Equals(o, kCurDisplay, StringComparison.OrdinalIgnoreCase));
+                            <div draggable="true"
+                                 data-task-id="@kt.Id"
+                                 ondragstart="handleKanbanDragStart(event)"
+                                 ondragend="handleKanbanDragEnd(event)"
+                                 data-task="@kj" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                 class="kanban-card bg-white rounded-lg border @(kov ? "border-red-200 bg-red-50/20" : "border-gray-200") p-3 hover:border-blue-300 hover:shadow-sm transition-all @(kCanEdit ? "cursor-grab" : "cursor-pointer") select-none">
+                                <div class="flex items-start justify-between gap-1 mb-1.5">
+                                    @if (!string.IsNullOrEmpty(kt.Priority))
+                                    {
+                                        <span class="text-xs font-bold px-1.5 py-0.5 rounded @PriorityBadge(kt.Priority)">@kt.Priority</span>
+                                    }
+                                    @if (kov) { <span class="text-xs text-red-500 ml-auto" title="Overdue">⚠</span> }
+                                </div>
+                                <p class="text-sm text-gray-900 font-medium line-clamp-2 mb-2 leading-snug pointer-events-none">@kt.Goal</p>
+                                <div class="flex flex-wrap gap-1 mb-2 pointer-events-none">
+                                    @if (!string.IsNullOrEmpty(kt.Project))  { <span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">@kt.Project</span> }
+                                    @if (!string.IsNullOrEmpty(kt.Property)) { <span class="text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">@kt.Property</span> }
+                                </div>
+                                <div class="flex items-center justify-between text-xs pointer-events-none">
+                                    <div class="flex flex-wrap gap-1">
+                                        @{
+                                            var kOwners = SplitOwners(kt.Owner).ToList();
+                                        }
+                                        @if (!kOwners.Any())
+                                        {
+                                            <span class="text-gray-300">—</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var ko in kOwners.Take(3))
+                                            {
+                                                var koClr = ownerColorMap.GetValueOrDefault(ko, "#64748b");
+                                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold border border-white text-white" style="background:@koClr" title="@ko">@ko[0]</span>
+                                            }
+                                            @if (kOwners.Count > 3)
+                                            {
+                                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-500 border border-white">+@(kOwners.Count-3)</span>
+                                            }
+                                        }
+                                    </div>
+                                    <div class="flex items-center gap-1.5">
+                                        @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight)))
+                                        {
+                                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium">
+                                                <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                @WeightLabel(kt.Weight)
+                                            </span>
+                                        }
+                                        <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.TargetDate</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        <p class="text-xs text-gray-400 text-center">Drag cards between columns to change status &nbsp;·&nbsp; Click to edit &nbsp;·&nbsp; @Model.TotalCount tasks</p>
+    }
+
+    @* ════════════════════ TIMELINE VIEW ════════════════════ *@
+    @if (Model.ViewMode == "calendar")
+    {
+        var cy   = Model.CalYear;
+        var cm   = Model.CalMonth;
+        var fd   = new DateTime(cy, cm, 1);
+        var dim  = DateTime.DaysInMonth(cy, cm);
+        var sdow = (int)fd.DayOfWeek;
+        var ld   = new DateTime(cy, cm, dim);
+
+        var prevM = fd.AddMonths(-1);
+        var nextM = fd.AddMonths(1);
+        string TlNav(DateTime m) => Url.Action("Index", new {
+            search=Model.Search, project=Model.Project, property=Model.Property,
+            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+            pageSize=Model.PageSize, view="calendar", calYear=m.Year, calMonth=m.Month
+        }) ?? "#";
+
+        const int colW = 36;
+        var tlEntries   = new List<(TaskItem T, int S, int E)>();
+        var noDateItems = new List<TaskItem>();
+
+        static bool TryParseDate(string? s, out DateTime d) {
+            d = default;
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            return DateTime.TryParseExact(s,
+                new[]{"yyyy-MM-dd","dd/MM/yyyy","d/M/yyyy","dd/M/yyyy","d/MM/yyyy","MM/dd/yyyy","dd-MM-yyyy","yyyy/MM/dd"},
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out d)
+                || DateTime.TryParse(s, out d);
+        }
+
+        foreach (var t in Model.Tasks)
+        {
+            DateTime? ts = null, te = null;
+            if (TryParseDate(t.StartDate,  out var _s))  ts = _s;
+            if (TryParseDate(t.EndDate,    out var _e))  te = _e;
+            if (te == null && TryParseDate(t.TargetDate, out var _td)) te = _td;
+            if (ts == null) ts = te;
+            if (te == null) te = ts;
+
+            if (ts != null && te != null && ts.Value <= ld && te.Value >= fd)
+            {
+                int bs = ts.Value < fd ? 1 : ts.Value.Day;
+                int be = te.Value > ld ? dim : te.Value.Day;
+                if (be < bs) be = bs;
+                tlEntries.Add((t, bs, be));
+            }
+            else
+            {
+                noDateItems.Add(t);
+            }
+        }
+
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <a href="@TlNav(prevM)" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </a>
+                <div class="text-center">
+                    <h2 class="text-lg font-semibold text-gray-900">@fd.ToString("MMMM yyyy")</h2>
+                    <p class="text-xs text-gray-400">@tlEntries.Count task@(tlEntries.Count != 1 ? "s" : "") in timeline · @noDateItems.Count without dates</p>
+                </div>
+                <a href="@TlNav(nextM)" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </div>
+
+            <div class="overflow-x-auto">
+                <div style="min-width:@(260 + dim * colW)px">
+
+                    <div class="flex border-b border-gray-200 bg-gray-50">
+                        <div class="shrink-0 border-r border-gray-200 px-4 py-2.5" style="width:260px">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task</span>
+                        </div>
+                        @for (int d = 1; d <= dim; d++)
+                        {
+                            bool dWe  = ((sdow + d - 1) % 7) is 0 or 6;
+                            bool dTod = cy == today.Year && cm == today.Month && d == today.Day;
+                            <div class="shrink-0 flex items-center justify-center text-xs border-r border-gray-100 @(dWe ? "bg-gray-100 text-gray-400" : dTod ? "bg-blue-50 text-blue-600 font-bold" : "text-gray-400")"
+                                 style="width:@(colW)px;height:36px">@d</div>
+                        }
+                    </div>
+
+                    @{
+                        bool tlIsAdmin    = User.IsInRole("Admin");
+                        string tlCurDisp  = User.FindFirst("DisplayName")?.Value ?? "";
+                    }
+                    @if (!tlEntries.Any())
+                    {
+                        <div class="text-center py-16 text-gray-400 text-sm">
+                            No tasks with dates in @fd.ToString("MMMM yyyy")<br>
+                            <span class="text-xs text-gray-300">Tasks need both a Start Date and End Date to appear on the timeline.</span>
+                        </div>
+                    }
+                    @foreach (var (tlT, tlS, tlE) in tlEntries)
+                    {
+                        var tlJ       = JsonSerializer.Serialize(tlT, jsonOpts);
+                        var barPx     = (tlS - 1) * colW;
+                        var barW      = Math.Max(1, tlE - tlS + 1) * colW;
+                        var tlCanEdit = tlIsAdmin || SplitOwners(tlT.Owner).Any(o => string.Equals(o, tlCurDisp, StringComparison.OrdinalIgnoreCase));
+                        var barClr    = tlT.Status switch {
+                            "Done"        => "#16a34a",
+                            "On track"    => "#2563eb",
+                            "Delayed"     => "#dc2626",
+                            "On hold"     => "#6b7280",
+                            "Testing"     => "#d97706",
+                            "Not Started" => "#7c3aed",
+                            _             => "#094f70"
+                        };
+                        var tlOw  = SplitOwners(tlT.Owner).FirstOrDefault() ?? "";
+                        var tlOwC = ownerColorMap.GetValueOrDefault(tlOw, "#64748b");
+
+                        <div class="flex border-b border-gray-50 hover:bg-blue-50/20" style="height:40px">
+                            <div class="shrink-0 border-r border-gray-100 flex items-center gap-2 px-3" style="width:260px">
+                                @if (!string.IsNullOrEmpty(tlT.Priority))
+                                {
+                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 @PriorityBadge(tlT.Priority)">@tlT.Priority</span>
+                                }
+                                <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                        class="text-xs font-medium text-gray-800 hover:text-blue-600 text-left truncate flex-1 leading-tight">
+                                    @tlT.Goal
+                                </button>
+                                @if (!string.IsNullOrEmpty(tlOw))
+                                {
+                                    <span class="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold text-white"
+                                          style="background:@tlOwC" title="@tlT.Owner">@tlOw[0]</span>
+                                }
+                            </div>
+                            <div class="relative flex items-center" style="width:@(dim * colW)px;background:repeating-linear-gradient(90deg,transparent,transparent @(colW-1)px,#f3f4f6 @(colW-1)px,#f3f4f6 @(colW)px)">
+                                @if (cy == today.Year && cm == today.Month)
+                                {
+                                    var tdX = (today.Day - 1) * colW + colW / 2;
+                                    <div class="absolute top-0 bottom-0 w-px bg-blue-400/50 pointer-events-none" style="left:@(tdX)px"></div>
+                                }
+                                <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                        class="absolute h-6 rounded text-white text-[10px] font-medium truncate px-1.5 flex items-center shadow-sm hover:opacity-80 transition-opacity"
+                                        style="left:@(barPx)px;width:@(barW)px;background:@barClr"
+                                        title="@($"{tlT.Goal} · {tlT.StartDate}–{tlT.EndDate}")">
+                                    @if (barW >= colW * 2) { @tlT.Goal }
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                </div>
+            </div>
+
+            <div class="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center gap-3">
+                @foreach (var ws2 in Model.WorkStates)
+                {
+                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                        <span class="w-3 h-3 rounded-sm inline-block" style="background:@ws2.Color"></span>@ws2.Name
+                    </span>
+                }
+                <span class="text-xs text-gray-400 ml-auto">Click bars or task names to edit</span>
+            </div>
+
+        </div>
+
+        @if (noDateItems.Any())
+        {
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">@noDateItems.Count task@(noDateItems.Count != 1 ? "s" : "") without dates</p>
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var nd in noDateItems)
+                    {
+                        var ndJ      = JsonSerializer.Serialize(nd, jsonOpts);
+                        <button type="button" data-task="@ndJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 hover:border-blue-200 text-gray-700 text-left max-w-xs truncate transition-colors">
+                            @nd.Goal
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    @* ── Team Timeline view ───────────────────────────────────────────── *@
+    @if (Model.ViewMode == "team")
+    {
+        string tlFromStr = ViewBag.TlFrom as string ?? "";
+        string tlToStr   = ViewBag.TlTo   as string ?? "";
+        string tlModeStr = ViewBag.TlMode as string ?? "week";
+        <style>
+        .tl2-wrap{min-width:600px;font-family:inherit}
+        .tl2-hd{display:flex;border-bottom:2px solid #e5e7eb;position:sticky;top:0;background:#f9fafb;z-index:8}
+        .tl2-name-hd{width:170px;min-width:170px;padding:8px 12px;font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.06em;border-right:1px solid #e5e7eb;flex-shrink:0}
+        .tl2-days-hd{display:flex;flex:1}
+        .tl2-col-hd{flex:1;text-align:center;padding:4px 2px;font-size:10.5px;color:#6b7280;border-right:1px solid #e5e7eb;line-height:1.35}
+        .tl2-col-now-hd{background:#eff6ff;color:#1d4ed8;font-weight:700}
+        .tl2-row{display:flex;border-bottom:1px solid #f1f5f9;min-height:40px}
+        .tl2-row:hover{background:#fafbfd}
+        .tl2-name-cell{width:170px;min-width:170px;padding:8px 10px;display:flex;align-items:center;gap:8px;border-right:1px solid #e5e7eb;flex-shrink:0}
+        .tl2-days-cell{flex:1;position:relative;overflow:hidden}
+        .tl2-col-div{position:absolute;top:0;bottom:0;border-right:1px solid #f0f0f0}
+        .tl2-col-div-today{background:rgba(219,234,254,.25)}
+        .tl2-col-div-hr{border-right:1px solid #d1d5db!important}
+        .tl2-bar{position:absolute;border-radius:7px;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.1);display:flex;flex-direction:column;justify-content:center;padding:0 9px;cursor:pointer;overflow:hidden;transition:box-shadow .12s,transform .12s;border:1px solid rgba(0,0,0,.07)}
+        .tl2-bar:hover{box-shadow:0 4px 12px rgba(0,0,0,.18);transform:translateY(-1px);z-index:5}
+        .tl2-bar-strip{position:absolute;top:0;left:0;right:0;height:4px;border-radius:7px 7px 0 0}
+        .tl2-bar-txt{color:#1e293b;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;margin-top:4px}
+        .tl2-bar-pills{display:flex;gap:4px;margin-top:4px;overflow:hidden}
+        .tl2-pill{display:inline-flex;align-items:center;padding:0 7px;height:16px;border-radius:99px;font-size:9.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;flex-shrink:0}
+
+        .tl2-av{width:28px;height:28px;border-radius:8px;background:#094f70;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .tl2-nm{font-size:12px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .tl2-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#d1d5db;font-style:italic}
+        .tl2-now-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:6;pointer-events:none}
+        .tl2-filter input[type=date]{border:1px solid #d1d5db;border-radius:8px;padding:4px 10px;font-size:12px;height:32px;color:#374151}
+        .tl2-filter input[type=date]:focus{outline:none;border-color:#094f70}
+        .tl2-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;height:32px;border:1px solid transparent;text-decoration:none;transition:all .15s}
+        .tl2-btn-apply{background:#094f70;color:#fff}.tl2-btn-apply:hover{background:#063a54}
+        .tl2-btn-week{background:#fff;border-color:#094f70;color:#094f70}.tl2-btn-week:hover{background:#eff8ff}
+        .tl2-btn-active{background:#eff6ff;border-color:#1d4ed8;color:#1d4ed8}
+        .tl2-btn-today{background:#f1f5f9;border-color:#e2e8f0;color:#374151}.tl2-btn-today:hover{background:#e2e8f0}
+        </style>
+
+        <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="tl2-filter flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-semibold text-gray-700 flex items-center gap-2 mr-1">
+                    <svg class="w-4 h-4 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Team Timeline
+                </span>
+                <input type="date" id="tl2-from" value="@(tlModeStr != "today" ? tlFromStr : "")" />
+                <span class="text-gray-400 text-sm">to</span>
+                <input type="date" id="tl2-to" value="@(tlModeStr != "today" ? tlToStr : "")" />
+                <button class="tl2-btn tl2-btn-apply" onclick="tl2Apply()">Apply</button>
+                @{
+                    var weekUrl = Url.Action("Index", new { view="team", search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status=Model.Status, priority=Model.Priority, pageSize=Model.PageSize }) ?? "/Tasks?view=team";
+                    string dateBadge;
+                    if (tlModeStr == "today") { dateBadge = DateTime.Today.ToString("dddd, d MMMM yyyy"); }
+                    else if (DateTime.TryParse(tlFromStr, out var tfd2) && DateTime.TryParse(tlToStr, out var ttd2)) {
+                        bool isFullMonth = tfd2.Day == 1 && ttd2 == tfd2.AddMonths(1).AddDays(-1);
+                        dateBadge = isFullMonth ? tfd2.ToString("MMMM yyyy") : tfd2.ToString("d MMM") + " – " + ttd2.ToString("d MMM yyyy");
+                    } else { dateBadge = tlFromStr + " – " + tlToStr; }
+                }
+                <a href="@weekUrl" class="tl2-btn @(tlModeStr=="week"?"tl2-btn-active":"tl2-btn-week")">This Week</a>
+                <a href="/Tasks?view=team&tlmode=today" class="tl2-btn @(tlModeStr=="today"?"tl2-btn-active":"tl2-btn-today")">
+                    <svg style="width:13px;height:13px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Today
+                </a>
+                <span class="ml-2 text-xs font-medium px-2 py-0.5 rounded-full @(tlModeStr=="today"?"bg-amber-100 text-amber-700":"bg-blue-50 text-blue-700")">
+                    @dateBadge
+                </span>
+            </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="flex items-center gap-4 flex-wrap px-4 py-2 border-b border-gray-100">
+                @foreach (var (lbl2, clr2) in new[]{("On track","#094f70"),("Not Started","#8b5cf6"),("Testing","#f59e0b"),("Delayed","#ef4444"),("Done","#22c55e"),("On hold","#9ca3af")})
+                {
+                    <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280">
+                        <span style="width:10px;height:10px;border-radius:3px;background:@clr2;flex-shrink:0"></span>@lbl2
+                    </span>
+                }
+                @if (tlModeStr == "today")
+                {
+                    <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280;margin-left:auto">
+                        <span style="width:2px;height:12px;background:#ef4444;border-radius:1px;flex-shrink:0"></span>Now
+                    </span>
+                }
+            </div>
+            <div style="overflow-x:auto;padding-bottom:8px">
+                <div id="tl2-scroll" style="min-height:160px"></div>
+            </div>
+        </div>
+
+        <script>
+        (function () {
+            var TL2_TASKS         = @Html.Raw(ViewBag.TlTasks          as string ?? "[]");
+            var TL2_OWNERS        = @Html.Raw(ViewBag.TlOwners         as string ?? "[]");
+            var TL2_PROJ_COLORS   = @Html.Raw(ViewBag.TlProjectColors  as string ?? "{}");
+            var TL2_PROP_COLORS   = @Html.Raw(ViewBag.TlPropertyColors as string ?? "{}");
+            var TL2_FROM = '@(tlFromStr)';
+            var TL2_TO   = '@(tlToStr)';
+            var TL2_MODE = '@(tlModeStr)';
+            var SC = {'On track':'#094f70','Not Started':'#8b5cf6','Testing':'#f59e0b','Delayed':'#ef4444','Done':'#22c55e','On hold':'#9ca3af'};
+            function hex2rgba(hex,a){var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return 'rgba('+r+','+g+','+b+','+a+')';}
+            function pd(s){if(!s)return null;var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;return new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10));}
+            function pdt(s){if(!s)return null;var m=s.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);if(!m)return null;var h=parseInt(m[4],10),mn=parseInt(m[5],10);return{date:new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10)),h:h,mn:mn,tot:h*60+mn};}
+            function sameDay(a,b){return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+            function fmtDay(d){var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return '<strong>'+dn[d.getDay()]+'<\/strong><br>'+d.getDate()+' '+mo[d.getMonth()];}
+            function fmtTime(tot){var h=Math.floor(tot/60),mn=tot%60,ap=h<12?'AM':'PM',hh=h%12||12;return hh+':'+(mn<10?'0':'')+mn+' '+ap;}
+            function ownerMatch(to,o){var p=(to||'').split(',');for(var i=0;i<p.length;i++){if(p[i].trim().toLowerCase()===o.toLowerCase())return true;}return false;}
+            function assignLanes(bars){var ends=[];for(var i=0;i<bars.length;i++){var b=bars[i],pl=false;for(var j=0;j<ends.length;j++){if(b.lf>=ends[j]+0.004){b._lane=j;ends[j]=b.rt;pl=true;break;}}if(!pl){b._lane=ends.length;ends.push(b.rt);}}return ends.length||0;}
+            function buildRows(fn){return TL2_OWNERS.map(function(owner){var bars=fn(owner).filter(function(x){return x!=null;});bars.sort(function(a,b){return a.lf-b.lf;});var nl=bars.length?assignLanes(bars):0;return{owner:owner,bars:bars,rowH:Math.max(64,nl*62+8)};});}
+            function renderGrid(cols,getCI,rows){
+                var n=cols.length,today=new Date();today.setHours(0,0,0,0);
+                var html='<div class="tl2-wrap"><div class="tl2-hd"><div class="tl2-name-hd">DEVELOPER<\/div><div class="tl2-days-hd">';
+                for(var i=0;i<n;i++){var ci=getCI(cols[i],today);html+='<div class="tl2-col-hd'+(ci.isNow?' tl2-col-now-hd':'')+'">'+ ci.label+'<\/div>';}
+                html+='<\/div><\/div>';
+                for(var r=0;r<rows.length;r++){
+                    var row=rows[r];
+                    var ini=(row.owner.split(/\s+/).map(function(w){return w.charAt(0)||'';}).join('').substring(0,2).toUpperCase())||'?';
+                    html+='<div class="tl2-row" style="height:'+row.rowH+'px">';
+                    html+='<div class="tl2-name-cell"><div class="tl2-av">'+ini+'<\/div><span class="tl2-nm">'+row.owner+'<\/span><\/div>';
+                    html+='<div class="tl2-days-cell">';
+                    for(var c=0;c<n;c++){var ci2=getCI(cols[c],today);html+='<div class="tl2-col-div'+(ci2.isNow?' tl2-col-div-today':'')+(ci2.isHour?' tl2-col-div-hr':'')+'" style="left:'+(c/n*100)+'%;width:'+(1/n*100)+'%"><\/div>';}
+                    if(row.bars.length===0)html+='<div class="tl2-empty">no tasks<\/div>';
+                    for(var bi=0;bi<row.bars.length;bi++){
+                        var bar=row.bars[bi];
+                        var sclr=SC[bar.task.status]||'#094f70';
+                        var top=4+bar._lane*62;
+                        var w=Math.max(bar.rt-bar.lf,0.012)*100;
+                        var tip=bar.task.goal+(bar.task.property?' | '+bar.task.property:'')+(bar.task.project?' | '+bar.task.project:'');
+                        var taskJson2=JSON.stringify(bar.task).replace(/"/g,'&quot;');
+                        html+='<div class="tl2-bar" style="left:'+(bar.lf*100)+'%;width:'+w+'%;top:'+top+'px;height:56px;" title="'+tip.replace(/"/g,'&quot;')+'" data-task="'+taskJson2+'" onclick="openCanvas(JSON.parse(this.dataset.task))">';
+                        html+='<div class="tl2-bar-strip" style="background:'+sclr+'"><\/div>';
+                        html+='<span class="tl2-bar-txt">'+bar.task.goal+'<\/span>';
+                        var ph='';
+                        if(bar.task.property){var pc=TL2_PROP_COLORS[bar.task.property]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(pc,0.12)+';color:'+pc+'">'+bar.task.property+'<\/span>';}
+                        if(bar.task.project){var jc=TL2_PROJ_COLORS[bar.task.project]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(jc,0.12)+';color:'+jc+'">'+bar.task.project+'<\/span>';}
+                        if(ph)html+='<div class="tl2-bar-pills">'+ph+'<\/div>';
+                        html+='<\/div>';
+                    }
+                    html+='<\/div><\/div>';
+                }
+                html+='<\/div>';
+                document.getElementById('tl2-scroll').innerHTML=html;
+            }
+            function renderWeek(){
+                var from=pd(TL2_FROM),to=pd(TL2_TO);if(!from||!to)return;
+                var days=[],d=new Date(from.getTime());while(d<=to){days.push(new Date(d.getTime()));d.setDate(d.getDate()+1);}
+                var totalMs=to.getTime()+86400000-from.getTime();
+                var rows=buildRows(function(owner){return TL2_TASKS.filter(function(t){return ownerMatch(t.owner,owner)&&(t.startDate||t.endDate);}).map(function(t){var ts=pd(t.startDate)||pd(t.endDate),te=pd(t.endDate)||pd(t.startDate);if(!ts||!te)return null;var bs=Math.max(ts.getTime(),from.getTime()),be=Math.min(te.getTime()+86400000,to.getTime()+86400000);if(bs>=be)return null;return{lf:(bs-from.getTime())/totalMs,rt:(be-from.getTime())/totalMs,task:t};});});
+                renderGrid(days,function(day,tod){return{label:fmtDay(day),isNow:sameDay(day,tod),isHour:false};},rows);
+            }
+            function renderDay(){
+                var START=510,END=1050,SLOT=30,TOTAL=540;
+                var slots=[],m=START;while(m<END){slots.push(m);m+=SLOT;}
+                var today=new Date();today.setHours(0,0,0,0);
+                var now=new Date(),nowMin=now.getHours()*60+now.getMinutes();
+                var rows=buildRows(function(owner){return TL2_TASKS.filter(function(t){if(!t.startDate)return false;var ds=pd(t.startDate),de=t.endDate?pd(t.endDate):ds;if(!ds)return false;return ds<=today&&today<=(de||ds)&&ownerMatch(t.owner,owner);}).map(function(t){var ds=pd(t.startDate),de=t.endDate?pd(t.endDate):ds;var sdt=pdt(t.startDate),edt=t.endDate?pdt(t.endDate):null;var sm,em;var isMultiDay=de&&ds.getTime()!==de.getTime();if(isMultiDay){sm=START;em=END;}else if(sdt){sm=Math.max(sdt.tot,START);em=Math.min(edt?edt.tot:sdt.tot+60,END);}else{sm=START;em=END;}if(sm>=em)return null;return{lf:(sm-START)/TOTAL,rt:(em-START)/TOTAL,task:t};});});
+                renderGrid(slots,function(slotMin){return{label:fmtTime(slotMin),isNow:(nowMin>=slotMin&&nowMin<slotMin+SLOT),isHour:(slotMin%60===0)};},rows);
+                if(nowMin>=START&&nowMin<=END){var pct=(nowMin-START)/TOTAL*100;var cells=document.querySelectorAll('.tl2-days-cell');for(var ti=0;ti<cells.length;ti++){var ln=document.createElement('div');ln.className='tl2-now-line';ln.style.left=pct+'%';cells[ti].appendChild(ln);}}
+            }
+            window.tl2Apply=function(){var f=document.getElementById('tl2-from').value,t=document.getElementById('tl2-to').value;if(f&&t)window.location='/Tasks?view=team&tlfrom='+f+'&tlto='+t;};
+            if(TL2_MODE==='today')renderDay();else renderWeek();
+        })();
+        </script>
+    }
+
+</div>
+
+<script>
+const CV_ME     = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(myDisplayName));
+const CV_COLORS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(ownerColorMap));
+const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
+</script>
+
+<!-- ═══ OFF-CANVAS BACKDROP ═══ -->
+<div id="canvas-backdrop"
+     class="fixed inset-0 bg-black/40 z-40 opacity-0 pointer-events-none transition-opacity duration-300"
+     onclick="closeCanvas()"></div>
+
+<style>@@keyframes slideInToast{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}</style>
+<!-- ═══ OFF-CANVAS PANEL ═══ -->
+<div id="task-canvas"
+     class="fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-50 translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+        <div>
+            <h2 id="canvas-title" class="text-lg font-semibold text-gray-900">New Task</h2>
+            <div class="flex items-center gap-2 mt-0.5">
+                <p id="canvas-subtitle" class="text-xs text-gray-400 hidden"></p>
+                <span id="canvas-view-badge" class="hidden text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">View Only</span>
+            </div>
+        </div>
+        <button onclick="closeCanvas()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <!-- View-only placeholder: shown instead of form until user picks an action -->
+    <div id="canvas-view-card" class="hidden flex-1 flex flex-col items-center justify-center gap-8 p-8">
+        <p id="canvas-view-goal" class="text-base font-semibold text-gray-800 text-center leading-snug max-w-xs"></p>
+        <div class="flex flex-col gap-3 w-full max-w-[240px]">
+            <button type="button" id="canvas-edit-btn" onclick="_switchToEditMode()"
+                    class="hidden w-full px-5 py-2.5 text-sm btn-primary rounded-lg flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                Edit Task
+            </button>
+            <button type="button" onclick="_switchToCommentMode()"
+                    class="w-full px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                </svg>
+                Add Comment
+            </button>
+        </div>
+    </div>
+    <form id="canvas-form" class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        @Html.AntiForgeryToken()
+        <input type="hidden" id="cf-id" name="Id" value="0" />
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Goal <span class="text-red-500">*</span></label>
+            <textarea id="cf-goal" name="Goal" rows="3" required placeholder="Describe the task goal…"
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+        </div>
+        <input type="hidden" id="cf-module-id" name="ModuleId" value="" />
+        <input type="hidden" id="cf-client-id" name="ClientId" value="" />
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Module</label>
+                <select id="cf-project" name="Project"
+                        onchange="onModuleChange(this)"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Loading… —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Client</label>
+                <select id="cf-property" name="Property"
+                        onchange="document.getElementById('cf-client-id').value = this.options[this.selectedIndex]?.dataset.cid ?? ''"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Loading… —</option>
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Owner</label>
+                <input type="hidden" id="cf-owner" name="Owner" />
+                @if (User.IsInRole("Admin"))
+                {
+                    @* Admin: custom searchable multi-select picker *@
+                    <div id="cf-owner-picker" class="relative">
+                        <div id="cf-owner-trigger"
+                             onclick="toggleOwnerPicker()"
+                             class="min-h-[38px] w-full border border-gray-200 rounded-lg px-2 py-1.5 flex flex-wrap gap-1 items-center cursor-pointer hover:border-blue-400 bg-white transition-colors">
+                            <span id="cf-owner-placeholder" class="text-gray-400 text-sm px-1">Select owner(s)…</span>
+                            <svg class="w-3.5 h-3.5 text-gray-400 ml-auto flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                        <div id="cf-owner-panel"
+                             class="hidden absolute z-[200] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                            <div class="p-2 border-b border-gray-100">
+                                <input id="cf-owner-search" type="text" placeholder="Search…"
+                                       oninput="_filterOwners(this.value)"
+                                       onclick="event.stopPropagation()"
+                                       class="w-full text-sm px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <ul id="cf-owner-items" class="max-h-44 overflow-y-auto py-1"></ul>
+                        </div>
+                    </div>
+                    <select id="cf-owner-sel" class="hidden" multiple>
+                        @foreach (var o in Model.Owners) {
+                            <option value="@o.Name">@o.Name</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    @* Non-admin: always themselves, read-only *@
+                    <div id="cf-owner-display"
+                         class="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 flex items-center gap-2">
+                        <span class="inline-flex items-center justify-center rounded-full text-white text-xs font-semibold flex-shrink-0"
+                              style="width:22px;height:22px;background:var(--brand)">
+                            @(myDisplayName.Length > 0 ? myDisplayName[0].ToString().ToUpper() : "?")
+                        </span>
+                        <span id="cf-owner-label">@myDisplayName</span>
+                    </div>
+                    <select id="cf-owner-sel" class="hidden">
+                        <option value="@myDisplayName" selected>@myDisplayName</option>
+                    </select>
+                }
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                <select id="cf-status" name="Status" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— None —</option>
+                    @foreach (var ws in Model.WorkStates) { <option value="@ws.Name">@ws.Name</option> }
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
+                <select id="cf-priority" name="Priority" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— None —</option>
+                    @foreach (var pr in TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities) { <option value="@pr">@pr</option> }
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Created Date</label>
+                <div id="cf-createdDate-display"
+                     class="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-500 select-none cursor-default">
+                    @DateTime.Today.ToString("yyyy-MM-dd")
+                </div>
+                <input type="hidden" id="cf-targetDate" name="TargetDate" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Weight (Effort)
+                </label>
+                <select id="cf-weight" name="Weight"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Not set —</option>
+                    <option value="0.5">30 min</option>
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="3">3 hours</option>
+                    <option value="4">4 hours (half day)</option>
+                    <option value="8">8 hours (1 day)</option>
+                    <option value="16">16 hours (2 days)</option>
+                    <option value="24">24 hours (3 days)</option>
+                    <option value="40">40 hours (1 week)</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Expected Start Date/Time</label>
+            <div class="flex gap-2">
+                <input id="cf-startDate-vis" type="date"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="cf-startTime"
+                        class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    <option value="08:30">8:30 AM</option><option value="09:00">9:00 AM</option>
+                    <option value="09:30">9:30 AM</option><option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option><option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option><option value="12:00">12:00 PM</option>
+                    <option value="12:30">12:30 PM</option><option value="13:00">1:00 PM</option>
+                    <option value="13:30">1:30 PM</option><option value="14:00">2:00 PM</option>
+                    <option value="14:30">2:30 PM</option><option value="15:00">3:00 PM</option>
+                    <option value="15:30">3:30 PM</option><option value="16:00">4:00 PM</option>
+                    <option value="16:30">4:30 PM</option><option value="17:00">5:00 PM</option>
+                    <option value="17:30">5:30 PM</option>
+                </select>
+            </div>
+            <input type="hidden" id="cf-startDate" name="StartDate" />
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Expected End Date/Time</label>
+            <div class="flex gap-2">
+                <input id="cf-endDate-vis" type="date"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="cf-endTime"
+                        class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    <option value="08:30">8:30 AM</option><option value="09:00">9:00 AM</option>
+                    <option value="09:30">9:30 AM</option><option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option><option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option><option value="12:00">12:00 PM</option>
+                    <option value="12:30">12:30 PM</option><option value="13:00">1:00 PM</option>
+                    <option value="13:30">1:30 PM</option><option value="14:00">2:00 PM</option>
+                    <option value="14:30">2:30 PM</option><option value="15:00">3:00 PM</option>
+                    <option value="15:30">3:30 PM</option><option value="16:00">4:00 PM</option>
+                    <option value="16:30">4:30 PM</option><option value="17:00">5:00 PM</option>
+                    <option value="17:30">5:30 PM</option>
+                </select>
+            </div>
+            <input type="hidden" id="cf-endDate" name="EndDate" />
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Actual Start Date/Time</label>
+            <div class="flex gap-2">
+                <input id="cf-actualStartDate-vis" type="date"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="cf-actualStartTime"
+                        class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    <option value="08:30">8:30 AM</option><option value="09:00">9:00 AM</option>
+                    <option value="09:30">9:30 AM</option><option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option><option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option><option value="12:00">12:00 PM</option>
+                    <option value="12:30">12:30 PM</option><option value="13:00">1:00 PM</option>
+                    <option value="13:30">1:30 PM</option><option value="14:00">2:00 PM</option>
+                    <option value="14:30">2:30 PM</option><option value="15:00">3:00 PM</option>
+                    <option value="15:30">3:30 PM</option><option value="16:00">4:00 PM</option>
+                    <option value="16:30">4:30 PM</option><option value="17:00">5:00 PM</option>
+                    <option value="17:30">5:30 PM</option>
+                </select>
+            </div>
+            <input type="hidden" id="cf-actualStartDate" name="ActualStartDate" />
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Actual End Date/Time</label>
+            <div class="flex gap-2">
+                <input id="cf-actualEndDate-vis" type="date"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="cf-actualEndTime"
+                        class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    <option value="08:30">8:30 AM</option><option value="09:00">9:00 AM</option>
+                    <option value="09:30">9:30 AM</option><option value="10:00">10:00 AM</option>
+                    <option value="10:30">10:30 AM</option><option value="11:00">11:00 AM</option>
+                    <option value="11:30">11:30 AM</option><option value="12:00">12:00 PM</option>
+                    <option value="12:30">12:30 PM</option><option value="13:00">1:00 PM</option>
+                    <option value="13:30">1:30 PM</option><option value="14:00">2:00 PM</option>
+                    <option value="14:30">2:30 PM</option><option value="15:00">3:00 PM</option>
+                    <option value="15:30">3:30 PM</option><option value="16:00">4:00 PM</option>
+                    <option value="16:30">4:30 PM</option><option value="17:00">5:00 PM</option>
+                    <option value="17:30">5:30 PM</option>
+                </select>
+            </div>
+            <input type="hidden" id="cf-actualEndDate" name="ActualEndDate" />
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Related Files</label>
+            <input id="cf-relatedFiles" name="RelatedFiles" type="text" placeholder="Links or file names…"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+            <textarea id="cf-notes" name="Notes" rows="4" placeholder="Additional context…"
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+        </div>
+        <!-- Comments — shown for existing tasks, always enabled -->
+        <div id="cf-comments-section" class="hidden border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                    Comments
+                </h3>
+                <span id="cf-comment-count" class="text-[10px] text-gray-400"></span>
+            </div>
+            <div id="cf-comments-list" class="space-y-3 max-h-56 overflow-y-auto mb-3 pr-1"></div>
+            <!-- Input row -->
+            <div class="flex gap-2 items-end bg-gray-50 rounded-xl p-2 border border-gray-200 focus-within:border-blue-400 focus-within:bg-white transition-colors">
+                <div id="cf-my-avatar"
+                     class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[11px] font-bold self-end mb-0.5"
+                     style="background:@(ownerColorMap.GetValueOrDefault(myDisplayName, "#094f70"))">@(myDisplayName.Length > 0 ? myDisplayName[0].ToString().ToUpper() : "?")</div>
+                <textarea id="cf-comment-text" placeholder="Write a comment… (Ctrl+Enter to post)" rows="1"
+                          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+                          onkeydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitComment();}"
+                          class="flex-1 bg-transparent border-0 text-sm text-gray-800 placeholder-gray-400 resize-none focus:outline-none py-1 leading-relaxed"></textarea>
+                <button type="button" id="cf-comment-btn" onclick="submitComment()"
+                        class="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 flex items-center justify-center text-white transition-colors self-end disabled:opacity-40"
+                        title="Post comment (Ctrl+Enter)">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                </button>
+            </div>
+        </div>
+    </form>
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 shrink-0">
+        <button type="button" onclick="closeCanvas()"
+                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button type="button" id="canvas-save-btn" onclick="submitCanvas()"
+                class="px-5 py-2 text-sm btn-primary rounded-lg flex items-center gap-2">
+            <span id="canvas-save-label">Save Task</span>
+            <svg id="canvas-spinner" class="w-4 h-4 animate-spin hidden" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- ═══ SHARED STATUS DROPDOWN (fixed-position, escapes overflow:hidden) ═══ -->
+<div id="status-dropdown"
+     class="fixed z-[9999] hidden bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-40"></div>
+
+@section Scripts {
+<script>
+function splitDateTime(s) {
+    if (!s) return { date: '', time: '' };
+    const parts = s.trim().split(/[T ]/);
+    return { date: parts[0] || '', time: parts.length > 1 ? parts[1].substring(0, 5) : '' };
+}
+
+// Convert any stored date string to yyyy-MM-dd for <input type="date">
+function toDateInput(s) {
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;               // already ISO
+    var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; // dd/MM/yyyy
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+}
+
+const backdrop = document.getElementById('canvas-backdrop');
+const panel    = document.getElementById('task-canvas');
+
+let _cvTaskId   = null;
+let _cvTask     = null;    // current task object open in canvas
+let _cvEditable = false;   // current canvas editable state
+let _modulesCache = null;  // cache modules for session
+
+// Load modules into the Module dropdown, then load clients. isEditable re-applies disabled state after load.
+async function _loadModules(moduleId, moduleName, clientId, clientName, isEditable) {
+    const sel = document.getElementById('cf-project');
+    sel.innerHTML = '<option value="">— Loading… —</option>';
+    try {
+        if (!_modulesCache || _modulesCache.length === 0) {
+            const r = await fetch('/Tasks/GetModules');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            _modulesCache = await r.json();
+        }
+        sel.innerHTML = '<option value="">— None —</option>';
+        _modulesCache.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value       = m.name;
+            opt.dataset.mid = m.id;
+            opt.textContent = m.name;
+            if (moduleId ? m.id === moduleId : (moduleName && m.name === moduleName)) {
+                opt.selected = true;
+                document.getElementById('cf-module-id').value = m.id;
+            }
+            sel.appendChild(opt);
+        });
+    } catch(e) {
+        sel.innerHTML = '<option value="">— Failed to load —</option>';
+        console.error('GetModules error:', e);
+    }
+    // Load clients — filtered by selected module, or all clients if none selected
+    const selMid = parseInt(document.getElementById('cf-module-id').value) || 0;
+    await _loadClients(selMid, clientId, clientName);
+
+    // Re-apply disabled state after async population (user may have clicked Edit while loading)
+    if (!_cvEditable) {
+        document.querySelectorAll('#canvas-form select').forEach(el => {
+            el.disabled = true;
+            el.classList.add('bg-gray-50', 'cursor-default');
+        });
+    }
+}
+
+// Load clients for the selected module ID
+async function _loadClients(moduleId, restoreClientId, restoreClientName) {
+    const sel = document.getElementById('cf-property');
+    sel.innerHTML = '<option value="">— Loading… —</option>';
+    try {
+        const r = await fetch('/Tasks/GetClients?moduleId=' + moduleId);
+        const clients = await r.json();
+        sel.innerHTML = '<option value="">— None —</option>';
+        clients.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value       = c.name;
+            opt.dataset.cid = c.id;
+            opt.textContent = c.name + (c.fromCompany ? ' ★' : '');
+            opt.title       = [c.contactPerson, c.contactNo, c.email].filter(Boolean).join(' · ');
+            if (restoreClientId ? c.id === restoreClientId : c.name === restoreClientName) {
+                opt.selected = true;
+                document.getElementById('cf-client-id').value = c.id;
+            }
+            sel.appendChild(opt);
+        });
+        if (!clients.length)
+            sel.innerHTML = '<option value="">— No clients found —</option>';
+    } catch(e) {
+        sel.innerHTML = '<option value="">— Failed to load —</option>';
+        console.error('GetClients error:', e);
+    }
+}
+
+// Called when the Module dropdown changes
+async function onModuleChange(selectEl) {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    document.getElementById('cf-module-id').value = opt ? (opt.dataset.mid ?? '') : '';
+    document.getElementById('cf-client-id').value = '';
+    const mid = parseInt(document.getElementById('cf-module-id').value) || 0;
+    await _loadClients(mid, null, '');
+}
+
+// ── Owner picker (admin only) ─────────────────────────────
+let _ownerSelected = new Set();
+let _ownerPickerOpen = false;
+
+function _ownerAvatar(name) {
+    const clr = (CV_COLORS && CV_COLORS[name]) ? CV_COLORS[name] : '#64748b';
+    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${clr};color:#fff;font-size:10px;font-weight:700;flex-shrink:0">${(name||'?')[0].toUpperCase()}</span>`;
+}
+
+function _renderOwnerChips() {
+    const trigger = document.getElementById('cf-owner-trigger');
+    if (!trigger) return;
+    const ph = document.getElementById('cf-owner-placeholder');
+    // Remove old chips (keep placeholder + chevron)
+    trigger.querySelectorAll('.owner-chip').forEach(c => c.remove());
+    if (_ownerSelected.size === 0) {
+        ph.classList.remove('hidden');
+    } else {
+        ph.classList.add('hidden');
+        const chevron = trigger.querySelector('svg');
+        [..._ownerSelected].forEach(name => {
+            const chip = document.createElement('span');
+            chip.className = 'owner-chip inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-full text-xs font-medium text-white';
+            chip.style.background = (CV_COLORS && CV_COLORS[name]) ? CV_COLORS[name] : '#64748b';
+            chip.innerHTML = `${_ownerAvatar(name)}<span>${name}</span>`
+                + `<button type="button" onclick="event.stopPropagation();_toggleOwner('${name.replace(/'/g,"\\'")}')"
+                           style="margin-left:2px;opacity:.7;line-height:1" class="hover:opacity-100">✕</button>`;
+            trigger.insertBefore(chip, chevron);
+        });
+    }
+    document.getElementById('cf-owner').value = [..._ownerSelected].join(', ');
+}
+
+function _renderOwnerList(filter) {
+    const ul = document.getElementById('cf-owner-items');
+    if (!ul) return;
+    const allNames = [...document.getElementById('cf-owner-sel').options].map(o => o.value);
+    const q = (filter || '').toLowerCase();
+    ul.innerHTML = allNames
+        .filter(n => !q || n.toLowerCase().includes(q))
+        .map(n => {
+            const checked = _ownerSelected.has(n);
+            return `<li onclick="_toggleOwner('${n.replace(/'/g,"\\'")}')"
+                        class="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50 select-none text-sm ${checked ? 'bg-blue-50/50' : ''}">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${(CV_COLORS&&CV_COLORS[n])||'#64748b'};color:#fff;font-size:12px;font-weight:700;flex-shrink:0">${n[0].toUpperCase()}</span>
+                <span class="flex-1 ${checked ? 'font-medium text-gray-900' : 'text-gray-700'}">${n}</span>
+                ${checked ? '<svg class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>' : ''}
+            </li>`;
+        }).join('');
+}
+
+function _toggleOwner(name) {
+    if (_ownerSelected.has(name)) _ownerSelected.delete(name);
+    else _ownerSelected.add(name);
+    _renderOwnerChips();
+    _renderOwnerList(document.getElementById('cf-owner-search')?.value);
+}
+
+function _filterOwners(q) { _renderOwnerList(q); }
+
+function toggleOwnerPicker() {
+    _ownerPickerOpen = !_ownerPickerOpen;
+    const panel = document.getElementById('cf-owner-panel');
+    panel.classList.toggle('hidden', !_ownerPickerOpen);
+    if (_ownerPickerOpen) {
+        document.getElementById('cf-owner-search').value = '';
+        _renderOwnerList('');
+        document.getElementById('cf-owner-search').focus();
+    }
+}
+
+document.addEventListener('click', e => {
+    if (_ownerPickerOpen && !e.target.closest('#cf-owner-picker')) {
+        _ownerPickerOpen = false;
+        document.getElementById('cf-owner-panel')?.classList.add('hidden');
+    }
+});
+
+// Restore owner field — admin: custom picker; non-admin: locked to self
+function _restoreOwner(ownerValue) {
+    if (CV_ADMIN) {
+        _ownerSelected = new Set(
+            ownerValue.split(',').map(s => s.trim()).filter(Boolean)
+        );
+        _renderOwnerChips();
+        if (_ownerPickerOpen) _renderOwnerList(document.getElementById('cf-owner-search')?.value);
+    } else {
+        const displayName = ownerValue || CV_ME;
+        document.getElementById('cf-owner-label').textContent = displayName;
+        document.getElementById('cf-owner').value = CV_ME;
+    }
+}
+
+function openCanvas(task) {
+    const isNew      = !task;
+    const isEditable = isNew || task.status === 'Not Started';
+    _cvTaskId = task ? task.id : null;
+    _cvTask   = task || null;
+
+    // Clear form fields
+    ['cf-id','cf-goal','cf-owner',
+     'cf-status','cf-priority','cf-targetDate','cf-weight',
+     'cf-startDate-vis','cf-startTime','cf-startDate',
+     'cf-endDate-vis','cf-endTime','cf-endDate',
+     'cf-actualStartDate-vis','cf-actualStartTime',
+     'cf-actualEndDate-vis','cf-actualEndTime',
+     'cf-actualStartDate','cf-actualEndDate',
+     'cf-relatedFiles','cf-notes']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('cf-comment-text').value = '';
+    document.getElementById('cf-module-id').value = '';
+    document.getElementById('cf-client-id').value = '';
+    // Reset owner field
+    _restoreOwner('');
+
+    if (task) {
+        document.getElementById('canvas-title').textContent    = isEditable ? 'Edit Task' : 'Task Details';
+        document.getElementById('canvas-subtitle').textContent = 'Task #' + task.id;
+        document.getElementById('canvas-subtitle').classList.remove('hidden');
+        document.getElementById('canvas-save-label').textContent = 'Save Changes';
+        document.getElementById('cf-id').value          = task.id;
+        document.getElementById('cf-goal').value = task.goal ?? '';
+        _restoreOwner(task.owner ?? '');
+        document.getElementById('cf-status').value      = task.status      ?? '';
+        document.getElementById('cf-priority').value    = task.priority    ?? '';
+        const createdDateStr = task.createdAt ? task.createdAt.split('T')[0] : toDateInput(task.targetDate);
+        document.getElementById('cf-createdDate-display').textContent = createdDateStr || '@DateTime.Today.ToString("yyyy-MM-dd")';
+        document.getElementById('cf-targetDate').value  = createdDateStr;
+        const sd = splitDateTime(task.startDate);
+        document.getElementById('cf-startDate-vis').value = sd.date;
+        document.getElementById('cf-startTime').value     = sd.time;
+        const ed = splitDateTime(task.endDate);
+        document.getElementById('cf-endDate-vis').value = ed.date;
+        document.getElementById('cf-endTime').value     = ed.time;
+        const asd = splitDateTime(task.actualStartDate);
+        document.getElementById('cf-actualStartDate-vis').value = asd.date;
+        document.getElementById('cf-actualStartTime').value     = asd.time;
+        const aed = splitDateTime(task.actualEndDate);
+        document.getElementById('cf-actualEndDate-vis').value = aed.date;
+        document.getElementById('cf-actualEndTime').value     = aed.time;
+        document.getElementById('cf-weight').value       = task.weight       ?? '';
+        document.getElementById('cf-relatedFiles').value = task.relatedFiles ?? '';
+        document.getElementById('cf-notes').value        = task.notes        ?? '';
+    } else {
+        document.getElementById('canvas-title').textContent = 'New Task';
+        document.getElementById('canvas-subtitle').classList.add('hidden');
+        document.getElementById('canvas-save-label').textContent = 'Save Task';
+        // Default target date to today for new tasks
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('cf-targetDate').value = todayStr;
+        document.getElementById('cf-createdDate-display').textContent = todayStr;
+        // Non-admin: default owner to themselves; admin: clear selection
+        _restoreOwner(CV_ADMIN ? '' : CV_ME);
+    }
+
+    // Toggle edit / view-only mode
+    _applyCanvasMode(isEditable, task);
+
+    // Show comments for existing tasks
+    const commSection = document.getElementById('cf-comments-section');
+    if (task) {
+        commSection.classList.remove('hidden');
+        _loadComments(task.id);
+    } else {
+        commSection.classList.add('hidden');
+    }
+
+    // Open canvas immediately — dropdowns load in background
+    backdrop.classList.remove('opacity-0','pointer-events-none');
+    backdrop.classList.add('opacity-100');
+    panel.classList.remove('translate-x-full');
+    document.body.style.overflow = 'hidden';
+
+    // Load module + client dropdowns after panel is visible
+    _loadModules(task ? (task.moduleId ?? null) : null,
+                 task ? (task.project   ?? '')  : '',
+                 task ? (task.clientId  ?? null) : null,
+                 task ? (task.property  ?? '')  : '',
+                 isEditable);
+}
+
+function _applyCanvasMode(isEditable, task) {
+    _cvEditable = !!isEditable;
+    const viewCard = document.getElementById('canvas-view-card');
+    const form     = document.getElementById('canvas-form');
+
+    if (!isEditable && task) {
+        // View-only: show the two-button card, hide the form
+        viewCard.classList.remove('hidden');
+        form.classList.add('hidden');
+        document.getElementById('canvas-view-goal').textContent = task.goal || '';
+        const owners = (task.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        const canEdit = CV_ADMIN || owners.includes((CV_ME || '').toLowerCase());
+        document.getElementById('canvas-edit-btn').classList.toggle('hidden', !canEdit);
+    } else {
+        // Edit / new: hide the card, show the form with fields enabled
+        viewCard.classList.add('hidden');
+        form.classList.remove('hidden');
+        document.querySelectorAll('#canvas-form input:not([type=hidden]):not(#cf-comment-text), #canvas-form select, #canvas-form textarea:not(#cf-comment-text)')
+            .forEach(el => {
+                el.disabled = !isEditable;
+                el.classList.toggle('bg-gray-50', !isEditable);
+                el.classList.toggle('cursor-default', !isEditable);
+            });
+        const ownerPicker = document.getElementById('cf-owner-picker');
+        if (ownerPicker) ownerPicker.style.pointerEvents = isEditable ? '' : 'none';
+    }
+
+    document.getElementById('canvas-save-btn').classList.toggle('hidden', !isEditable);
+    document.getElementById('canvas-view-badge').classList.add('hidden');
+}
+
+function _switchToEditMode() {
+    document.getElementById('canvas-title').textContent = 'Edit Task';
+    _applyCanvasMode(true, _cvTask);
+}
+
+function _switchToCommentMode() {
+    // Show form in read-only mode (fields stay disabled; comment box is always enabled)
+    document.getElementById('canvas-view-card').classList.add('hidden');
+    const form = document.getElementById('canvas-form');
+    form.classList.remove('hidden');
+    setTimeout(() => {
+        const section = document.getElementById('cf-comments-section');
+        if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const box = document.getElementById('cf-comment-text');
+        if (box) box.focus();
+    }, 100);
+}
+
+function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _relTime(iso) {
+    const d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (d < 60)  return 'just now';
+    if (d < 3600) return Math.floor(d/60) + 'm ago';
+    if (d < 86400) return Math.floor(d/3600) + 'h ago';
+    if (d < 604800) return Math.floor(d/86400) + 'd ago';
+    return new Date(iso).toLocaleDateString(undefined, {day:'numeric',month:'short',year:'numeric'});
+}
+
+function _avatarHtml(name, size) {
+    const clr = (CV_COLORS && CV_COLORS[name]) ? CV_COLORS[name] : '#64748b';
+    const init = name ? name[0].toUpperCase() : '?';
+    const sz = size || 28;
+    return `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${clr};color:#fff;font-size:${Math.round(sz*0.43)}px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${_esc(init)}</div>`;
+}
+
+async function _loadComments(taskId) {
+    const list  = document.getElementById('cf-comments-list');
+    const count = document.getElementById('cf-comment-count');
+    list.innerHTML = '<div class="flex items-center gap-2 py-3 justify-center"><svg class="w-4 h-4 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg><span class="text-xs text-gray-400">Loading…</span></div>';
+    try {
+        const r = await fetch('/Tasks/GetComments?taskId=' + taskId);
+        const comments = await r.json();
+        count.textContent = comments.length ? comments.length + ' comment' + (comments.length !== 1 ? 's' : '') : '';
+        if (!comments.length) {
+            list.innerHTML = `<div class="flex flex-col items-center py-6 text-center">
+                <svg class="w-8 h-8 text-gray-200 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                <p class="text-xs text-gray-400">No comments yet</p>
+                <p class="text-[10px] text-gray-300 mt-0.5">Be the first to add one</p>
+            </div>`;
+        } else {
+            list.innerHTML = comments.map(c => {
+                const isMe = c.changedBy === CV_ME;
+                const bg   = isMe ? 'background:#eff6ff;border:1px solid #bfdbfe' : 'background:#f8fafc;border:1px solid #e2e8f0';
+                return `<div style="display:flex;gap:8px;align-items:flex-start${isMe ? ';flex-direction:row-reverse' : ''}">
+                    ${_avatarHtml(c.changedBy, 28)}
+                    <div style="max-width:calc(100% - 40px)">
+                        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;${isMe ? 'flex-direction:row-reverse' : ''}">
+                            <span style="font-size:11.5px;font-weight:600;color:#1e293b">${_esc(c.changedBy)||'Unknown'}</span>
+                            <span style="font-size:10px;color:#94a3b8" title="${_esc(c.changedAt)}">${_relTime(c.changedAtIso)}</span>
+                        </div>
+                        <div style="padding:8px 11px;border-radius:${isMe ? '12px 4px 12px 12px' : '4px 12px 12px 12px'};${bg}">
+                            <p style="font-size:13px;color:#334155;white-space:pre-wrap;line-height:1.5;margin:0">${_esc(c.details)}</p>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            list.scrollTop = list.scrollHeight;
+        }
+    } catch(e) { list.innerHTML = `<p style="font-size:12px;color:#f87171;padding:8px 0">Could not load comments — ${e.message || 'network error'}. Try closing and reopening the task.</p>`; }
+}
+
+async function submitComment() {
+    if (!_cvTaskId) return;
+    const ta  = document.getElementById('cf-comment-text');
+    const btn = document.getElementById('cf-comment-btn');
+    const text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    const token = document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value;
+    btn.disabled = true;
+    const fd = new FormData();
+    fd.append('taskId', _cvTaskId);
+    fd.append('comment', text);
+    fd.append('__RequestVerificationToken', token);
+    try {
+        const r = await fetch('/Tasks/AddComment', { method:'POST', body: fd });
+        const j = await r.json();
+        if (j.success) {
+            ta.value = '';
+            ta.style.height = 'auto';
+            await _loadComments(_cvTaskId);
+        } else showToast(j.error || 'Failed to post comment.', 'error');
+    } catch { showToast('Failed to post comment.', 'error'); }
+    finally { btn.disabled = false; ta.focus(); }
+}
+
+function closeCanvas() {
+    backdrop.classList.add('opacity-0','pointer-events-none');
+    backdrop.classList.remove('opacity-100');
+    panel.classList.add('translate-x-full');
+    document.body.style.overflow = '';
+}
+
+async function submitCanvas() {
+    // Combine date + time into hidden fields before submitting
+    const combDT = (d, t) => d ? (t ? d + ' ' + t : d) : '';
+    document.getElementById('cf-startDate').value = combDT(
+        document.getElementById('cf-startDate-vis').value,
+        document.getElementById('cf-startTime').value
+    );
+    document.getElementById('cf-endDate').value = combDT(
+        document.getElementById('cf-endDate-vis').value,
+        document.getElementById('cf-endTime').value
+    );
+    document.getElementById('cf-actualStartDate').value = combDT(
+        document.getElementById('cf-actualStartDate-vis').value,
+        document.getElementById('cf-actualStartTime').value
+    );
+    document.getElementById('cf-actualEndDate').value = combDT(
+        document.getElementById('cf-actualEndDate-vis').value,
+        document.getElementById('cf-actualEndTime').value
+    );
+
+    // Validate start <= end date
+    const sv = document.getElementById('cf-startDate-vis').value;
+    const ev = document.getElementById('cf-endDate-vis').value;
+    if (sv && ev && ev < sv) {
+        showToast('End date cannot be before start date.', 'error');
+        document.getElementById('cf-endDate-vis').focus();
+        return;
+    }
+
+    // Sync owner → hidden field before FormData reads it
+    if (CV_ADMIN) {
+        document.getElementById('cf-owner').value = [..._ownerSelected].join(', ');
+    }
+    // Non-admin: cf-owner already locked to CV_ME by _restoreOwner
+
+    const form = document.getElementById('canvas-form');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const btn = document.getElementById('canvas-save-btn');
+    const sp  = document.getElementById('canvas-spinner');
+    btn.disabled = true; sp.classList.remove('hidden');
+    try {
+        const r = await fetch('/Tasks/Save', { method:'POST', body: new FormData(form) });
+        const j = await r.json();
+        if (j.success) {
+            const isEdit = !!document.getElementById('cf-id').value;
+            sessionStorage.setItem('scrollY', window.scrollY);
+            sessionStorage.setItem('__toast', JSON.stringify({ msg: isEdit ? 'Task updated successfully.' : 'New task created.', type: 'success' }));
+            window.location.reload();
+        } else {
+            showToast(j.error ?? 'Could not save task.', 'error');
+        }
+    } catch (e) { showToast('Save failed: ' + e.message, 'error'); }
+    finally { btn.disabled = false; sp.classList.add('hidden'); }
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCanvas(); });
+
+function toggleDetail(detailId, row) {
+    const d = document.getElementById(detailId);
+    if (!d) return;
+    const hidden = d.classList.contains('hidden');
+    d.classList.toggle('hidden', !hidden);
+    if (row.dataset.overdue !== 'true') row.classList.toggle('bg-blue-50/60', hidden);
+}
+
+// ── Inline status (fixed-position dropdown, not clipped by overflow:hidden) ──
+const _wsData = @Html.Raw(workStatesJson);
+const _statusDd = document.getElementById('status-dropdown');
+let   _statusDdBtn = null;
+
+function closeStatusDropdown() {
+    _statusDd.classList.add('hidden');
+    _statusDdBtn = null;
+}
+
+function toggleStatusMenu(btn) {
+    if (_statusDdBtn === btn) { closeStatusDropdown(); return; }
+    closeStatusDropdown();
+
+    const taskId    = btn.dataset.taskId;
+    const curStatus = btn.dataset.curStatus;
+
+    _statusDd.innerHTML = '';
+    _wsData.forEach(ws => {
+        const isCur = ws.name === curStatus;
+        const item  = document.createElement('button');
+        item.type   = 'button';
+        item.className = 'w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 '
+                       + (isCur ? 'font-semibold text-blue-600' : 'text-gray-700');
+        item.innerHTML  = `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${ws.color}"></span>${ws.name}`
+                        + (isCur ? '<span class="ml-auto text-blue-600">✓</span>' : '');
+        item.addEventListener('click', () => setTaskStatus(taskId, ws.name));
+        _statusDd.appendChild(item);
+    });
+
+    const rect = btn.getBoundingClientRect();
+    _statusDd.style.top  = (rect.bottom + 4) + 'px';
+    _statusDd.style.left = rect.left + 'px';
+    _statusDd.classList.remove('hidden');
+
+    // Flip left if overflowing right edge
+    const ddRect = _statusDd.getBoundingClientRect();
+    if (ddRect.right > window.innerWidth - 8)
+        _statusDd.style.left = (rect.right - _statusDd.offsetWidth) + 'px';
+
+    _statusDdBtn = btn;
+}
+
+async function setTaskStatus(taskId, status) {
+    closeStatusDropdown();
+    const btn = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg> Saving…';
+    }
+    const fd = new FormData();
+    fd.append('id', taskId);
+    fd.append('status', status);
+    fd.append('__RequestVerificationToken',
+        document.querySelector('[name=__RequestVerificationToken]').value);
+    try {
+        const r = await fetch('/Tasks/UpdateStatus', { method:'POST', body: fd });
+        const j = await r.json();
+        if (j.success) { sessionStorage.setItem('scrollY', window.scrollY); window.location.reload(); }
+        else {
+            showToast(j.error || 'Could not update status.', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = status; }
+        }
+    } catch (e) {
+        showToast('Failed: ' + e.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = status; }
+    }
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#status-dropdown') && !e.target.closest('[data-task-id]'))
+        closeStatusDropdown();
+});
+document.addEventListener('scroll', closeStatusDropdown, true);
+
+// Restore scroll after reload
+window.addEventListener('DOMContentLoaded', () => {
+    const y = sessionStorage.getItem('scrollY');
+    if (y) { window.scrollTo(0, parseInt(y)); sessionStorage.removeItem('scrollY'); }
+});
+
+// ── Kanban drag-and-drop ──────────────────────────────────
+let _kDragCard = null, _kDragId = null, _kDropLocked = false;
+
+function handleKanbanDragStart(e) {
+    if (_kDropLocked) { e.preventDefault(); return; } // block new drags while confirm is open
+    _kDragCard = e.currentTarget;
+    _kDragId   = e.currentTarget.dataset.taskId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', _kDragId);
+    requestAnimationFrame(() => {
+        if (_kDragCard) _kDragCard.classList.add('opacity-40', 'scale-95');
+    });
+}
+
+function handleKanbanDragEnd(e) {
+    if (_kDragCard) _kDragCard.classList.remove('opacity-40', 'scale-95');
+    document.querySelectorAll('.kanban-col-body').forEach(c =>
+        c.classList.remove('ring-2', 'ring-inset', 'ring-blue-400', 'bg-blue-50/40'));
+    if (!_kDropLocked) _kDragCard = null; // keep reference if confirm dialog is open
+}
+
+async function handleKanbanDrop(e, colBody, newStatus) {
+    e.preventDefault();
+    colBody.classList.remove('ring-2', 'ring-inset', 'ring-blue-400', 'bg-blue-50/40');
+    if (!_kDragCard || _kDropLocked) return;
+
+    // Capture locally before clearing globals — prevents race if another drag starts
+    const card      = _kDragCard;
+    const taskId    = _kDragId;
+    const srcCol    = card.closest('.kanban-col-body');
+    _kDragCard = null; _kDragId = null;
+    card.classList.remove('opacity-40', 'scale-95');
+    _kDropLocked = true; // block new drags until confirm resolves
+
+    if (srcCol === colBody) return;  // same column — no-op
+
+    // Confirmation before moving
+    const taskGoal  = card.querySelector('p')?.textContent?.trim() ?? 'this task';
+    const oldStatus = srcCol?.dataset.colStatus ?? '';
+    const short     = taskGoal.length > 55 ? taskGoal.slice(0, 52) + '…' : taskGoal;
+    const confirmed = await Swal.fire({
+        title: 'Move task?',
+        html: `<span style="font-size:.85rem;color:#475569">"${short}"</span><br><br>`
+            + `<span style="color:#94a3b8;font-size:.8rem">${oldStatus || '—'}</span>`
+            + ` <span style="color:#094f70;font-weight:700"> → </span>`
+            + `<span style="color:#0f172a;font-size:.85rem;font-weight:600">${newStatus}</span>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#094f70',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Move',
+        cancelButtonText: 'Cancel',
+        reverseButtons: true,
+        focusCancel: true,
+    });
+    _kDropLocked = false;
+    if (!confirmed.isConfirmed) return;
+
+    // Move card in DOM
+    colBody.querySelector('.kanban-empty')?.classList.add('hidden');
+    colBody.appendChild(card);
+
+    if (srcCol && srcCol.querySelectorAll('.kanban-card').length === 0)
+        srcCol.querySelector('.kanban-empty')?.classList.remove('hidden');
+
+    _kanbanRefreshCount(srcCol?.closest('[data-kanban-col]'));
+    _kanbanRefreshCount(colBody.closest('[data-kanban-col]'));
+
+    // Persist to server
+    const fd = new FormData();
+    fd.append('id', taskId);
+    fd.append('status', newStatus);
+    fd.append('__RequestVerificationToken',
+        document.querySelector('[name=__RequestVerificationToken]').value);
+    try {
+        const r = await fetch('/Tasks/UpdateStatus', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!j.success) { showToast('Update failed: ' + j.error, 'error'); location.reload(); }
+    } catch (err) { showToast('Network error: ' + err.message, 'error'); location.reload(); }
+}
+
+function _kanbanRefreshCount(colEl) {
+    if (!colEl) return;
+    const n = colEl.querySelectorAll('.kanban-card').length;
+    const badge = colEl.querySelector('.kanban-count');
+    if (badge) badge.textContent = n;
+}
+</script>
+}

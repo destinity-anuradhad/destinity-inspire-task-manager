@@ -1,0 +1,487 @@
+@{
+    ViewData["Title"] = "Master Files";
+    var projects    = ViewBag.Projects    as List<TaskTracker.Models.ProjectItem>  ?? [];
+    var properties  = ViewBag.Properties  as List<TaskTracker.Models.PropertyItem> ?? [];
+    var users       = ViewBag.Users       as List<TaskTracker.Models.AppUser>      ?? [];
+    var workStates  = ViewBag.WorkStates  as List<TaskTracker.Models.WorkState>    ?? [];
+    var activeTab   = ViewBag.ActiveTab   as string ?? "projects";
+
+    string[] palette = [
+        "#094f70","#f47920","#3b82f6","#10b981",
+        "#f59e0b","#ef4444","#8b5cf6","#ec4899",
+        "#14b8a6","#6366f1","#f97316","#64748b"
+    ];
+}
+
+<div class="space-y-5">
+
+    <!-- Header -->
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Master Files</h1>
+            <p>Manage Projects, Properties, Work States and Users</p>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200">
+        <nav class="flex gap-1 -mb-px">
+            @{
+                string TabClass(string tab) => activeTab == tab
+                    ? "tab-active px-5 py-2.5 text-sm rounded-t-lg bg-blue-50"
+                    : "tab-inactive px-5 py-2.5 text-sm rounded-t-lg hover:bg-gray-50 transition-colors";
+            }
+            <a href="/Master?tab=projects" class="@TabClass("projects")">
+                Projects
+                <span class="ml-1.5 text-xs @(activeTab=="projects"?"badge-brand":"bg-gray-100 text-gray-500") rounded-full px-1.5 py-0.5 font-bold">@projects.Count</span>
+            </a>
+            <a href="/Master?tab=properties" class="@TabClass("properties")">
+                Properties
+                <span class="ml-1.5 text-xs @(activeTab=="properties"?"badge-brand":"bg-gray-100 text-gray-500") rounded-full px-1.5 py-0.5 font-bold">@properties.Count</span>
+            </a>
+            <a href="/Master?tab=workstates" class="@TabClass("workstates")">
+                Work States
+                <span class="ml-1.5 text-xs @(activeTab=="workstates"?"badge-brand":"bg-gray-100 text-gray-500") rounded-full px-1.5 py-0.5 font-bold">@workStates.Count</span>
+            </a>
+            <a href="/Master?tab=users" class="@TabClass("users")">
+                Users
+                <span class="ml-1.5 text-xs @(activeTab=="users"?"badge-brand":"bg-gray-100 text-gray-500") rounded-full px-1.5 py-0.5 font-bold">@users.Count</span>
+            </a>
+        </nav>
+    </div>
+
+    @* ── Projects Tab ─────────────────────────────────────────── *@
+    @if (activeTab == "projects")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                <p class="text-xs text-gray-500">@projects.Count project@(projects.Count == 1 ? "" : "s")</p>
+                <button type="button" onclick="openMcCanvas('new-project', null)"
+                        class="btn-primary text-sm px-4 py-1.5 rounded-lg flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Project
+                </button>
+            </div>
+
+            @if (!projects.Any())
+            {
+                <div class="text-center py-12 text-gray-400">
+                    <svg class="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    <p class="text-sm">No projects yet. Add one to get started.</p>
+                </div>
+            }
+            else
+            {
+                <ul class="divide-y divide-gray-50">
+                    @foreach (var item in projects)
+                    {
+                        var pColor = item.Color ?? "#094f70";
+                        <li class="px-5 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors group">
+                            <div class="w-3 h-3 rounded-full flex-shrink-0" style="background:@pColor"></div>
+                            <span class="flex-1 text-sm text-gray-800 font-medium">@item.Name</span>
+                            <div class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
+                                <button type="button"
+                                        onclick="openMcCanvas('edit-project', {id:@item.Id, name:@System.Text.Json.JsonSerializer.Serialize(item.Name), color:'@pColor'})"
+                                        class="p-1.5 text-gray-400 hover:text-brand hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <form method="post" action="/Master/DeleteProject" class="inline" id="del-proj-@item.Id">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@item.Id" />
+                                    <button type="button" onclick="swalDelete(document.getElementById('del-proj-@item.Id'), '@item.Name.Replace("'","\\'")')" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @* ── Properties Tab ───────────────────────────────────────── *@
+    @if (activeTab == "properties")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                <p class="text-xs text-gray-500">@properties.Count propert@(properties.Count == 1 ? "y" : "ies")</p>
+                <button type="button" onclick="openMcCanvas('new-property', null)"
+                        class="btn-primary text-sm px-4 py-1.5 rounded-lg flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add Property
+                </button>
+            </div>
+
+            @if (!properties.Any())
+            {
+                <div class="text-center py-12 text-gray-400">
+                    <svg class="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                    <p class="text-sm">No properties yet. Add one to get started.</p>
+                </div>
+            }
+            else
+            {
+                <ul class="divide-y divide-gray-50">
+                    @foreach (var item in properties)
+                    {
+                        var ppColor = item.Color ?? "#094f70";
+                        <li class="px-5 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors group">
+                            <div class="w-3 h-3 rounded-full flex-shrink-0" style="background:@ppColor"></div>
+                            <span class="flex-1 text-sm text-gray-800 font-medium">@item.Name</span>
+                            <div class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
+                                <button type="button"
+                                        onclick="openMcCanvas('edit-property', {id:@item.Id, name:@System.Text.Json.JsonSerializer.Serialize(item.Name), color:'@ppColor'})"
+                                        class="p-1.5 text-gray-400 hover:text-brand hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <form method="post" action="/Master/DeleteProperty" class="inline" id="del-prop-@item.Id">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@item.Id" />
+                                    <button type="button" onclick="swalDelete(document.getElementById('del-prop-@item.Id'), '@item.Name.Replace("'","\\'")')" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @* ── Work States Tab ─────────────────────────────────────── *@
+    @if (activeTab == "workstates")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                <p class="text-xs text-gray-500">@workStates.Count work state@(workStates.Count == 1 ? "" : "s") — used as task statuses</p>
+                <button type="button" onclick="openMcCanvas('new-workstate', null)"
+                        class="btn-primary text-sm px-4 py-1.5 rounded-lg flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Add State
+                </button>
+            </div>
+
+            @if (!workStates.Any())
+            {
+                <div class="text-center py-12 text-gray-400">
+                    <svg class="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+                    </svg>
+                    <p class="text-sm">No work states yet.</p>
+                    <p class="text-xs mt-1">Add states like "Not Started", "On track", "Done".</p>
+                </div>
+            }
+            else
+            {
+                <ul class="divide-y divide-gray-50">
+                    @foreach (var ws in workStates)
+                    {
+                        <li class="px-5 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors group">
+                            <div class="w-3 h-3 rounded-full flex-shrink-0" style="background:@ws.Color"></div>
+                            <span class="flex-1 text-sm text-gray-800 font-medium">@ws.Name</span>
+                            <div class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
+                                <button type="button"
+                                        onclick="openMcCanvas('edit-workstate', {id:@ws.Id, name:@System.Text.Json.JsonSerializer.Serialize(ws.Name), color:'@ws.Color'})"
+                                        class="p-1.5 text-gray-400 hover:text-brand hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                </button>
+                                <form method="post" action="/Master/DeleteWorkState" class="inline" id="del-ws-@ws.Id">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@ws.Id" />
+                                    <button type="button" onclick="swalDelete(document.getElementById('del-ws-@ws.Id'), '@ws.Name.Replace("'","\\'")')"
+                                            class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @* ── Users Tab ────────────────────────────────────────────── *@
+    @if (activeTab == "users")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
+                <p class="text-xs text-gray-500">Users are also task owners. Edit their username, display name, level and avatar color.</p>
+            </div>
+
+            @if (!users.Any())
+            {
+                <div class="text-center py-12 text-gray-400"><p class="text-sm">No users found.</p></div>
+            }
+            else
+            {
+                <ul class="divide-y divide-gray-100">
+                    @foreach (var user in users)
+                    {
+                        var uColor  = user.Color ?? "#094f70";
+                        var initial = user.DisplayName.Length > 0 ? user.DisplayName[0].ToString().ToUpper() : "?";
+                        <li class="px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors group">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+                                 style="background:@uColor">@initial</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-semibold text-gray-800 truncate">@user.DisplayName</span>
+                                    <span class="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 @(user.Role=="Admin"?"badge-brand":"bg-gray-100 text-gray-500")">@user.Role</span>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-0.5">@@@user.Username</p>
+                            </div>
+                            <button type="button"
+                                    onclick="openMcCanvas('edit-user', {id:@user.Id, username:@System.Text.Json.JsonSerializer.Serialize(user.Username), displayName:@System.Text.Json.JsonSerializer.Serialize(user.DisplayName), role:@System.Text.Json.JsonSerializer.Serialize(user.Role), color:'@uColor'})"
+                                    class="opacity-30 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-brand hover:bg-blue-50 rounded-lg" title="Edit">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+</div>
+
+@* ══════════════════════════════════════════════════════════
+   OFF-CANVAS BACKDROP
+   ══════════════════════════════════════════════════════════ *@
+<div id="mc-backdrop"
+     class="fixed inset-0 bg-black/40 z-40 opacity-0 pointer-events-none transition-opacity duration-300"
+     onclick="closeMcCanvas()"></div>
+
+@* ══════════════════════════════════════════════════════════
+   OFF-CANVAS PANEL
+   ══════════════════════════════════════════════════════════ *@
+<div id="mc-canvas"
+     class="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+        <div>
+            <h2 id="mc-title" class="text-lg font-semibold text-gray-900">New Project</h2>
+            <p id="mc-subtitle" class="text-xs text-gray-400 mt-0.5 hidden"></p>
+        </div>
+        <button onclick="closeMcCanvas()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Scrollable form body -->
+    <form id="mc-form" method="post" action="" class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="id" id="mc-id" value="" />
+
+        @* ── Name (projects / properties) ── *@
+        <div id="mc-field-name" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Name <span class="text-red-500">*</span></label>
+            <input type="text" name="name" id="mc-name" placeholder="Enter name…"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        @* ── Username (users) ── *@
+        <div id="mc-field-username" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+            <input type="text" name="username" id="mc-username"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        @* ── Display Name (users) ── *@
+        <div id="mc-field-displayName" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Display Name</label>
+            <input type="text" name="displayName" id="mc-displayName"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        @* ── Role (users) ── *@
+        <div id="mc-field-role" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Level</label>
+            <select name="role" id="mc-role"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="Member">Member</option>
+                <option value="Admin">Admin</option>
+            </select>
+        </div>
+
+        @* ── Color picker (all) ── *@
+        <div id="mc-field-color">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Color</label>
+            <div class="flex flex-wrap gap-2.5 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                @foreach (var clr in palette)
+                {
+                    <button type="button" data-color="@clr" onclick="mcPickColor(this)"
+                            class="w-7 h-7 rounded-full flex-shrink-0 transition-all hover:scale-110"
+                            style="background:@clr"></button>
+                }
+            </div>
+            <input type="hidden" name="color" id="mc-color" value="#094f70" />
+        </div>
+
+        @* ── Avatar preview (users) ── *@
+        <div id="mc-field-avatar" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Preview</label>
+            <div class="flex items-center gap-3">
+                <div id="mc-avatar"
+                     class="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold shadow"
+                     style="background:#094f70">?</div>
+                <div>
+                    <p id="mc-avatar-name" class="text-sm font-semibold text-gray-800">—</p>
+                    <p id="mc-avatar-role" class="text-xs text-gray-400">Member</p>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 shrink-0">
+        <button type="button" onclick="closeMcCanvas()"
+                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            Cancel
+        </button>
+        <button type="button" id="mc-save-btn" onclick="submitMcCanvas()"
+                class="px-5 py-2 text-sm btn-primary rounded-lg">
+            Save
+        </button>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const MC_CFG = {
+    'new-project':    { action: '/Master/CreateProject',    title: 'New Project',    fields: ['name','color'],                        hasId: false },
+    'edit-project':   { action: '/Master/EditProject',      title: 'Edit Project',   fields: ['name','color'],                        hasId: true  },
+    'new-property':   { action: '/Master/CreateProperty',   title: 'New Property',   fields: ['name','color'],                        hasId: false },
+    'edit-property':  { action: '/Master/EditProperty',     title: 'Edit Property',  fields: ['name','color'],                        hasId: true  },
+    'new-workstate':  { action: '/Master/CreateWorkState',  title: 'New Work State', fields: ['name','color'],                        hasId: false },
+    'edit-workstate': { action: '/Master/EditWorkState',    title: 'Edit Work State',fields: ['name','color'],                        hasId: true  },
+    'edit-user':      { action: '/Master/EditUser',         title: 'Edit User',      fields: ['username','displayName','role','color','avatar'], hasId: true },
+};
+const MC_ALL_FIELDS = ['name','username','displayName','role','avatar'];
+
+function openMcCanvas(type, data) {
+    const cfg = MC_CFG[type];
+    if (!cfg) return;
+
+    // Title & form action
+    document.getElementById('mc-title').textContent = cfg.title;
+    document.getElementById('mc-form').action = cfg.action;
+
+    // Show/hide fields
+    MC_ALL_FIELDS.forEach(f => document.getElementById('mc-field-' + f).classList.add('hidden'));
+    cfg.fields.forEach(f => {
+        const el = document.getElementById('mc-field-' + f);
+        if (el) el.classList.remove('hidden');
+    });
+
+    // Populate values
+    document.getElementById('mc-id').value         = data?.id ?? '';
+    document.getElementById('mc-name').value        = data?.name ?? '';
+    document.getElementById('mc-username').value    = data?.username ?? '';
+    document.getElementById('mc-displayName').value = data?.displayName ?? '';
+    document.getElementById('mc-role').value        = data?.role ?? 'Member';
+
+    const color = data?.color ?? '#094f70';
+    document.getElementById('mc-color').value = color;
+    mcSyncSwatches(color);
+
+    // Avatar preview
+    if (cfg.fields.includes('avatar')) {
+        const dn      = data?.displayName ?? '';
+        const initial = dn.length > 0 ? dn[0].toUpperCase() : '?';
+        const av      = document.getElementById('mc-avatar');
+        av.textContent    = initial;
+        av.style.background = color;
+        document.getElementById('mc-avatar-name').textContent = dn || '—';
+        document.getElementById('mc-avatar-role').textContent = data?.role ?? 'Member';
+    }
+
+    // Focus first visible input
+    const firstInput = document.querySelector('#mc-canvas input:not([type=hidden]):not(.hidden), #mc-canvas select:not(.hidden)');
+    if (firstInput) setTimeout(() => firstInput.focus(), 310);
+
+    // Open panel
+    const bd = document.getElementById('mc-backdrop');
+    const pn = document.getElementById('mc-canvas');
+    bd.style.pointerEvents = 'auto';
+    requestAnimationFrame(() => {
+        bd.classList.add('opacity-100');
+        bd.classList.remove('opacity-0');
+        pn.classList.remove('translate-x-full');
+    });
+    document.body.style.overflow = 'hidden';
+}
+
+function closeMcCanvas() {
+    const bd = document.getElementById('mc-backdrop');
+    const pn = document.getElementById('mc-canvas');
+    bd.classList.remove('opacity-100');
+    bd.classList.add('opacity-0');
+    pn.classList.add('translate-x-full');
+    setTimeout(() => { bd.style.pointerEvents = 'none'; }, 300);
+    document.body.style.overflow = '';
+}
+
+function submitMcCanvas() {
+    const form = document.getElementById('mc-form');
+    // Validate visible name field
+    const nameEl = document.getElementById('mc-name');
+    if (!document.getElementById('mc-field-name').classList.contains('hidden')) {
+        if (!nameEl.value.trim()) { nameEl.focus(); nameEl.classList.add('ring-2','ring-red-400'); return; }
+        nameEl.classList.remove('ring-2','ring-red-400');
+    }
+    form.submit();
+}
+
+function mcPickColor(btn) {
+    const color = btn.dataset.color;
+    document.getElementById('mc-color').value = color;
+    mcSyncSwatches(color);
+    // Update live avatar
+    const av = document.getElementById('mc-avatar');
+    if (av) av.style.background = color;
+}
+
+function mcSyncSwatches(selected) {
+    document.querySelectorAll('#mc-canvas button[data-color]').forEach(function(btn) {
+        const sel = btn.dataset.color === selected;
+        btn.style.boxShadow = sel ? '0 0 0 2px #fff, 0 0 0 3.5px ' + btn.dataset.color : '';
+        btn.style.transform = sel ? 'scale(1.2)' : '';
+    });
+}
+
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !document.getElementById('mc-canvas').classList.contains('translate-x-full'))
+        closeMcCanvas();
+});
+</script>
+}

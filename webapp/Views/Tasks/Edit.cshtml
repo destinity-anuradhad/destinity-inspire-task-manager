@@ -1,0 +1,234 @@
+@model TaskTracker.Models.TaskItem
+@{
+    ViewData["Title"] = "Edit Task";
+    var projects   = ViewBag.Projects   as List<TaskTracker.Models.ProjectItem>  ?? [];
+    var properties = ViewBag.Properties as List<TaskTracker.Models.PropertyItem> ?? [];
+    var owners     = ViewBag.Owners     as List<TaskTracker.Models.OwnerItem>    ?? [];
+    var workStates    = ViewBag.WorkStates as List<TaskTracker.Models.WorkState>
+                        ?? TaskTracker.Models.ViewModels.TaskListViewModel.AllStatuses
+                               .Select((s,i) => new TaskTracker.Models.WorkState { Id=i, Name=s, Color="#094f70" })
+                               .ToList();
+    var allPriorities = TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities;
+}
+
+<div class="max-w-3xl mx-auto space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center gap-3">
+        <a href="/Tasks" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+        </a>
+        <div>
+            <h1 class="text-xl font-bold text-gray-900">Edit Task #@Model.Id</h1>
+            <p class="text-sm text-gray-500 line-clamp-1">@Model.Goal</p>
+        </div>
+    </div>
+
+    <!-- Form -->
+    <form method="post" action="/Tasks/Edit/@Model.Id" class="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="Id" value="@Model.Id" />
+
+        <!-- Goal -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                Goal <span class="text-red-500">*</span>
+            </label>
+            <textarea name="Goal" rows="3" required
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                      placeholder="Describe the task goal...">@Model.Goal</textarea>
+        </div>
+
+        <!-- Row: Project + Property -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Project</label>
+                <select name="Project" asp-items="@(new SelectList(projects, "Name", "Name", Model.Project))"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Select Project —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Client</label>
+                <select name="Property" asp-items="@(new SelectList(properties, "Name", "Name", Model.Property))"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Select Property —</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Row: Owner + Status + Priority -->
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Owner</label>
+                <input type="text" name="Owner" value="@Model.Owner" list="ownerList"
+                       placeholder="Assignee name"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <datalist id="ownerList">
+                    @foreach (var o in owners)
+                    {
+                        <option value="@o.Name" />
+                    }
+                </datalist>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                <select name="Status"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Select Status —</option>
+                    @foreach (var ws in workStates)
+                    {
+                        <option value="@ws.Name" selected="@(ws.Name == Model.Status ? "selected" : null)">@ws.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
+                <select name="Priority" asp-items="@(new SelectList(allPriorities.Select(p => new SelectListItem(p, p)), "Value", "Text", Model.Priority))"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Select Priority —</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Row: Dates -->
+        @{
+            string ToDateVal(string? s) {
+                if (string.IsNullOrWhiteSpace(s)) return "";
+                if (DateTime.TryParseExact(s,
+                    new[]{"yyyy-MM-dd","dd/MM/yyyy","d/M/yyyy","dd/M/yyyy","d/MM/yyyy","MM/dd/yyyy"},
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var d)
+                    || DateTime.TryParse(s, out d))
+                    return d.ToString("yyyy-MM-dd");
+                return "";
+            }
+        }
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Created Date</label>
+                <div class="w-full border border-gray-100 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-500 cursor-default">
+                    @Model.CreatedAt.ToString("yyyy-MM-dd")
+                </div>
+                <input type="hidden" name="TargetDate" value="@Model.CreatedAt.ToString("yyyy-MM-dd")" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Expected Start Date</label>
+                <input type="date" name="StartDate" value="@ToDateVal(Model.StartDate)"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Expected End Date</label>
+                <input type="date" name="EndDate" value="@ToDateVal(Model.EndDate)"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
+        @{
+            (string d, string t) SplitDT(string? s) {
+                if (string.IsNullOrWhiteSpace(s)) return ("", "");
+                var p = s.Trim().Split(new[]{' ','T'}, 2);
+                return (ToDateVal(p[0]), p.Length > 1 && p[1].Length >= 5 ? p[1].Substring(0,5) : (p.Length > 1 ? p[1] : ""));
+            }
+            var (asd, ast) = SplitDT(Model.ActualStartDate);
+            var (aed, aet) = SplitDT(Model.ActualEndDate);
+            var timeOpts = new[]{
+                ("08:30","8:30 AM"),("09:00","9:00 AM"),("09:30","9:30 AM"),
+                ("10:00","10:00 AM"),("10:30","10:30 AM"),("11:00","11:00 AM"),
+                ("11:30","11:30 AM"),("12:00","12:00 PM"),("12:30","12:30 PM"),
+                ("13:00","1:00 PM"),("13:30","1:30 PM"),("14:00","2:00 PM"),
+                ("14:30","2:30 PM"),("15:00","3:00 PM"),("15:30","3:30 PM"),
+                ("16:00","4:00 PM"),("16:30","4:30 PM"),("17:00","5:00 PM"),
+                ("17:30","5:30 PM")
+            };
+        }
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Actual Start Date/Time</label>
+            <div class="flex gap-2">
+                <input id="edit-asd" type="date" value="@asd"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="edit-ast" class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    @foreach (var (v, l) in timeOpts) {
+                        <option value="@v" selected="@(v == ast ? "selected" : null)">@l</option>
+                    }
+                </select>
+            </div>
+            <input type="hidden" id="edit-actualStartDate" name="ActualStartDate" value="@(string.IsNullOrEmpty(asd) ? "" : asd + (string.IsNullOrEmpty(ast) ? "" : " " + ast))" />
+        </div>
+        <div class="mt-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Actual End Date/Time</label>
+            <div class="flex gap-2">
+                <input id="edit-aed" type="date" value="@aed"
+                       class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <select id="edit-aet" class="w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Time —</option>
+                    @foreach (var (v, l) in timeOpts) {
+                        <option value="@v" selected="@(v == aet ? "selected" : null)">@l</option>
+                    }
+                </select>
+            </div>
+            <input type="hidden" id="edit-actualEndDate" name="ActualEndDate" value="@(string.IsNullOrEmpty(aed) ? "" : aed + (string.IsNullOrEmpty(aet) ? "" : " " + aet))" />
+        </div>
+
+        <!-- Related Files -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Related Files</label>
+            <input type="text" name="RelatedFiles" value="@Model.RelatedFiles"
+                   placeholder="Links or file paths (comma-separated)"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <!-- Notes -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+            <textarea name="Notes" rows="4"
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="Additional notes...">@Model.Notes</textarea>
+        </div>
+
+        <!-- Meta info -->
+        <div class="text-xs text-gray-400 pt-1">
+            Created: @Model.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+            <form method="post" action="/Tasks/Delete/@Model.Id" id="del-edit-task">
+                @Html.AntiForgeryToken()
+                <button type="button" onclick="swalDelete(document.getElementById('del-edit-task'), null)"
+                        class="px-4 py-2 border border-red-200 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
+                    Delete Task
+                </button>
+            </form>
+            <div class="flex items-center gap-3">
+                <a href="/Tasks"
+                   class="px-5 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </form>
+
+</div>
+
+@section Scripts {
+<script>
+document.querySelector('form[action*="/Tasks/Edit/"]').addEventListener('submit', function() {
+    const combDT = (d, t) => d ? (t ? d + ' ' + t : d) : '';
+    document.getElementById('edit-actualStartDate').value = combDT(
+        document.getElementById('edit-asd').value,
+        document.getElementById('edit-ast').value
+    );
+    document.getElementById('edit-actualEndDate').value = combDT(
+        document.getElementById('edit-aed').value,
+        document.getElementById('edit-aet').value
+    );
+});
+</script>
+}

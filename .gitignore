@@ -1,0 +1,49 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+
+# Publish output
+publish/
+out/
+
+# Runtime / logs
+*.log
+logs/
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Third-party frontend libraries (restored via libman/npm)
+webapp/wwwroot/lib/
+
+# EF migrations snapshot duplicates (keep migrations folder)
+# Uncomment if you want to exclude: **/Migrations/
+
+# Node / Vite / React (separate project — not part of the .NET app)
+node_modules/
+dist/
+src/
+server/
+public/
+index.html
+vite.config.js
+eslint.config.js
+package.json
+package-lock.json
+README.md

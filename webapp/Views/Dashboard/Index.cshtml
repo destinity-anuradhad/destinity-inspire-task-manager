@@ -1,0 +1,397 @@
+@{
+    ViewData["Title"] = "My Dashboard";
+    var myPending   = ViewBag.MyPending   as List<TaskTracker.Models.TaskItem>    ?? [];
+    var myWorkingOn = ViewBag.MyWorkingOn as List<TaskTracker.Models.TaskItem>    ?? [];
+    var myActivity  = ViewBag.MyActivity  as List<TaskTracker.Models.ActivityLog> ?? [];
+    var lastTask    = ViewBag.LastTask    as TaskTracker.Models.TaskItem;
+    var lastActLog  = ViewBag.LastActLog  as TaskTracker.Models.ActivityLog;
+
+    string uname      = ViewBag.DisplayName as string ?? "";
+    string firstName  = uname.Contains(' ') ? uname.Split(' ')[0] : uname;
+    int myTotal       = ViewBag.MyTotal        != null ? (int)ViewBag.MyTotal        : 0;
+    int myDone        = ViewBag.MyDone         != null ? (int)ViewBag.MyDone         : 0;
+    int myInProg      = ViewBag.MyInProgress   != null ? (int)ViewBag.MyInProgress   : 0;
+    int myOverdue     = ViewBag.MyOverdue      != null ? (int)ViewBag.MyOverdue      : 0;
+    int myPct         = ViewBag.MyCompletionPct!= null ? (int)ViewBag.MyCompletionPct: 0;
+    string bestProj   = ViewBag.MyBestProject  as string ?? "";
+    int bestCount     = ViewBag.MyBestProjectCount != null ? (int)ViewBag.MyBestProjectCount : 0;
+    int bestDone      = ViewBag.MyBestProjectDone  != null ? (int)ViewBag.MyBestProjectDone  : 0;
+    int bestPct       = bestCount > 0 ? (int)Math.Round((double)bestDone / bestCount * 100) : 0;
+
+    var today   = DateTime.Today;
+    var hour    = DateTime.Now.Hour;
+    var greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    var dateStr  = DateTime.Today.ToString("dddd, d MMMM yyyy");
+
+    // SVG ring constants (r=28, circumference = 2π×28 ≈ 175.93)
+    const double circum = 175.929;
+    double ringOffset   = circum * (1.0 - bestPct / 100.0);
+}
+
+<div class="space-y-6">
+
+    <!-- Greeting header -->
+    <div class="page-hd" style="display:flex;align-items:center;justify-content:space-between">
+        <div class="page-hd-left">
+            <h1>@greeting, @firstName!</h1>
+            <p>@dateStr · Here's your personal task overview</p>
+        </div>
+        @if (User.IsInRole("Admin"))
+        {
+        <a href="/Dashboard/Team"
+           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
+           style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+            </svg>
+            Team Performance
+        </a>
+        }
+    </div>
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">My Tasks</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:var(--brand-pale)">
+                    <svg style="color:var(--brand);width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:var(--text-1)">@myTotal</p>
+            <p class="stat-card-note">@myPct% completion rate</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">Completed</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#f0fdf4">
+                    <svg style="color:#16a34a;width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:#16a34a">@myDone</p>
+            <p class="stat-card-note">Tasks finished</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">In Progress</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:var(--brand-pale)">
+                    <svg style="color:var(--brand);width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:var(--brand)">@myInProg</p>
+            <p class="stat-card-note">On track &amp; Testing</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label" style="@(myOverdue > 0 ? "color:#ef4444" : "")">Overdue</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                     style="background:@(myOverdue > 0 ? "#fef2f2" : "var(--brand-pale)")">
+                    <svg style="color:@(myOverdue > 0 ? "#ef4444" : "var(--text-3)");width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:@(myOverdue > 0 ? "#ef4444" : "var(--text-3)")">@myOverdue</p>
+            <p class="stat-card-note">Past target date</p>
+        </div>
+
+    </div>
+
+    <!-- Working On + Top Project -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- Currently Working On (2/3) -->
+        <div class="lg:col-span-2 dash-panel">
+            <div class="dash-panel-hd">
+                <h3>Currently Working On</h3>
+                <a href="/Tasks?Owner=@Uri.EscapeDataString(uname)" class="text-xs font-medium" style="color:var(--brand)">View all →</a>
+            </div>
+            <div class="p-4">
+            @if (!myWorkingOn.Any())
+            {
+                <div class="text-center py-10" style="color:var(--text-3)">
+                    <svg class="w-9 h-9 mx-auto mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <p class="text-xs font-medium">No active tasks right now.</p>
+                    <p class="text-[11px] mt-1">Tasks with status "On track" or "Testing" appear here.</p>
+                </div>
+            }
+            else
+            {
+                <div class="space-y-2">
+                @foreach (var task in myWorkingOn)
+                {
+                    var stClr = task.Status == "Testing" ? "#f59e0b" : "var(--brand)";
+                    var stBg  = task.Status == "Testing" ? "#fffbeb" : "var(--brand-pale)";
+                    bool isOvr2 = false;
+                    if (task.Status is not ("Done" or "On hold") &&
+                        !string.IsNullOrEmpty(task.TargetDate) &&
+                        DateTime.TryParse(task.TargetDate, out DateTime dv2))
+                    {
+                        isOvr2 = dv2.Date < today;
+                    }
+                    <a href="/Tasks/Edit/@task.Id"
+                       class="flex items-start gap-3 p-3 rounded-xl border transition-all hover:shadow-sm"
+                       style="border-color:var(--border);background:var(--surface)">
+                        <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style="background:@stClr"></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium truncate" style="color:var(--text-1)">@task.Goal</p>
+                            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                                @if (!string.IsNullOrEmpty(task.Project))
+                                {
+                                    <span class="text-[11px]" style="color:var(--text-3)">@task.Project</span>
+                                    <span class="text-[11px]" style="color:var(--text-3)">·</span>
+                                }
+                                <span class="text-[11px] px-1.5 py-0.5 rounded-md font-medium" style="background:@stBg;color:@stClr">@task.Status</span>
+                                @if (!string.IsNullOrEmpty(task.Priority))
+                                {
+                                    <span class="text-[11px] font-medium" style="color:var(--text-3)">@task.Priority</span>
+                                }
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(task.TargetDate))
+                        {
+                        <span class="text-[11px] whitespace-nowrap flex-shrink-0 font-medium mt-0.5"
+                              style="color:@(isOvr2 ? "#ef4444" : "var(--text-3)")">
+                            @(isOvr2 ? "⚠ " : "")@task.TargetDate
+                        </span>
+                        }
+                    </a>
+                }
+                </div>
+            }
+            </div>
+        </div>
+
+        <!-- Top Project (1/3) -->
+        <div class="dash-panel flex flex-col">
+            <div class="dash-panel-hd">
+                <h3>Top Project</h3>
+            </div>
+            <div class="flex-1 flex flex-col items-center justify-center p-6 gap-4 text-center">
+            @if (string.IsNullOrEmpty(bestProj))
+            {
+                <div style="color:var(--text-3)">
+                    <svg class="w-10 h-10 mx-auto mb-2 opacity-25" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    <p class="text-xs">No projects yet.</p>
+                </div>
+            }
+            else
+            {
+                <!-- SVG progress ring -->
+                <div class="relative w-24 h-24 flex-shrink-0">
+                    <svg class="w-full h-full -rotate-90" viewBox="0 0 64 64">
+                        <circle cx="32" cy="32" r="28" fill="none" stroke="var(--brand-pale)" stroke-width="6"/>
+                        <circle cx="32" cy="32" r="28" fill="none"
+                                stroke="var(--brand)" stroke-width="6"
+                                stroke-linecap="round"
+                                stroke-dasharray="@circum.ToString("F1")"
+                                stroke-dashoffset="@ringOffset.ToString("F1")"/>
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span class="text-lg font-bold leading-none" style="color:var(--brand)">@bestPct%</span>
+                        <span class="text-[10px] font-medium mt-0.5" style="color:var(--text-3)">done</span>
+                    </div>
+                </div>
+                <div>
+                    <p class="font-semibold text-sm" style="color:var(--text-1)">@bestProj</p>
+                    <p class="text-xs mt-0.5" style="color:var(--text-3)">@bestDone / @bestCount tasks complete</p>
+                </div>
+                <a href="/Tasks?Project=@Uri.EscapeDataString(bestProj)&Owner=@Uri.EscapeDataString(uname)"
+                   class="text-xs font-medium" style="color:var(--brand)">View project tasks →</a>
+            }
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Pending Tasks + Activity -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <!-- Pending Tasks -->
+        <div class="dash-panel">
+            <div class="dash-panel-hd">
+                <h3>
+                    Pending Tasks
+                    @if (myPending.Any())
+                    {
+                    <span class="ml-1.5 text-xs font-semibold px-1.5 py-0.5 rounded-full"
+                          style="background:@(myOverdue > 0 ? "#fef2f2" : "var(--brand-pale)");color:@(myOverdue > 0 ? "#ef4444" : "var(--brand)")">
+                        @myPending.Count
+                    </span>
+                    }
+                </h3>
+                <a href="/Tasks?Owner=@Uri.EscapeDataString(uname)" class="text-xs font-medium" style="color:var(--brand)">View all →</a>
+            </div>
+            <div class="p-3">
+            @if (!myPending.Any())
+            {
+                <div class="text-center py-10" style="color:var(--text-3)">
+                    <svg class="w-9 h-9 mx-auto mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-xs font-semibold">All caught up!</p>
+                    <p class="text-[11px] mt-1">No pending tasks assigned to you.</p>
+                </div>
+            }
+            else
+            {
+                <div class="space-y-0.5 overflow-y-auto" style="max-height:300px">
+                @foreach (var task in myPending)
+                {
+                    bool isOvr3 = false;
+                    if (task.Status is not ("Done" or "On hold") &&
+                        !string.IsNullOrEmpty(task.TargetDate) &&
+                        DateTime.TryParse(task.TargetDate, out DateTime dv3))
+                    {
+                        isOvr3 = dv3.Date < today;
+                    }
+                    var prioClr = task.Priority switch {
+                        "P0" => "#ef4444", "P1" => "#f59e0b", "P2" => "#3b82f6", _ => "var(--text-3)"
+                    };
+                    var stDotClr = task.Status switch {
+                        "On track"    => "var(--brand)",
+                        "Testing"     => "#f59e0b",
+                        "Delayed"     => "#ef4444",
+                        "On hold"     => "#9ca3af",
+                        "Not Started" => "#8b5cf6",
+                        _             => "var(--text-3)"
+                    };
+                    <a href="/Tasks/Edit/@task.Id"
+                       class="flex items-center gap-2.5 px-2 py-2.5 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:@(isOvr3 ? "#ef4444" : stDotClr)"></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-medium truncate" style="color:var(--text-1)">@task.Goal</p>
+                            @if (!string.IsNullOrEmpty(task.Project))
+                            {
+                                <p class="text-[10px] truncate mt-0.5" style="color:var(--text-3)">@task.Project</p>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(task.Priority))
+                        {
+                            <span class="text-[10px] font-bold flex-shrink-0 w-5 text-center" style="color:@prioClr">@task.Priority</span>
+                        }
+                        @if (!string.IsNullOrEmpty(task.TargetDate))
+                        {
+                            <span class="text-[10px] whitespace-nowrap flex-shrink-0 font-medium"
+                                  style="color:@(isOvr3 ? "#ef4444" : "var(--text-3)")">
+                                @(isOvr3 ? "⚠ " : "")@task.TargetDate
+                            </span>
+                        }
+                    </a>
+                }
+                </div>
+            }
+            </div>
+        </div>
+
+        <!-- Right column: last worked on + activity -->
+        <div class="space-y-4 flex flex-col">
+
+            @if (lastTask != null)
+            {
+            <div class="dash-panel">
+                <div class="dash-panel-hd">
+                    <h3>Last Worked On</h3>
+                    @if (lastActLog != null)
+                    {
+                        <span class="text-[11px] font-medium" style="color:var(--text-3)">@lastActLog.ChangedAt.ToString("dd MMM, HH:mm")</span>
+                    }
+                </div>
+                <div class="p-4">
+                    <a href="/Tasks/Edit/@lastTask.Id" class="group block">
+                        <p class="text-sm font-semibold truncate group-hover:underline" style="color:var(--text-1)">@lastTask.Goal</p>
+                        <div class="flex items-center gap-2 mt-2 flex-wrap">
+                            @if (!string.IsNullOrEmpty(lastTask.Project))
+                            {
+                                <span class="text-[11px] px-2 py-0.5 rounded-md font-medium" style="background:var(--brand-pale);color:var(--brand)">@lastTask.Project</span>
+                            }
+                            @{
+                                var ltClr = lastTask.Status switch {
+                                    "Done"        => "#16a34a",
+                                    "On track"    => "var(--brand)",
+                                    "Testing"     => "#f59e0b",
+                                    "Delayed"     => "#ef4444",
+                                    "On hold"     => "#9ca3af",
+                                    _             => "#8b5cf6"
+                                };
+                                var ltBg = lastTask.Status switch {
+                                    "Done"        => "#f0fdf4",
+                                    "On track"    => "var(--brand-pale)",
+                                    "Testing"     => "#fffbeb",
+                                    "Delayed"     => "#fef2f2",
+                                    "On hold"     => "#f9fafb",
+                                    _             => "#f5f3ff"
+                                };
+                            }
+                            <span class="text-[11px] px-2 py-0.5 rounded-md font-medium" style="background:@ltBg;color:@ltClr">@lastTask.Status</span>
+                            @if (!string.IsNullOrEmpty(lastActLog?.Action))
+                            {
+                                <span class="text-[11px]" style="color:var(--text-3)">@lastActLog.Action@(string.IsNullOrEmpty(lastActLog.Details) ? "" : " · " + lastActLog.Details)</span>
+                            }
+                        </div>
+                    </a>
+                </div>
+            </div>
+            }
+
+            <!-- My Recent Activity -->
+            <div class="dash-panel flex-1">
+                <div class="dash-panel-hd">
+                    <h3>My Recent Activity</h3>
+                    <a href="/Activity" class="text-xs font-medium" style="color:var(--brand)">All →</a>
+                </div>
+                <div class="p-3">
+                @if (!myActivity.Any())
+                {
+                    <div class="text-center py-8" style="color:var(--text-3)">
+                        <svg class="w-7 h-7 mx-auto mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-xs">No activity on your tasks yet.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="space-y-1">
+                    @foreach (var log in myActivity)
+                    {
+                        var (dotC, actL) = log.Action switch
+                        {
+                            "Created"        => ("#22c55e", "Created"),
+                            "Deleted"        => ("#ef4444", "Deleted"),
+                            "Status Changed" => ("var(--brand)", "Status"),
+                            _                => ("var(--accent)", "Updated")
+                        };
+                        <div class="flex items-start gap-3 py-1.5 px-1 rounded-lg hover:bg-gray-50 transition-colors">
+                            <div class="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0" style="background:@dotC"></div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-medium truncate" style="color:var(--text-1)">@log.TaskGoal</p>
+                                <p class="text-[10px] mt-0.5" style="color:var(--text-3)">@actL@(string.IsNullOrEmpty(log.Details) ? "" : " · " + log.Details)</p>
+                            </div>
+                            <span class="text-[10px] whitespace-nowrap flex-shrink-0 font-medium" style="color:var(--text-3)">@log.ChangedAt.ToString("dd MMM HH:mm")</span>
+                        </div>
+                    }
+                    </div>
+                }
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</div>
