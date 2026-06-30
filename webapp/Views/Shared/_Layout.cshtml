@@ -74,6 +74,13 @@
                     </a>
                     @if (User.IsInRole("Admin"))
                     {
+                    <a href="/Sprints"
+                       class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all @(activeNav == "Sprints" ? "nav-link-active" : "nav-link-idle")">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        Sprints
+                    </a>
                     <a href="/Master"
                        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all @(activeNav == "Master" ? "nav-link-active" : "nav-link-idle")">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

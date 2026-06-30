@@ -1,0 +1,265 @@
+@model List<TaskTracker.Models.Sprint>
+@{
+    ViewData["Title"] = "Sprints";
+    var taskCounts = ViewBag.TaskCounts as Dictionary<int, int> ?? new();
+}
+
+<div class="space-y-5">
+    <!-- Header -->
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Sprints</h1>
+            <p>Plan and manage development sprints</p>
+        </div>
+        <button onclick="openSprintPanel(null)"
+                class="btn-primary text-sm px-4 py-2 rounded-lg flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New Sprint
+        </button>
+    </div>
+
+    @if (!Model.Any())
+    {
+        <div class="bg-white border border-gray-200 rounded-xl p-16 text-center">
+            <svg class="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <p class="text-gray-500 font-medium">No sprints yet</p>
+            <p class="text-gray-400 text-sm mt-1">Create your first sprint to start planning work</p>
+            <button onclick="openSprintPanel(null)" class="mt-4 btn-primary text-sm px-4 py-2 rounded-lg">Create Sprint</button>
+        </div>
+    }
+    else
+    {
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            @foreach (var sprint in Model)
+            {
+                var cnt  = taskCounts.GetValueOrDefault(sprint.Id, 0);
+                var sJson = System.Text.Json.JsonSerializer.Serialize(sprint,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+                <div class="bg-white border @(sprint.IsActive ? "border-blue-400 ring-2 ring-blue-100" : "border-gray-200") rounded-xl p-5 flex flex-col gap-4 relative group">
+                    @if (sprint.IsActive)
+                    {
+                        <span class="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Active</span>
+                    }
+
+                    <!-- Sprint name & dates -->
+                    <div class="pr-16">
+                        <h3 class="font-semibold text-gray-900 text-base leading-snug">@sprint.Name</h3>
+                        @if (!string.IsNullOrEmpty(sprint.StartDate) || !string.IsNullOrEmpty(sprint.EndDate))
+                        {
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                @(sprint.StartDate ?? "—") → @(sprint.EndDate ?? "—")
+                            </p>
+                        }
+                    </div>
+
+                    <!-- Goal -->
+                    @if (!string.IsNullOrEmpty(sprint.Goal))
+                    {
+                        <p class="text-sm text-gray-600 line-clamp-2">@sprint.Goal</p>
+                    }
+
+                    <!-- Stats -->
+                    <div class="flex items-center gap-3 text-xs text-gray-500">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
+                            </svg>
+                            @cnt task@(cnt == 1 ? "" : "s")
+                        </span>
+                        @if (!string.IsNullOrEmpty(sprint.CreatedBy))
+                        {
+                            <span>by @sprint.CreatedBy</span>
+                        }
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2 pt-1 border-t border-gray-100">
+                        <button onclick='openSprintPanel(@Html.Raw(sJson))'
+                                class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Edit
+                        </button>
+                        @if (!sprint.IsActive)
+                        {
+                            <button onclick="setActive(@sprint.Id)"
+                                    class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Set Active
+                            </button>
+                        }
+                        else
+                        {
+                            <button onclick="deactivateSprint()"
+                                    class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors">
+                                Deactivate
+                            </button>
+                        }
+                        <button onclick="deleteSprint(@sprint.Id, @cnt)"
+                                class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete sprint">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- ═══ SPRINT SLIDE PANEL ═══ -->
+<div id="sp-backdrop"
+     class="fixed inset-0 bg-black/40 z-40 opacity-0 pointer-events-none transition-opacity duration-300"
+     onclick="closeSprintPanel()"></div>
+
+<div id="sprint-panel"
+     class="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+        <div>
+            <h2 id="sp-title" class="text-lg font-semibold text-gray-900">New Sprint</h2>
+            <p id="sp-subtitle" class="text-xs text-gray-400 hidden"></p>
+        </div>
+        <button onclick="closeSprintPanel()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Form -->
+    <form id="sprint-form" class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        @Html.AntiForgeryToken()
+        <input type="hidden" id="sp-id" name="Id" value="0" />
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Sprint Name <span class="text-red-500">*</span></label>
+            <input id="sp-name" name="Name" type="text" required placeholder="e.g. Sprint 1 — Login Flow"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Start Date</label>
+                <input id="sp-start" name="StartDate" type="date"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">End Date</label>
+                <input id="sp-end" name="EndDate" type="date"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Sprint Goal</label>
+            <textarea id="sp-goal" name="Goal" rows="4" placeholder="What should this sprint achieve?"
+                      class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+        </div>
+    </form>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 shrink-0">
+        <button type="button" onclick="closeSprintPanel()"
+                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button type="button" onclick="saveSprint()"
+                class="px-5 py-2 text-sm btn-primary rounded-lg flex items-center gap-2">
+            <span id="sp-save-label">Create Sprint</span>
+            <svg id="sp-spinner" class="w-4 h-4 animate-spin hidden" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<script>
+const spBackdrop = document.getElementById('sp-backdrop');
+const spPanel    = document.getElementById('sprint-panel');
+
+function openSprintPanel(sprint) {
+    document.getElementById('sp-id').value    = sprint?.id    ?? 0;
+    document.getElementById('sp-name').value  = sprint?.name  ?? '';
+    document.getElementById('sp-start').value = sprint?.startDate ?? '';
+    document.getElementById('sp-end').value   = sprint?.endDate   ?? '';
+    document.getElementById('sp-goal').value  = sprint?.goal      ?? '';
+    document.getElementById('sp-title').textContent       = sprint ? 'Edit Sprint' : 'New Sprint';
+    document.getElementById('sp-save-label').textContent  = sprint ? 'Save Changes' : 'Create Sprint';
+    const sub = document.getElementById('sp-subtitle');
+    if (sprint) { sub.textContent = 'Sprint #' + sprint.id; sub.classList.remove('hidden'); }
+    else { sub.classList.add('hidden'); }
+    spBackdrop.classList.remove('opacity-0', 'pointer-events-none');
+    spBackdrop.classList.add('opacity-100');
+    spPanel.classList.remove('translate-x-full');
+    document.getElementById('sp-name').focus();
+}
+
+function closeSprintPanel() {
+    spBackdrop.classList.add('opacity-0', 'pointer-events-none');
+    spBackdrop.classList.remove('opacity-100');
+    spPanel.classList.add('translate-x-full');
+}
+
+async function saveSprint() {
+    const form = document.getElementById('sprint-form');
+    if (!form.checkValidity()) { form.reportValidity(); return; }
+    const btn = document.querySelector('#sprint-panel button[onclick="saveSprint()"]');
+    const sp  = document.getElementById('sp-spinner');
+    btn.disabled = true; sp.classList.remove('hidden');
+    try {
+        const r = await fetch('/Sprints/Save', { method: 'POST', body: new FormData(form) });
+        if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            Swal.fire({ icon: 'error', title: 'Error', text: d.message || 'Failed to save sprint.' });
+            return;
+        }
+        location.reload();
+    } catch {
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error.' });
+    } finally {
+        btn.disabled = false; sp.classList.add('hidden');
+    }
+}
+
+async function setActive(id) {
+    const r = await fetch('/Sprints/SetActive/' + id, { method: 'POST', headers: { 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '' } });
+    if (r.ok) location.reload();
+}
+
+async function deactivateSprint() {
+    const r = await fetch('/Sprints/Deactivate', { method: 'POST', headers: { 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '' } });
+    if (r.ok) location.reload();
+}
+
+async function deleteSprint(id, taskCount) {
+    if (taskCount > 0) {
+        Swal.fire({ icon: 'warning', title: 'Cannot Delete', text: `This sprint has ${taskCount} task(s). Move or unassign them first.` });
+        return;
+    }
+    const confirm = await Swal.fire({
+        icon: 'warning', title: 'Delete Sprint?', text: 'This cannot be undone.',
+        showCancelButton: true, confirmButtonText: 'Delete', confirmButtonColor: '#ef4444'
+    });
+    if (!confirm.isConfirmed) return;
+    const r = await fetch('/Sprints/Delete/' + id, { method: 'POST', headers: { 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '' } });
+    if (r.ok) location.reload();
+    else {
+        const d = await r.json().catch(() => ({}));
+        Swal.fire({ icon: 'error', title: 'Error', text: d.message || 'Failed to delete.' });
+    }
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSprintPanel();
+});
+</script>
