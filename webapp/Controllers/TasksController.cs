@@ -437,6 +437,87 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         return Json(items);
     }
 
+    // GET /Tasks/SearchTasks?q=X — search by ID or title (up to 10 results)
+    [HttpGet]
+    public async Task<IActionResult> SearchTasks(string q = "")
+    {
+        if (string.IsNullOrWhiteSpace(q)) return Json(Array.Empty<object>());
+        IQueryable<TaskItem> query;
+        if (int.TryParse(q.Trim(), out var id))
+            query = _db.Tasks.Where(t => t.Id == id || (t.Goal != null && t.Goal.Contains(q)));
+        else
+            query = _db.Tasks.Where(t => t.Goal != null && t.Goal.Contains(q));
+        var results = await query
+            .OrderBy(t => t.Goal)
+            .Take(10)
+            .Select(t => new { id = t.Id, goal = t.Goal, status = t.Status, itemType = t.ItemType })
+            .ToListAsync();
+        return Json(results);
+    }
+
+    // GET /Tasks/GetLinks?taskId=X — all links for a task (bidirectional)
+    [HttpGet]
+    public async Task<IActionResult> GetLinks(int taskId)
+    {
+        var links = await _db.TaskLinks
+            .Where(l => l.FromTaskId == taskId || l.ToTaskId == taskId)
+            .ToListAsync();
+        var linkedIds = links.SelectMany(l => new[] { l.FromTaskId, l.ToTaskId })
+            .Distinct().Where(x => x != taskId).ToList();
+        var tasks = await _db.Tasks
+            .Where(t => linkedIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Goal, t.Status, t.ItemType })
+            .ToDictionaryAsync(t => t.Id);
+        var result = links.Select(l => {
+            var isFrom   = l.FromTaskId == taskId;
+            var linkedId = isFrom ? l.ToTaskId : l.FromTaskId;
+            tasks.TryGetValue(linkedId, out var linked);
+            return new {
+                id               = l.Id,
+                linkType         = l.LinkType,
+                isFrom,
+                linkedTaskId     = linkedId,
+                linkedTaskGoal   = linked?.Goal   ?? "Unknown",
+                linkedTaskStatus = linked?.Status  ?? "",
+                linkedTaskItemType = linked?.ItemType ?? ""
+            };
+        }).ToList();
+        return Json(result);
+    }
+
+    // POST /Tasks/AddLink
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddLink(int fromTaskId, int toTaskId, string linkType)
+    {
+        if (fromTaskId == toTaskId)
+            return BadRequest(new { message = "Cannot link a task to itself." });
+        var exists = await _db.TaskLinks.AnyAsync(l =>
+            (l.FromTaskId == fromTaskId && l.ToTaskId == toTaskId && l.LinkType == linkType) ||
+            (l.FromTaskId == toTaskId   && l.ToTaskId == fromTaskId && l.LinkType == linkType));
+        if (exists)
+            return BadRequest(new { message = "This link already exists." });
+        _db.TaskLinks.Add(new TaskLink {
+            FromTaskId = fromTaskId,
+            ToTaskId   = toTaskId,
+            LinkType   = linkType,
+            CreatedAt  = DateTime.Now,
+            CreatedBy  = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name
+        });
+        await _db.SaveChangesAsync();
+        return Ok();
+    }
+
+    // POST /Tasks/RemoveLink?id=X
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveLink(int id)
+    {
+        var link = await _db.TaskLinks.FindAsync(id);
+        if (link == null) return NotFound();
+        _db.TaskLinks.Remove(link);
+        await _db.SaveChangesAsync();
+        return Ok();
+    }
+
     // GET /Tasks/GetClients?moduleId=X — clients for module (0 = all clients); CompanyDetails preferred
     [HttpGet]
     public async Task<IActionResult> GetClients(int moduleId = 0)
