@@ -378,6 +378,18 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         return Json(list);
     }
 
+    // GET /Tasks/GetSprints — all sprints for canvas dropdown
+    [HttpGet]
+    public async Task<IActionResult> GetSprints()
+    {
+        var sprints = await _db.Sprints
+            .OrderByDescending(s => s.IsActive)
+            .ThenByDescending(s => s.CreatedAt)
+            .Select(s => new { id = s.Id, name = s.Name, isActive = s.IsActive, startDate = s.StartDate, endDate = s.EndDate })
+            .ToListAsync();
+        return Json(sprints);
+    }
+
     // GET /Tasks/GetParentItems?itemType=Feature — returns valid parent items for the given type
     [HttpGet]
     public async Task<IActionResult> GetParentItems(string itemType = "")

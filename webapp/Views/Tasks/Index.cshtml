@@ -1007,6 +1007,14 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
                 </select>
             </div>
         </div>
+        <!-- Sprint -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Sprint</label>
+            <select id="cf-sprint-sel" onchange="document.getElementById('cf-sprint-id').value = this.value"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="">— Backlog —</option>
+            </select>
+        </div>
         <div class="grid grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Owner</label>
@@ -1437,6 +1445,27 @@ function _restoreOwner(ownerValue) {
     }
 }
 
+// ── Sprint loader ─────────────────────────────────────────────────────────────
+
+let _sprintsCache = null;
+
+async function _loadSprints(currentSprintId) {
+    const sel = document.getElementById('cf-sprint-sel');
+    try {
+        if (!_sprintsCache || _sprintsCache.length === 0) {
+            const r = await fetch('/Tasks/GetSprints');
+            _sprintsCache = await r.json();
+        }
+        sel.innerHTML = '<option value="">— Backlog —</option>' +
+            _sprintsCache.map(s =>
+                `<option value="${s.id}"${s.id == currentSprintId ? ' selected' : ''}>${s.isActive ? '⚡ ' : ''}${s.name}</option>`
+            ).join('');
+        if (currentSprintId) sel.value = currentSprintId;
+    } catch {
+        sel.innerHTML = '<option value="">— Backlog —</option>';
+    }
+}
+
 // ── Item Type / Status / Parent helpers ──────────────────────────────────────
 
 function _updateStatusOptions(itemType, currentVal) {
@@ -1501,6 +1530,7 @@ function openCanvas(task) {
     document.getElementById('cf-module-id').value = '';
     document.getElementById('cf-client-id').value = '';
     document.getElementById('cf-item-type-sel').value = '';
+    document.getElementById('cf-sprint-sel').value = '';
     _updateStatusOptions('', '');
     _loadParentPicker('', null);
     // Reset owner field
@@ -1542,6 +1572,7 @@ function openCanvas(task) {
         document.getElementById('cf-sprint-id').value     = task.sprintId ?? '';
         _updateStatusOptions(itemType, task.status ?? '');
         _loadParentPicker(itemType, task.parentId ?? null);
+        _loadSprints(task.sprintId ?? null);
     } else {
         document.getElementById('canvas-title').textContent = 'New Task';
         document.getElementById('canvas-subtitle').classList.add('hidden');
@@ -1553,6 +1584,7 @@ function openCanvas(task) {
         // Non-admin: default owner to themselves; admin: clear selection
         _restoreOwner(CV_ADMIN ? '' : CV_ME);
         _updateStatusOptions('', '');
+        _loadSprints(null);
     }
 
     // Toggle edit / view-only mode
