@@ -1840,6 +1840,9 @@ function openCanvas(task) {
         linksSection.classList.add('hidden');
     }
 
+    // Join SignalR group for real-time comments/links
+    if (task) srJoinTask(task.id);
+
     // Open canvas immediately — dropdowns load in background
     backdrop.classList.remove('opacity-0','pointer-events-none');
     backdrop.classList.add('opacity-100');
@@ -2101,6 +2104,7 @@ async function _removeLink(id) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function closeCanvas() {
+    if (_cvTaskId) srLeaveTask(_cvTaskId);
     backdrop.classList.add('opacity-0','pointer-events-none');
     backdrop.classList.remove('opacity-100');
     panel.classList.add('translate-x-full');
@@ -2345,5 +2349,32 @@ function _kanbanRefreshCount(colEl) {
     const badge = colEl.querySelector('.kanban-count');
     if (badge) badge.textContent = n;
 }
+
+// ─── SignalR live update handlers (override globals set in _Layout) ────────────
+window.onTaskUpdated = function(data) {
+    // Update table row status badge
+    document.querySelectorAll(`[data-task-id="${data.id}"] [data-status-badge]`).forEach(el => {
+        el.textContent = data.status;
+    });
+    // If canvas is open for this task, show a subtle "Updated by X" banner
+    if (_cvTaskId === data.id && data.updatedBy && data.updatedBy !== CV_ME) {
+        let banner = document.getElementById('cv-updated-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'cv-updated-banner';
+            banner.className = 'mx-6 mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2';
+            document.getElementById('canvas-form')?.prepend(banner);
+        }
+        banner.innerHTML = `<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Updated by <b>${_esc(data.updatedBy)}</b> — refresh to see changes`;
+        banner.classList.remove('hidden');
+    }
+};
+window.onCommentAdded = function(taskId) {
+    if (_cvTaskId === taskId) _loadComments(taskId);
+};
+window.onLinkUpdated = function(taskId) {
+    if (_cvTaskId === taskId) _loadLinks(taskId);
+};
+// ─────────────────────────────────────────────────────────────────────────────
 </script>
 }

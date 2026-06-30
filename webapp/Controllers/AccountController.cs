@@ -101,4 +101,32 @@ public class AccountController(AppDbContext db) : Controller
             .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true));
         return Json(new { success = true });
     }
+
+    // GET /Account/Profile
+    [HttpGet]
+    public async Task<IActionResult> Profile()
+    {
+        var uid  = int.Parse(User.FindFirst("UserId")!.Value);
+        var user = await _db.AppUsers.FindAsync(uid);
+        if (user == null) return RedirectToAction("Login");
+        ViewData["ActiveNav"] = "Profile";
+        return View(user);
+    }
+
+    // POST /Account/Profile
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Profile(string? email, bool notifyOnAssigned, bool notifyOnComment, bool notifyOnBlocked)
+    {
+        var uid  = int.Parse(User.FindFirst("UserId")!.Value);
+        var user = await _db.AppUsers.FindAsync(uid);
+        if (user == null) return RedirectToAction("Login");
+        user.Email            = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
+        user.NotifyOnAssigned = notifyOnAssigned;
+        user.NotifyOnComment  = notifyOnComment;
+        user.NotifyOnBlocked  = notifyOnBlocked;
+        await _db.SaveChangesAsync();
+        TempData["Success"] = "Profile saved.";
+        ViewData["ActiveNav"] = "Profile";
+        return View(user);
+    }
 }
