@@ -120,6 +120,11 @@
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     Team
                 </a>
+                <a href="@ViewUrl("backlog")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-l border-gray-200 transition-colors @(Model.ViewMode=="backlog"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
+                    Backlog
+                </a>
             </div>
             <a href="@exportUrl"
                class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
@@ -890,6 +895,201 @@
             window.tl2Apply=function(){var f=document.getElementById('tl2-from').value,t=document.getElementById('tl2-to').value;if(f&&t)window.location='/Tasks?view=team&tlfrom='+f+'&tlto='+t;};
             if(TL2_MODE==='today')renderDay();else renderWeek();
         })();
+        </script>
+    }
+
+    @* ════════════════════ BACKLOG VIEW ════════════════════ *@
+    @if (Model.ViewMode == "backlog")
+    {
+        <div class="space-y-3">
+            <!-- Sprint filter tabs -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-medium text-gray-500 mr-1">Sprint:</span>
+                <div id="bl-sprint-tabs" class="flex gap-1 flex-wrap">
+                    <div class="h-7 w-40 bg-gray-100 animate-pulse rounded-full"></div>
+                </div>
+            </div>
+            <!-- Item type filter -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-medium text-gray-500 mr-1">Type:</span>
+                @foreach (var (type, label, cls) in new[]{
+                    ("","All","bg-gray-800 text-white"),
+                    ("Epic","🟦 Epic","bg-blue-100 text-blue-700"),
+                    ("Feature","🟩 Feature","bg-emerald-100 text-emerald-700"),
+                    ("Story","📋 Story","bg-violet-100 text-violet-700"),
+                    ("Task","✅ Task","bg-gray-100 text-gray-600"),
+                    ("Bug","🐛 Bug","bg-red-100 text-red-600")})
+                {
+                    <button class="bl-type-btn text-xs px-3 py-1 rounded-full font-medium transition-all @cls"
+                            data-type="@type" onclick="_blSetType('@type')">@label</button>
+                }
+            </div>
+            <!-- Tree -->
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div id="backlog-tree" class="divide-y divide-gray-50 min-h-[200px]">
+                    <div class="flex items-center justify-center py-16 text-gray-400 text-sm gap-2">
+                        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                        </svg>
+                        Loading backlog…
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        let _blTasks   = [];
+        let _blSprints = [];
+        let _blSprint  = 'all';   // 'all' | 'backlog' | sprint id string
+        let _blType    = '';
+        let _blExpanded = new Set();
+
+        // ── Load ─────────────────────────────────────────────────────────────
+        async function _blLoad() {
+            try {
+                const r   = await fetch('/Tasks/GetBacklog?sprintFilter=' + _blSprint);
+                const d   = await r.json();
+                _blTasks   = d.tasks;
+                _blSprints = d.sprints;
+                _blRenderSprintTabs();
+                _blRender();
+            } catch(e) {
+                document.getElementById('backlog-tree').innerHTML =
+                    `<div class="text-center py-12 text-red-400 text-sm">Error loading backlog — ${e.message}</div>`;
+            }
+        }
+
+        // ── Sprint tabs ───────────────────────────────────────────────────────
+        function _blRenderSprintTabs() {
+            const el = document.getElementById('bl-sprint-tabs');
+            const s  = _blSprint;
+            const btn = (val, label) =>
+                `<button onclick="_blSetSprint('${val}')"
+                         class="text-xs px-3 py-1 rounded-full font-medium transition-all ${s===val?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}">${label}</button>`;
+            el.innerHTML = btn('all','All') + btn('backlog','Backlog') +
+                _blSprints.map(sp => btn(String(sp.id), (sp.isActive?'⚡ ':'')+sp.name)).join('');
+        }
+
+        function _blSetSprint(val) {
+            _blSprint = val;
+            _blLoad();
+        }
+
+        function _blSetType(val) {
+            _blType = val;
+            document.querySelectorAll('.bl-type-btn').forEach(b => {
+                const active = b.dataset.type === val;
+                b.classList.toggle('ring-2', active);
+                b.classList.toggle('ring-offset-1', active);
+                b.classList.toggle('ring-current', active);
+            });
+            _blRender();
+        }
+
+        // ── Tree build & render ───────────────────────────────────────────────
+        function _blRender() {
+            let tasks = _blType ? _blTasks.filter(t => t.itemType === _blType) : _blTasks;
+
+            // Build id → node map
+            const map = {};
+            tasks.forEach(t => map[t.id] = { ...t, children: [] });
+            const roots = [];
+            tasks.forEach(t => {
+                if (t.parentId && map[t.parentId]) map[t.parentId].children.push(map[t.id]);
+                else roots.push(map[t.id]);
+            });
+
+            // Sort by type hierarchy then goal
+            const typeOrder = {Epic:0,Feature:1,Story:2,Task:3,Bug:4,'':5};
+            const sortFn = (a, b) => (typeOrder[a.itemType||'']??5) - (typeOrder[b.itemType||'']??5) || (a.goal||'').localeCompare(b.goal||'');
+            function sortTree(nodes) { nodes.sort(sortFn); nodes.forEach(n => sortTree(n.children)); }
+            sortTree(roots);
+
+            // Auto-expand top-level on first load
+            if (_blExpanded.size === 0) roots.forEach(n => { if(n.children.length) _blExpanded.add(n.id); });
+
+            const container = document.getElementById('backlog-tree');
+            if (!roots.length) {
+                container.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">No items in this view<br><span class="text-xs text-gray-300">Try a different sprint or type filter</span></div>';
+                return;
+            }
+            container.innerHTML = roots.map(n => _blNode(n, 0)).join('');
+        }
+
+        // ── Node renderer ─────────────────────────────────────────────────────
+        const _blTypeCfg = {
+            Epic:    { cls:'bg-blue-100 text-blue-700',     lbl:'Epic'  },
+            Feature: { cls:'bg-emerald-100 text-emerald-700', lbl:'Feat' },
+            Story:   { cls:'bg-violet-100 text-violet-700', lbl:'Story' },
+            Task:    { cls:'bg-gray-100 text-gray-600',     lbl:'Task'  },
+            Bug:     { cls:'bg-red-100 text-red-600',       lbl:'Bug'   },
+        };
+        const _blChildType = { Epic:'Feature', Feature:'Story', Story:'Task' };
+
+        function _blNode(node, depth) {
+            const hasKids  = node.children.length > 0;
+            const expanded = _blExpanded.has(node.id);
+            const tc       = _blTypeCfg[node.itemType] || { cls:'bg-gray-50 text-gray-400', lbl:'—' };
+            const indent   = 12 + depth * 24;
+
+            const sprint   = node.sprintId ? _blSprints.find(s => s.id === node.sprintId) : null;
+            const sprintEl = sprint
+                ? `<span class="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 shrink-0">${_esc(sprint.name)}</span>`
+                : `<span class="hidden sm:inline text-[10px] text-gray-300 shrink-0">Backlog</span>`;
+
+            const ownerEl = (node.owner||'').split(',').map(o=>o.trim()).filter(Boolean).slice(0,2)
+                .map(o=>`<span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[9px] font-bold shrink-0" style="background:${(typeof CV_COLORS!=='undefined'&&CV_COLORS[o])||'#64748b'}" title="${_esc(o)}">${(o[0]||'?').toUpperCase()}</span>`).join('');
+
+            const childType = _blChildType[node.itemType] || '';
+            const addBtn    = childType
+                ? `<button onclick="event.stopPropagation();_blAddChild(${node.id},'${childType}')" class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 shrink-0 transition-all text-base leading-none" title="Add ${childType}">+</button>`
+                : `<span class="w-6 shrink-0"></span>`;
+
+            const taskJson = JSON.stringify(node).replace(/\\/g,'\\\\').replace(/"/g,'&quot;');
+
+            let html = `<div class="backlog-row group flex items-center gap-2 py-2 pr-3 hover:bg-gray-50 transition-colors" style="padding-left:${indent}px" data-bl-id="${node.id}">
+                <span class="w-4 text-center text-gray-300 text-[10px] shrink-0 ${hasKids?'cursor-pointer hover:text-gray-600':''}" onclick="${hasKids?`event.stopPropagation();_blToggle(${node.id})`:''}">
+                    ${hasKids ? (expanded ? '▼' : '▶') : ''}
+                </span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${tc.cls}">${tc.lbl}</span>
+                <button class="flex-1 text-sm text-left text-gray-800 hover:text-blue-600 truncate" onclick='openCanvas(JSON.parse(this.closest(".backlog-row").dataset.task))' data-task="${taskJson}">${_esc(node.goal||'—')}</button>
+                ${node.status?`<span class="hidden md:inline text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${_esc(node.status)}</span>`:''}
+                ${sprintEl}
+                <div class="flex items-center gap-0.5 shrink-0">${ownerEl}</div>
+                ${addBtn}
+            </div>`;
+
+            if (hasKids) {
+                html += `<div id="bl-kids-${node.id}" class="${expanded?'':'hidden'}">${node.children.map(c=>_blNode(c,depth+1)).join('')}</div>`;
+            }
+            return html;
+        }
+
+        // ── Actions ───────────────────────────────────────────────────────────
+        function _blToggle(id) {
+            const el  = document.getElementById('bl-kids-' + id);
+            const row = document.querySelector(`[data-bl-id="${id}"] span:first-child`);
+            if (!el) return;
+            const hide = !el.classList.contains('hidden');
+            el.classList.toggle('hidden', hide);
+            if (row) row.textContent = hide ? '▶' : '▼';
+            if (hide) _blExpanded.delete(id); else _blExpanded.add(id);
+        }
+
+        function _blAddChild(parentId, childType) {
+            openCanvas(null);
+            setTimeout(() => {
+                document.getElementById('cf-item-type-sel').value = childType;
+                document.getElementById('cf-item-type').value     = childType;
+                document.getElementById('cf-parent-id').value     = parentId;
+                onItemTypeChange(childType);
+                setTimeout(() => { document.getElementById('cf-parent-sel').value = String(parentId); }, 600);
+            }, 80);
+        }
+
+        // Auto-load on page ready
+        _blLoad();
         </script>
     }
 

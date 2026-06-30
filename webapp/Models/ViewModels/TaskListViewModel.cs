@@ -39,6 +39,6 @@ public class TaskListViewModel
 
     public List<TaskTracker.Models.WorkState> WorkStates { get; set; } = [];
 
-    public static readonly string[] AllStatuses   = ["Not Started", "On track", "Testing", "On hold", "Delayed", "Done"];
+    public static readonly string[] AllStatuses   = ["New", "To Do", "Active", "In Progress", "Resolved", "Done", "Closed"];
     public static readonly string[] AllPriorities = ["P0", "P1", "P2", "P3"];
 }
