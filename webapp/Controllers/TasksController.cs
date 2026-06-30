@@ -378,6 +378,31 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         return Json(list);
     }
 
+    // GET /Tasks/GetBacklog?sprintFilter=all|backlog|{id} — all tasks for backlog tree view
+    [HttpGet]
+    public async Task<IActionResult> GetBacklog(string sprintFilter = "all")
+    {
+        var query = _db.Tasks.AsQueryable();
+
+        // Non-admins only see tasks they own
+        if (!User.IsInRole("Admin"))
+        {
+            var me = User.FindFirst("DisplayName")?.Value ?? "";
+            query = query.Where(t => t.Owner != null && t.Owner.Contains(me));
+        }
+
+        // Sprint filter
+        if (sprintFilter == "backlog")
+            query = query.Where(t => t.SprintId == null);
+        else if (int.TryParse(sprintFilter, out var sid) && sid > 0)
+            query = query.Where(t => t.SprintId == sid);
+
+        var tasks   = await query.OrderBy(t => t.CreatedAt).ToListAsync();
+        var sprints = await _db.Sprints.OrderByDescending(s => s.IsActive).ThenByDescending(s => s.CreatedAt).ToListAsync();
+        var opts    = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+        return Json(new { tasks, sprints }, opts);
+    }
+
     // GET /Tasks/GetSprints — all sprints for canvas dropdown
     [HttpGet]
     public async Task<IActionResult> GetSprints()
