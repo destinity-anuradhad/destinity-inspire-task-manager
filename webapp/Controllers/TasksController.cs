@@ -1,19 +1,24 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using TaskTracker.Data;
+using TaskTracker.Hubs;
 using TaskTracker.Models;
 using TaskTracker.Models.ViewModels;
+using TaskTracker.Services;
 
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class TasksController(AppDbContext db, IConfiguration config) : Controller
+public class TasksController(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailService email) : Controller
 {
-    private readonly AppDbContext _db = db;
-    private readonly IConfiguration _config = config;
+    private readonly AppDbContext      _db    = db;
+    private readonly IConfiguration   _config = config;
+    private readonly IHubContext<TaskHub> _hub = hub;
+    private readonly IEmailService    _email  = email;
 
     // ── Permission helpers ────────────────────────────────
     private bool IsAdmin() => User.IsInRole("Admin");
@@ -325,6 +330,16 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
             }
 
             await TryLogAsync(task.Id, task.Goal, task.Project ?? "", action, details);
+            await _hub.Clients.All.SendAsync("TaskUpdated", new {
+                id        = task.Id,
+                goal      = task.Goal,
+                status    = task.Status,
+                priority  = task.Priority,
+                owner     = task.Owner,
+                itemType  = task.ItemType,
+                sprintId  = task.SprintId,
+                updatedBy = CurrentDisplayName()
+            });
             return Json(new { success = true });
         }
         catch (Exception ex)
@@ -359,6 +374,8 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         var task = await _db.Tasks.FindAsync(taskId);
         if (task == null) return Json(new { success = false, error = "Task not found." });
         await TryLogAsync(taskId, task.Goal, task.Project ?? "", "Comment", comment.Trim());
+        await _hub.Clients.Group("task-" + taskId).SendAsync("CommentAdded", taskId);
+        _ = NotifyCommentAsync(task, comment.Trim());
         return Json(new { success = true });
     }
 
@@ -496,14 +513,19 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
             (l.FromTaskId == toTaskId   && l.ToTaskId == fromTaskId && l.LinkType == linkType));
         if (exists)
             return BadRequest(new { message = "This link already exists." });
-        _db.TaskLinks.Add(new TaskLink {
+        var link = new TaskLink {
             FromTaskId = fromTaskId,
             ToTaskId   = toTaskId,
             LinkType   = linkType,
             CreatedAt  = DateTime.Now,
             CreatedBy  = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name
-        });
+        };
+        _db.TaskLinks.Add(link);
         await _db.SaveChangesAsync();
+        await _hub.Clients.Group("task-" + fromTaskId).SendAsync("LinkUpdated", fromTaskId);
+        await _hub.Clients.Group("task-" + toTaskId).SendAsync("LinkUpdated", toTaskId);
+        if (linkType == "Blocks")
+            _ = NotifyBlockedAsync(fromTaskId, toTaskId);
         return Ok();
     }
 
@@ -513,8 +535,11 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
     {
         var link = await _db.TaskLinks.FindAsync(id);
         if (link == null) return NotFound();
+        int from = link.FromTaskId, to = link.ToTaskId;
         _db.TaskLinks.Remove(link);
         await _db.SaveChangesAsync();
+        await _hub.Clients.Group("task-" + from).SendAsync("LinkUpdated", from);
+        await _hub.Clients.Group("task-" + to).SendAsync("LinkUpdated", to);
         return Ok();
     }
 
@@ -590,6 +615,16 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         task.Status = status;
         await _db.SaveChangesAsync();
         await TryLogAsync(id, task.Goal, task.Project ?? "", "Status Changed", $"'{old}' → '{status}'");
+        await _hub.Clients.All.SendAsync("TaskUpdated", new {
+            id        = task.Id,
+            goal      = task.Goal,
+            status    = task.Status,
+            priority  = task.Priority,
+            owner     = task.Owner,
+            itemType  = task.ItemType,
+            sprintId  = task.SprintId,
+            updatedBy = CurrentDisplayName()
+        });
         return Json(new { success = true });
     }
 
@@ -657,27 +692,81 @@ public class TasksController(AppDbContext db, IConfiguration config) : Controlle
         {
             var prevOwners = SplitOwners(previousOwner).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var newOwners  = SplitOwners(task.Owner)
-                .Where(o => !prevOwners.Contains(o))  // only newly added owners
+                .Where(o => !prevOwners.Contains(o))
                 .ToList();
-
             foreach (var ownerName in newOwners)
             {
-                var user = await _db.AppUsers.FirstOrDefaultAsync(u =>
-                    u.DisplayName == ownerName && u.NotifyOnAssigned);
-                if (user != null && user.Username != CurrentUsername())
-                {
-                    _db.Notifications.Add(new Notification
-                    {
-                        UserId    = user.Id,
-                        Message   = $"You were assigned to: {task.Goal}",
-                        CreatedAt = DateTime.Now,
+                var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
+                if (user == null || user.Username == CurrentUsername()) continue;
+                if (user.NotifyOnAssigned)
+                    _db.Notifications.Add(new Notification {
+                        UserId = user.Id, Message = $"You were assigned to: {task.Goal}", CreatedAt = DateTime.Now
                     });
-                }
+                if (user.NotifyOnAssigned && !string.IsNullOrWhiteSpace(user.Email))
+                    _ = _email.SendAsync(user.Email, user.DisplayName,
+                        $"[Task Manager] Assigned: {task.Goal}",
+                        EmailHtml($"You have been assigned to a task.",
+                            $"<b>{HtmlEnc(task.Goal)}</b>", task.Id, "View Task"));
             }
             await _db.SaveChangesAsync();
         }
         catch { }
     }
+
+    private async Task NotifyCommentAsync(TaskItem task, string comment)
+    {
+        try
+        {
+            var commenter = CurrentDisplayName();
+            foreach (var ownerName in SplitOwners(task.Owner))
+            {
+                if (string.Equals(ownerName, commenter, StringComparison.OrdinalIgnoreCase)) continue;
+                var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
+                if (user == null || !user.NotifyOnComment || string.IsNullOrWhiteSpace(user.Email)) continue;
+                await _email.SendAsync(user.Email, user.DisplayName,
+                    $"[Task Manager] New comment on: {task.Goal}",
+                    EmailHtml($"<b>{HtmlEnc(commenter)}</b> commented on a task you own.",
+                        $"<blockquote style='border-left:3px solid #e2e8f0;margin:0;padding:8px 12px;color:#475569'>{HtmlEnc(comment)}</blockquote>",
+                        task.Id, "View Task"));
+            }
+        }
+        catch { }
+    }
+
+    private async Task NotifyBlockedAsync(int fromId, int toId)
+    {
+        try
+        {
+            var blocker = await _db.Tasks.Select(t => new { t.Id, t.Goal }).FirstOrDefaultAsync(t => t.Id == fromId);
+            var blocked = await _db.Tasks.Select(t => new { t.Id, t.Goal, t.Owner }).FirstOrDefaultAsync(t => t.Id == toId);
+            if (blocked == null) return;
+            foreach (var ownerName in SplitOwners(blocked.Owner))
+            {
+                var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
+                if (user == null || !user.NotifyOnBlocked || string.IsNullOrWhiteSpace(user.Email)) continue;
+                await _email.SendAsync(user.Email, user.DisplayName,
+                    $"[Task Manager] Task blocked: {blocked.Goal}",
+                    EmailHtml($"Your task has been marked as <b>Blocked By</b> another task.",
+                        $"<p><b>Blocked:</b> #{blocked.Id} {HtmlEnc(blocked.Goal)}</p><p><b>Blocker:</b> #{blocker?.Id} {HtmlEnc(blocker?.Goal ?? "")}</p>",
+                        blocked.Id, "View Blocked Task"));
+            }
+        }
+        catch { }
+    }
+
+    private static string HtmlEnc(string? s) =>
+        System.Net.WebUtility.HtmlEncode(s ?? "");
+
+    private static string EmailHtml(string heading, string body, int taskId, string ctaLabel) => $@"
+        <div style='font-family:Inter,system-ui,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc;padding:24px'>
+          <div style='background:#fff;border-radius:12px;padding:28px 32px;border:1px solid #e2e8f0'>
+            <p style='color:#64748b;font-size:13px;margin:0 0 16px'>Scienter Task Manager</p>
+            <p style='color:#0f172a;font-size:16px;margin:0 0 16px'>{heading}</p>
+            <div style='margin:0 0 20px'>{body}</div>
+            <a href='http://localhost:5043/Tasks?highlight={taskId}' style='display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600'>{ctaLabel}</a>
+          </div>
+          <p style='color:#94a3b8;font-size:11px;text-align:center;margin:16px 0 0'>You received this because you are an owner of this task. Update preferences in your Profile.</p>
+        </div>";
 
     private async Task TryLogAsync(int taskId, string taskGoal, string project, string action, string details)
     {

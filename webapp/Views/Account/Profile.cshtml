@@ -1,0 +1,60 @@
+@model TaskTracker.Models.AppUser
+@{ ViewData["Title"] = "My Profile"; }
+
+<div class="max-w-lg mx-auto mt-10 px-4">
+    <h1 class="text-xl font-bold text-gray-900 mb-6">My Profile</h1>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+
+    <!-- Read-only identity -->
+    <div class="bg-white border border-gray-200 rounded-2xl p-6 mb-5 space-y-3">
+        <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                 style="background:@(Model.Color ?? "#094f70")">@(Model.DisplayName.Length > 0 ? Model.DisplayName[0].ToString().ToUpper() : "?")</div>
+            <div>
+                <p class="font-semibold text-gray-900">@Model.DisplayName</p>
+                <p class="text-xs text-gray-500">@Model.Username &nbsp;·&nbsp; @Model.Role</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Editable preferences -->
+    <form method="post" action="/Account/Profile" class="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
+        @Html.AntiForgeryToken()
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+            <input type="email" name="email" value="@Model.Email" placeholder="you@example.com"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p class="text-xs text-gray-400 mt-1">Used for email notifications. Never shown to other users.</p>
+        </div>
+
+        <div class="border-t border-gray-100 pt-4">
+            <p class="text-sm font-medium text-gray-700 mb-3">Email me when…</p>
+            <div class="space-y-3">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnAssigned" value="true" @(Model.NotifyOnAssigned ? "checked" : "")
+                           class="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                    <span class="text-sm text-gray-700">A task is assigned to me</span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnComment" value="true" @(Model.NotifyOnComment ? "checked" : "")
+                           class="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                    <span class="text-sm text-gray-700">Someone comments on my task</span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnBlocked" value="true" @(Model.NotifyOnBlocked ? "checked" : "")
+                           class="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                    <span class="text-sm text-gray-700">My task is blocked by another task</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold">Save changes</button>
+        </div>
+    </form>
+</div>

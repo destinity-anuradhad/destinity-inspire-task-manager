@@ -11,7 +11,10 @@ public class AppUser
     public string Role             { get; set; } = "Member";
     public string DisplayName      { get; set; } = "";
     public string? ProfileImagePath { get; set; }
-    public bool   NotifyOnAssigned { get; set; } = true;
-    public DateTime CreatedAt      { get; set; } = DateTime.Now;
-    public string? Color           { get; set; }
+    public string? Email             { get; set; }
+    public bool   NotifyOnAssigned  { get; set; } = true;
+    public bool   NotifyOnComment   { get; set; } = true;
+    public bool   NotifyOnBlocked   { get; set; } = true;
+    public DateTime CreatedAt       { get; set; } = DateTime.Now;
+    public string? Color            { get; set; }
 }

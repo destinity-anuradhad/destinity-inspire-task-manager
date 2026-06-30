@@ -2,12 +2,16 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TaskTracker.Data;
+using TaskTracker.Hubs;
 using TaskTracker.Models;
+using TaskTracker.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
+builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -23,10 +27,28 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Seed users on startup
+// Seed users and migrate new columns on startup
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var db  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+    // Add new AppUser columns if they don't exist yet
+    var conn = db.Database.GetDbConnection();
+    await conn.OpenAsync();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = @"
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='Email')
+                ALTER TABLE AppUsers ADD Email NVARCHAR(200) NULL;
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='NotifyOnComment')
+                ALTER TABLE AppUsers ADD NotifyOnComment BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='NotifyOnBlocked')
+                ALTER TABLE AppUsers ADD NotifyOnBlocked BIT NOT NULL DEFAULT 1;";
+        await cmd.ExecuteNonQueryAsync();
+    }
+    await conn.CloseAsync();
+
     if (!db.AppUsers.Any())
     {
         var hasher = new PasswordHasher<AppUser>();
@@ -62,5 +84,7 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Dashboard}/{action=Index}/{id?}");
+
+app.MapHub<TaskHub>("/hubs/tasks");
 
 app.Run();
