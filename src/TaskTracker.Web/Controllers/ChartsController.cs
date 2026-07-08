@@ -5,10 +5,8 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class ChartsController(IChartService charts) : Controller
+public class ChartsController(IChartService charts) : AppControllerBase
 {
-    private int? ActiveTeamId() => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
-
     public async Task<IActionResult> Index()
     {
         var data = await charts.GetChartDataAsync(ActiveTeamId());

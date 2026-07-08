@@ -518,9 +518,11 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
         if (!string.IsNullOrEmpty(vm.Search))
             query = query.Where(t =>
-                (t.Goal    ?? "").Contains(vm.Search) || (t.Property ?? "").Contains(vm.Search) ||
-                (t.Owner   ?? "").Contains(vm.Search) || (t.Project  ?? "").Contains(vm.Search) ||
-                (t.Labels  ?? "").Contains(vm.Search));
+                (t.Goal     != null && t.Goal.Contains(vm.Search))     ||
+                (t.Property != null && t.Property.Contains(vm.Search)) ||
+                (t.Owner    != null && t.Owner.Contains(vm.Search))    ||
+                (t.Project  != null && t.Project.Contains(vm.Search))  ||
+                (t.Labels   != null && t.Labels.Contains(vm.Search)));
 
         if (!string.IsNullOrEmpty(vm.Project))
             query = vm.Project == "__none__"
@@ -531,7 +533,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             query = query.Where(t => t.Property == vm.Property);
 
         if (!string.IsNullOrEmpty(vm.Owner))
-            query = query.Where(t => (t.Owner ?? "").Contains(vm.Owner));
+            query = query.Where(t => t.Owner != null && t.Owner.Contains(vm.Owner));
 
         // Date filters pushed to SQL (TargetDate is now DateTime?)
         if (DateTime.TryParse(vm.DateFrom, out var dfrom))
@@ -811,8 +813,17 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
     public async Task<ChildStatsResult> GetChildStatsAsync(int id, int? teamId)
     {
-        var all         = await TeamTasks(teamId).ToListAsync();
-        var descendants = GetAllDescendants(all, id);
+        // BFS level-by-level (max 6 depths) — avoids loading all team tasks
+        var descendants = new List<TaskItem>();
+        var parentIds   = new List<int> { id };
+        for (int depth = 0; depth < 6 && parentIds.Count > 0; depth++)
+        {
+            var children = await _db.Tasks.AsNoTracking()
+                .Where(t => t.ParentId.HasValue && parentIds.Contains(t.ParentId.Value))
+                .ToListAsync();
+            descendants.AddRange(children);
+            parentIds = children.Select(t => t.Id).ToList();
+        }
 
         var leaves = descendants.Where(t => t.ItemType is "Task" or "Bug").ToList();
         if (leaves.Any())
