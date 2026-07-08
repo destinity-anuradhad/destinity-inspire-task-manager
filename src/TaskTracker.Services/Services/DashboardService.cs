@@ -19,7 +19,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
 
     public async Task<PersonalDashboardData> GetPersonalAsync(string displayName, int? teamId)
     {
-        var taskQ = _db.Tasks.Where(t => !t.IsDeleted);
+        var taskQ = _db.Tasks.AsNoTracking().Where(t => !t.IsDeleted);
         if (teamId.HasValue) taskQ = taskQ.Where(t => t.TeamId == teamId);
         var all   = await taskQ.ToListAsync();
         var today = DateTime.Today;
@@ -69,9 +69,9 @@ public class DashboardService(AppDbContext db) : IDashboardService
 
     public async Task<List<TeamStat>> GetAllTeamsStatsAsync()
     {
-        var teams = await _db.Teams.Where(t => t.IsActive).ToListAsync();
-        var members = await _db.TeamMembers.ToListAsync();
-        var tasks   = await _db.Tasks.Where(t => !t.IsDeleted).ToListAsync();
+        var teams   = await _db.Teams.AsNoTracking().Where(t => t.IsActive).ToListAsync();
+        var members = await _db.TeamMembers.AsNoTracking().ToListAsync();
+        var tasks   = await _db.Tasks.AsNoTracking().Where(t => !t.IsDeleted).ToListAsync();
         var today   = DateTime.Today;
 
         return teams.Select(t =>
@@ -93,7 +93,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
 
     public async Task<TeamDashboardData> GetTeamAsync(int? teamId)
     {
-        var taskQ = _db.Tasks.Where(t => !t.IsDeleted);
+        var taskQ = _db.Tasks.AsNoTracking().Where(t => !t.IsDeleted);
         if (teamId.HasValue) taskQ = taskQ.Where(t => t.TeamId == teamId);
         var all   = await taskQ.ToListAsync();
         var today = DateTime.Today;

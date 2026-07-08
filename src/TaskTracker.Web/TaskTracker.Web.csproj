@@ -11,4 +11,9 @@
     <ProjectReference Include="..\TaskTracker.Services\TaskTracker.Services.csproj" />
   </ItemGroup>
 
+  <!-- Build purged Tailwind CSS before publish -->
+  <Target Name="BuildTailwind" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="npm run css:build" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
 </Project>

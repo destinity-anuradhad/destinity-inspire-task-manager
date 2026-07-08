@@ -511,7 +511,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             CalMonth = f.CalMonth > 0 ? f.CalMonth : now.Month,
         };
 
-        var query = _db.Tasks.AsQueryable();
+        var query = _db.Tasks.AsNoTracking().AsQueryable();
         if (teamId.HasValue) query = query.Where(t => t.TeamId == teamId);
 
         if (!string.IsNullOrEmpty(vm.Search))
@@ -961,7 +961,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
     public async Task<BacklogResult> GetBacklogAsync(string sprintFilter, int? teamId)
     {
-        var query = _db.Tasks.AsQueryable();
+        var query = _db.Tasks.AsNoTracking().AsQueryable();
         if (teamId.HasValue) query = query.Where(t => t.TeamId == teamId);
 
         if (sprintFilter == "active")
@@ -1029,7 +1029,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
     public async Task<(byte[] Bytes, string FileName)> ExportCsvAsync(ExportFilters f, int? teamId)
     {
-        var query = _db.Tasks.AsQueryable();
+        var query = _db.Tasks.AsNoTracking().AsQueryable();
         if (teamId.HasValue) query = query.Where(t => t.TeamId == teamId);
 
         if (!string.IsNullOrEmpty(f.Search))

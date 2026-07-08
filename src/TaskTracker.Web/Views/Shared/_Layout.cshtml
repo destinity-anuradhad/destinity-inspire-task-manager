@@ -8,7 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&display=swap" />
-    <script src="https://cdn.tailwindcss.com" defer></script>
+    <environment include="Development">
+        <script src="https://cdn.tailwindcss.com" defer></script>
+    </environment>
+    <environment exclude="Development">
+        <link rel="stylesheet" href="/css/app.css" asp-append-version="true" />
+    </environment>
     <link rel="stylesheet" href="/css/brand.css" />
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" defer></script>

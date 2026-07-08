@@ -32,9 +32,9 @@ public class TeamService(AppDbContext db) : ITeamService
 
     public async Task<TeamIndexData> GetIndexDataAsync()
     {
-        var teams    = await _db.Teams.OrderBy(t => t.Name).ToListAsync();
-        var allTasks = await _db.Tasks.Where(t => !t.IsDeleted).ToListAsync();
-        var members  = await _db.TeamMembers.ToListAsync();
+        var teams    = await _db.Teams.AsNoTracking().OrderBy(t => t.Name).ToListAsync();
+        var allTasks = await _db.Tasks.AsNoTracking().Where(t => !t.IsDeleted).ToListAsync();
+        var members  = await _db.TeamMembers.AsNoTracking().ToListAsync();
         var today    = DateTime.Today;
 
         var stats = teams.Select(team => {

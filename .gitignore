@@ -38,7 +38,7 @@ src/TaskTracker.Web/wwwroot/lib/
 # EF migrations snapshot duplicates (keep migrations folder)
 # Uncomment if you want to exclude: **/Migrations/
 
-# Node / Vite / React (legacy frontend — no longer in repo)
+# Legacy Vite/React frontend root files (no longer in repo)
 node_modules/
 dist/
 server/
@@ -46,6 +46,9 @@ public/
 index.html
 vite.config.js
 eslint.config.js
-package.json
-package-lock.json
 README.md
+
+# Web project npm (keep package.json tracked; ignore generated/installed files)
+src/TaskTracker.Web/node_modules/
+src/TaskTracker.Web/package-lock.json
+src/TaskTracker.Web/wwwroot/css/app.css
