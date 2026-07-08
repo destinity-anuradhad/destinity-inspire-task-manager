@@ -41,8 +41,7 @@ public class TeamService(AppDbContext db) : ITeamService
             var tasks   = allTasks.Where(t => t.TeamId == team.Id).ToList();
             var done    = tasks.Count(IsDone);
             var active  = tasks.Count(IsActiveTask);
-            var overdue = tasks.Count(t => !IsDone(t) && !string.IsNullOrEmpty(t.TargetDate) &&
-                DateTime.TryParse(t.TargetDate, out var d) && d.Date < today);
+            var overdue = tasks.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today);
             var mCount  = members.Count(m => m.TeamId == team.Id);
             return new TeamIndexStat {
                 Team = team, Total = tasks.Count, Done = done, Active = active,

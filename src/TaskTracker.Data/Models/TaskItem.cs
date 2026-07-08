@@ -9,14 +9,14 @@ public class TaskItem
     public string? Goal         { get; set; } = "";
     public string? Project      { get; set; } = "";
     public string? Property     { get; set; } = "";
-    public string? TargetDate   { get; set; } = "";
-    public string? Priority     { get; set; } = "";
-    public string? Owner        { get; set; } = "";
-    public string? Status       { get; set; } = "";
-    public string? StartDate    { get; set; } = "";
-    public string? EndDate      { get; set; } = "";
-    public string? ActualStartDate { get; set; } = "";
-    public string? ActualEndDate   { get; set; } = "";
+    public DateTime? TargetDate      { get; set; }
+    public string?   Priority        { get; set; } = "";
+    public string?   Owner           { get; set; } = "";
+    public string?   Status          { get; set; } = "";
+    public DateTime? StartDate       { get; set; }
+    public DateTime? EndDate         { get; set; }
+    public DateTime? ActualStartDate { get; set; }
+    public DateTime? ActualEndDate   { get; set; }
     public string? RelatedFiles    { get; set; } = "";
     public string? Notes           { get; set; } = "";
     public DateTime CreatedAt   { get; set; } = DateTime.Now;

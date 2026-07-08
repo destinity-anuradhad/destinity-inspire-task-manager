@@ -17,7 +17,7 @@ public class UserService(AppDbContext db) : IUserService
     public async Task<ProfileStats> GetProfileStatsAsync(int uid, string displayName)
         => new ProfileStats {
             TasksAssigned  = await _db.Tasks.CountAsync(t => t.Owner != null && t.Owner.Contains(displayName)),
-            TasksCompleted = await _db.Tasks.CountAsync(t => t.Owner != null && t.Owner.Contains(displayName) && !string.IsNullOrEmpty(t.ActualEndDate)),
+            TasksCompleted = await _db.Tasks.CountAsync(t => t.Owner != null && t.Owner.Contains(displayName) && t.ActualEndDate.HasValue),
             TasksWatching  = await _db.TaskWatchers.CountAsync(w => w.UserId == uid),
         };
 

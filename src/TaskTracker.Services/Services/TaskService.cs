@@ -331,7 +331,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                     _ = _email.SendAsync(user.Email, user.DisplayName,
                         $"[Task Manager] Assigned: {task.Goal}",
                         EmailHtml("You've been assigned to a new task.",
-                            TaskCard(task.Goal, task.Priority, task.Status, task.TargetDate),
+                            TaskCard(task.Goal, task.Priority, task.Status, task.TargetDate?.ToString("yyyy-MM-dd")),
                             task.Id, "Open Task", user.DisplayName, "assigned", teamName));
             }
             await _db.SaveChangesAsync();
@@ -537,9 +537,9 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         var allTasks = await query.ToListAsync();
 
         if (DateTime.TryParse(vm.DateFrom, out var dfrom))
-            allTasks = allTasks.Where(t => DateTime.TryParse(t.TargetDate, out var d) && d.Date >= dfrom.Date).ToList();
+            allTasks = allTasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date >= dfrom.Date).ToList();
         if (DateTime.TryParse(vm.DateTo, out var dto))
-            allTasks = allTasks.Where(t => DateTime.TryParse(t.TargetDate, out var d) && d.Date <= dto.Date).ToList();
+            allTasks = allTasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date <= dto.Date).ToList();
 
         vm.StatusCounts = allTasks.GroupBy(t => t.Status ?? "").ToDictionary(g => g.Key, g => g.Count());
 
@@ -665,8 +665,8 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                 itemType           = t.ItemType ?? "",
                 project            = t.Project  ?? "",
                 property           = t.Property ?? "",
-                startDate          = t.StartDate ?? "",
-                endDate            = t.EndDate   ?? "",
+                startDate          = t.StartDate?.ToString("yyyy-MM-dd") ?? "",
+                endDate            = t.EndDate?.ToString("yyyy-MM-dd")   ?? "",
                 weight             = t.Weight,
                 swimlane           = t.Swimlane ?? "",
                 reporter           = t.Reporter ?? "",
@@ -1025,14 +1025,14 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
         var tasks = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
         if (DateTime.TryParse(f.DateFrom, out var dfrom))
-            tasks = tasks.Where(t => DateTime.TryParse(t.TargetDate, out var d) && d.Date >= dfrom.Date).ToList();
+            tasks = tasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date >= dfrom.Date).ToList();
         if (DateTime.TryParse(f.DateTo, out var dto))
-            tasks = tasks.Where(t => DateTime.TryParse(t.TargetDate, out var d) && d.Date <= dto.Date).ToList();
+            tasks = tasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date <= dto.Date).ToList();
 
         var sb = new StringBuilder();
         sb.AppendLine("Id,Goal,Project,Client,Priority,Owner,Status,TargetDate,ExpectedStartDate,ExpectedEndDate,ActualStartDate,ActualEndDate,Weight,RelatedFiles,Notes,CreatedAt");
         foreach (var t in tasks)
-            sb.AppendLine($"{t.Id},{Csv(t.Goal)},{Csv(t.Project)},{Csv(t.Property)},{Csv(t.Priority)},{Csv(t.Owner)},{Csv(t.Status)},{Csv(t.TargetDate)},{Csv(t.StartDate)},{Csv(t.EndDate)},{Csv(t.ActualStartDate)},{Csv(t.ActualEndDate)},{t.Weight},{Csv(t.RelatedFiles)},{Csv(t.Notes)},{t.CreatedAt:yyyy-MM-dd HH:mm}");
+            sb.AppendLine($"{t.Id},{Csv(t.Goal)},{Csv(t.Project)},{Csv(t.Property)},{Csv(t.Priority)},{Csv(t.Owner)},{Csv(t.Status)},{Csv(t.TargetDate?.ToString("yyyy-MM-dd"))},{Csv(t.StartDate?.ToString("yyyy-MM-dd"))},{Csv(t.EndDate?.ToString("yyyy-MM-dd"))},{Csv(t.ActualStartDate?.ToString("yyyy-MM-dd"))},{Csv(t.ActualEndDate?.ToString("yyyy-MM-dd"))},{t.Weight},{Csv(t.RelatedFiles)},{Csv(t.Notes)},{t.CreatedAt:yyyy-MM-dd HH:mm}");
 
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
         return (bytes, $"tasks-{DateTime.Now:yyyyMMdd}.csv");
@@ -1113,11 +1113,11 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                 var oldSprintId = existing.SprintId;
                 existing.SprintId = task.ItemType is "Epic" or "Feature" ? null : task.SprintId;
                 if (existing.SprintId.HasValue && existing.SprintId != oldSprintId
-                    && string.IsNullOrWhiteSpace(existing.StartDate))
+                    && !existing.StartDate.HasValue)
                 {
                     var sp = await _db.Sprints.FindAsync(existing.SprintId.Value);
                     if (sp?.StartDate != null)
-                        existing.StartDate = sp.StartDate.Value.ToString("yyyy-MM-dd");
+                        existing.StartDate = sp.StartDate.Value;
                 }
                 if (!string.IsNullOrWhiteSpace(task.Reporter)) existing.Reporter = task.Reporter;
 
@@ -1221,8 +1221,8 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         {
             sprint = await FindSprintInTeam(sprintId.Value, ctx.TeamId);
             if (sprint == null) return new TaskSprintResult { Error = "Sprint not found." };
-            if (sprint.StartDate != null && string.IsNullOrWhiteSpace(task.StartDate))
-                task.StartDate = sprint.StartDate.Value.ToString("yyyy-MM-dd");
+            if (sprint.StartDate != null && !task.StartDate.HasValue)
+                task.StartDate = sprint.StartDate.Value;
         }
 
         await _db.SaveChangesAsync();

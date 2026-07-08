@@ -34,11 +34,10 @@
         _             => "bg-gray-100 text-gray-500 border border-gray-200"
     };
 
-    static bool IsOverdue(string? expectedEnd, string? status)
+    static bool IsOverdue(DateTime? expectedEnd, string? status)
     {
         if (status is "Done" or "On hold") return false;
-        if (string.IsNullOrEmpty(expectedEnd)) return false;
-        return DateTime.TryParse(expectedEnd, out var d) && d.Date < DateTime.Today;
+        return expectedEnd.HasValue && expectedEnd.Value.Date < DateTime.Today;
     }
 
     static IEnumerable<string> SplitOwners(string? owner) =>
@@ -454,7 +453,7 @@
                                     </span>
                                 }
                             </td>
-                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.EndDate</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.EndDate?.ToString("yyyy-MM-dd")</td>
                             <td class="px-4 py-3 text-center">
                                 @{ var cmtCount = Model.CommentCounts.GetValueOrDefault(task.Id, 0); }
                                 @if (cmtCount > 0)
@@ -712,7 +711,7 @@
                                             </div>
                                             <div class="flex items-center gap-1.5">
                                                 @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
-                                                @if (!string.IsNullOrEmpty(kt.EndDate)) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate</span> }
+                                                @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
                                         </div>
                                     </div>
@@ -772,7 +771,7 @@
                                             </div>
                                             <div class="flex items-center gap-1.5">
                                                 @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
-                                                @if (!string.IsNullOrEmpty(kt.EndDate)) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate</span> }
+                                                @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
                                         </div>
                                     </div>
@@ -809,22 +808,10 @@
         var tlEntries   = new List<(TaskItem T, int S, int E)>();
         var noDateItems = new List<TaskItem>();
 
-        static bool TryParseDate(string? s, out DateTime d) {
-            d = default;
-            if (string.IsNullOrWhiteSpace(s)) return false;
-            return DateTime.TryParseExact(s,
-                new[]{"yyyy-MM-dd","dd/MM/yyyy","d/M/yyyy","dd/M/yyyy","d/MM/yyyy","MM/dd/yyyy","dd-MM-yyyy","yyyy/MM/dd"},
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.None, out d)
-                || DateTime.TryParse(s, out d);
-        }
-
         foreach (var t in Model.Tasks)
         {
-            DateTime? ts = null, te = null;
-            if (TryParseDate(t.StartDate,  out var _s))  ts = _s;
-            if (TryParseDate(t.EndDate,    out var _e))  te = _e;
-            if (te == null && TryParseDate(t.TargetDate, out var _td)) te = _td;
+            DateTime? ts = t.StartDate;
+            DateTime? te = t.EndDate ?? t.TargetDate;
             if (ts == null) ts = te;
             if (te == null) te = ts;
 
@@ -922,7 +909,7 @@
                                     var tdX = (today.Day - 1) * colW + colW / 2;
                                     <div class="absolute top-0 bottom-0 w-px bg-blue-400/50 pointer-events-none" style="left:@(tdX)px"></div>
                                 }
-                                @{ var tlBarTitle = tlT.Goal + (tlT.EndDate != null ? " · due " + tlT.EndDate : ""); }
+                                @{ var tlBarTitle = tlT.Goal + (tlT.EndDate.HasValue ? " · due " + tlT.EndDate.Value.ToString("yyyy-MM-dd") : ""); }
                                 <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
                                         class="absolute h-6 rounded text-white text-[10px] font-medium truncate px-1.5 flex items-center shadow-sm hover:opacity-80 transition-opacity"
                                         style="left:@(barPx)px;width:@(barW)px;background:@barClr"

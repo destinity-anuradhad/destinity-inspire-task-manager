@@ -209,8 +209,7 @@
                 <div class="space-y-2">
                 @foreach (var task in myWorkingOn)
                 {
-                    bool isOvr = !string.IsNullOrEmpty(task.TargetDate) &&
-                                 DateTime.TryParse(task.TargetDate, out var dv) && dv.Date < today;
+                    bool isOvr = task.TargetDate.HasValue && task.TargetDate.Value.Date < today;
                     <a href="/Tasks/Edit/@task.Id"
                        class="flex items-start gap-3 p-3 rounded-xl border transition-all hover:shadow-sm"
                        style="border-color:var(--border);background:var(--surface)">
@@ -234,11 +233,11 @@
                                 }
                             </div>
                         </div>
-                        @if (!string.IsNullOrEmpty(task.TargetDate))
+                        @if (task.TargetDate.HasValue)
                         {
                         <span class="text-[11px] whitespace-nowrap flex-shrink-0 font-medium mt-0.5"
                               style="color:@(isOvr ? "#ef4444" : "var(--text-3)")">
-                            @(isOvr ? "⚠ " : "")@task.TargetDate
+                            @(isOvr ? "⚠ " : "")@task.TargetDate?.ToString("yyyy-MM-dd")
                         </span>
                         }
                     </a>
@@ -325,8 +324,7 @@
                 <div class="space-y-0.5 overflow-y-auto" style="max-height:300px">
                 @foreach (var task in myPending)
                 {
-                    bool isOvr = !string.IsNullOrEmpty(task.TargetDate) &&
-                                 DateTime.TryParse(task.TargetDate, out var dv) && dv.Date < today;
+                    bool isOvr = task.TargetDate.HasValue && task.TargetDate.Value.Date < today;
                     var prioClr = task.Priority switch {
                         "Critical" => "#ef4444", "High" => "#f97316", "Medium" => "#f59e0b", _ => "var(--text-3)"
                     };
@@ -350,11 +348,11 @@
                         {
                             <span class="text-[10px] font-bold flex-shrink-0 px-1.5 py-0.5 rounded" style="color:@prioClr">@task.Priority</span>
                         }
-                        @if (!string.IsNullOrEmpty(task.TargetDate))
+                        @if (task.TargetDate.HasValue)
                         {
                             <span class="text-[10px] whitespace-nowrap flex-shrink-0 font-medium"
                                   style="color:@(isOvr ? "#ef4444" : "var(--text-3)")">
-                                @(isOvr ? "⚠ " : "")@task.TargetDate
+                                @(isOvr ? "⚠ " : "")@task.TargetDate?.ToString("yyyy-MM-dd")
                             </span>
                         }
                     </a>

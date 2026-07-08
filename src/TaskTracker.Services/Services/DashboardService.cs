@@ -39,11 +39,9 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Done         = mine.Count(IsDone),
             InProgress   = mine.Count(IsActive),
             Open         = mine.Count(t => t.Status is "New" or "To Do"),
-            Overdue      = mine.Count(t => !IsDone(t) && !string.IsNullOrEmpty(t.TargetDate) &&
-                              DateTime.TryParse(t.TargetDate, out var d) && d.Date < today),
+            Overdue      = mine.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
             Pending      = mine.Where(t => !IsDone(t))
-                              .OrderBy(t => string.IsNullOrEmpty(t.TargetDate) ? DateTime.MaxValue :
-                                  DateTime.TryParse(t.TargetDate, out var d) ? d : DateTime.MaxValue)
+                              .OrderBy(t => t.TargetDate ?? DateTime.MaxValue)
                               .Take(10).ToList(),
             WorkingOn    = mine.Where(IsActive).ToList(),
             ByType       = mine.GroupBy(t => t.ItemType ?? "Task").ToDictionary(g => g.Key, g => g.Count()),
@@ -87,8 +85,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
                 Total       = teamTasks.Count,
                 Done        = done,
                 Active      = teamTasks.Count(IsActive),
-                Overdue     = teamTasks.Count(x => !IsDone(x) && !string.IsNullOrEmpty(x.TargetDate) &&
-                                  DateTime.TryParse(x.TargetDate, out var d) && d.Date < today),
+                Overdue     = teamTasks.Count(x => !IsDone(x) && x.TargetDate.HasValue && x.TargetDate.Value.Date < today),
                 CompletePct = teamTasks.Count > 0 ? (int)Math.Round((double)done / teamTasks.Count * 100) : 0,
             };
         }).ToList();
@@ -123,8 +120,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Total      = kv.Value.Count,
             Done       = kv.Value.Count(IsDone),
             InProgress = kv.Value.Count(IsActive),
-            Overdue    = kv.Value.Count(t => !IsDone(t) && !string.IsNullOrEmpty(t.TargetDate) &&
-                             DateTime.TryParse(t.TargetDate, out var d) && d.Date < today)
+            Overdue    = kv.Value.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today)
         }).OrderByDescending(o => o.Total).ToList();
 
         var appUsers      = await _db.AppUsers.ToListAsync();
@@ -142,8 +138,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Total         = all.Count,
             Done          = all.Count(IsDone),
             InProgress    = all.Count(IsActive),
-            Overdue       = all.Count(t => !IsDone(t) && !string.IsNullOrEmpty(t.TargetDate) &&
-                               DateTime.TryParse(t.TargetDate, out var d) && d.Date < today),
+            Overdue       = all.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
             StatusLabels  = JsonSerializer.Serialize(statusCounts.Keys.ToArray()),
             StatusValues  = JsonSerializer.Serialize(statusCounts.Values.ToArray()),
             ProjectLabels = JsonSerializer.Serialize(projectCounts.Select(p => p.Key).ToArray()),

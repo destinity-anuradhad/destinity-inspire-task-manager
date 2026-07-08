@@ -327,11 +327,11 @@ namespace TaskTracker.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("ActualEndDate")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("ActualEndDate")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("ActualStartDate")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("ActualStartDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<int?>("ClientId")
                         .HasColumnType("int");
@@ -342,8 +342,8 @@ namespace TaskTracker.Migrations
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<string>("EndDate")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<int?>("ExternalId")
                         .HasColumnType("int");
@@ -405,14 +405,14 @@ namespace TaskTracker.Migrations
                     b.Property<string>("DeletedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("StartDate")
-                        .HasColumnType("nvarchar(450)");
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<string>("TargetDate")
-                        .HasColumnType("nvarchar(450)");
+                    b.Property<DateTime?>("TargetDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<decimal?>("Weight")
                         .HasColumnType("decimal(18,2)");
