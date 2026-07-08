@@ -1126,14 +1126,18 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             }
             else
             {
-                if (task.Status is "Active" or "In Progress" or "Resolved" or "Done" or "Closed"
-                    && string.IsNullOrWhiteSpace(task.Owner))
-                    return new TaskSaveResult { Error = $"Assign an owner before moving this to {task.Status}." };
-
                 var existing = await FindTaskInTeam(task.Id, ctx.TeamId);
                 if (existing == null) return new TaskSaveResult { Error = "Task not found" };
                 if (!ctx.IsAdmin && !CanModify(existing, ctx))
                     return new TaskSaveResult { Error = "You don't have permission to edit this task." };
+
+                // Members cannot change the owner — resolve it before the status guard
+                // so the guard sees the correct effective owner, not the empty form value.
+                if (ctx.IsMember) task.Owner = existing.Owner;
+
+                if (task.Status is "Active" or "In Progress" or "Resolved" or "Done" or "Closed"
+                    && string.IsNullOrWhiteSpace(task.Owner))
+                    return new TaskSaveResult { Error = $"Assign an owner before moving this to {task.Status}." };
 
                 var changes   = new List<string>();
                 var oldOwner  = existing.Owner;
@@ -1155,7 +1159,6 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                         };
                 }
 
-                if (ctx.IsMember) task.Owner = existing.Owner;
                 existing.Goal = task.Goal; existing.Project = task.Project;
                 existing.Property = task.Property; existing.Priority = task.Priority;
                 existing.Owner = task.Owner; existing.Status = task.Status;

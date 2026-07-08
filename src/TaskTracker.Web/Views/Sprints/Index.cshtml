@@ -51,7 +51,7 @@
 
                     <!-- Sprint name & dates -->
                     <div class="pr-16">
-                        <h3 class="font-semibold text-gray-900 text-base leading-snug">@sprint.Name</h3>
+                        <h2 class="font-semibold text-gray-900 text-base leading-snug">@sprint.Name</h2>
                         @if (sprint.StartDate.HasValue || sprint.EndDate.HasValue)
                         {
                             <p class="text-xs text-gray-400 mt-0.5">
@@ -137,7 +137,7 @@
         <!-- Modal header -->
         <div class="flex items-start justify-between px-6 py-4 border-b border-gray-100 shrink-0">
             <div>
-                <h2 id="cap-title" class="text-base font-semibold text-gray-900">Capacity Planning</h2>
+                <h3 id="cap-title" class="text-base font-semibold text-gray-900">Capacity Planning</h3>
                 <p id="cap-subtitle" class="text-xs text-gray-400 mt-0.5"></p>
             </div>
             <button onclick="closeCapacity()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors -mt-1 -mr-1">
@@ -177,7 +177,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
         <div>
-            <h2 id="sp-title" class="text-lg font-semibold text-gray-900">New Sprint</h2>
+            <h3 id="sp-title" class="text-lg font-semibold text-gray-900">New Sprint</h3>
             <p id="sp-subtitle" class="text-xs text-gray-400 hidden"></p>
         </div>
         <button onclick="closeSprintPanel()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
