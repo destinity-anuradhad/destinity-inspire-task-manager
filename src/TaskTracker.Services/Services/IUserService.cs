@@ -8,6 +8,7 @@ public interface IUserService
     Task<ProfileStats> GetProfileStatsAsync(int uid, string displayName);
     Task<(bool Success, string? Error)> UpdateProfileAsync(int uid, ProfileUpdateRequest req);
     Task<(bool Success, string? Error)> ChangePasswordAsync(int uid, string currentPassword, string newPassword);
+    Task ClearMustChangePasswordAsync(int uid);
     Task UpdateWorkPreferencesAsync(int uid, decimal? dailyCapacityHours, string workingDays);
     Task UpdateNotificationsAsync(int uid, bool notifyOnAssigned, bool notifyOnComment, bool notifyOnBlocked);
 

@@ -69,12 +69,19 @@ public class AccountController(IUserService userService, IActivityService activi
             new("ProfileImagePath", user.ProfileImagePath ?? ""),
             new("AvatarColor",      user.Color ?? "#3b82f6"),
         };
+        if (user.MustChangePassword)
+            claims.Add(new Claim("MustChangePassword", "1"));
+
         var identity  = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
             new AuthenticationProperties { IsPersistent = true });
 
         await activity.LogAsync(user.DisplayName, "Login", "Auth", "Signed in", ip, ua);
+
+        if (user.MustChangePassword)
+            return RedirectToAction("ForceChangePassword");
+
         return LocalRedirect(Url.IsLocalUrl(returnUrl) ? returnUrl! : "/Teams/AutoSelect");
     }
 
@@ -89,6 +96,68 @@ public class AccountController(IUserService userService, IActivityService activi
         await activity.LogAsync(name, "Logout", "Auth", "Signed out", ip, ua);
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction("Login");
+    }
+
+    // ── Forced password change ────────────────────────────────────────────────
+
+    [HttpGet]
+    public IActionResult ForceChangePassword()
+    {
+        if (User.FindFirst("MustChangePassword")?.Value != "1")
+            return RedirectToAction("Index", "Dashboard");
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ForceChangePassword(string currentPassword, string newPassword, string confirmPassword)
+    {
+        if (User.FindFirst("MustChangePassword")?.Value != "1")
+            return RedirectToAction("Index", "Dashboard");
+
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+        {
+            ViewBag.Error = "New password must be at least 8 characters.";
+            return View();
+        }
+        if (newPassword != confirmPassword)
+        {
+            ViewBag.Error = "Passwords do not match.";
+            return View();
+        }
+        if (newPassword == currentPassword)
+        {
+            ViewBag.Error = "New password must be different from your current password.";
+            return View();
+        }
+
+        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var (ok, error) = await userService.ChangePasswordAsync(uid, currentPassword, newPassword);
+        if (!ok)
+        {
+            ViewBag.Error = error ?? "Password change failed.";
+            return View();
+        }
+
+        // Clear MustChangePassword flag in DB and re-issue cookie without the claim.
+        await userService.ClearMustChangePasswordAsync(uid);
+        var user = await userService.GetByIdAsync(uid);
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name,    user!.Username),
+            new(ClaimTypes.Role,    user.Role),
+            new("UserId",           user.Id.ToString()),
+            new("DisplayName",      user.DisplayName),
+            new("ProfileImagePath", user.ProfileImagePath ?? ""),
+            new("AvatarColor",      user.Color ?? "#3b82f6"),
+        };
+        var identity  = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
+
+        await activity.LogAsync(user.DisplayName, "Password Changed", "Auth", "Forced change on first login",
+            HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return RedirectToAction("AutoSelect", "Teams");
     }
 
     // ── Notifications (team-scoped) ───────────────────────────────────────────

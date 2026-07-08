@@ -45,9 +45,18 @@ public class UserService(AppDbContext db) : IUserService
         var hasher = new PasswordHasher<AppUser>();
         if (hasher.VerifyHashedPassword(user, user.PasswordHash, currentPassword) == PasswordVerificationResult.Failed)
             return (false, "Current password is incorrect");
-        user.PasswordHash = hasher.HashPassword(user, newPassword);
+        user.PasswordHash        = hasher.HashPassword(user, newPassword);
+        user.MustChangePassword  = false;
         await _db.SaveChangesAsync();
         return (true, null);
+    }
+
+    public async Task ClearMustChangePasswordAsync(int uid)
+    {
+        var user = await _db.AppUsers.FindAsync(uid);
+        if (user == null) return;
+        user.MustChangePassword = false;
+        await _db.SaveChangesAsync();
     }
 
     public async Task UpdateWorkPreferencesAsync(int uid, decimal? dailyCapacityHours, string workingDays)

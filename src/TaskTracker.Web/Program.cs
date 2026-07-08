@@ -176,7 +176,10 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='Status')
                     ALTER TABLE [AppUsers] ADD [Status] NVARCHAR(20) NOT NULL DEFAULT 'Active';
                 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='RequestedTeamId')
-                    ALTER TABLE [AppUsers] ADD [RequestedTeamId] INT NULL;";
+                    ALTER TABLE [AppUsers] ADD [RequestedTeamId] INT NULL;
+                -- Forced password change on first login
+                IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='MustChangePassword')
+                    ALTER TABLE [AppUsers] ADD [MustChangePassword] BIT NOT NULL DEFAULT 0;";
             await cmd2.ExecuteNonQueryAsync();
         }
     }
@@ -253,13 +256,13 @@ using (var scope = app.Services.CreateScope())
         var hasher = new PasswordHasher<AppUser>();
         var seeds = new[]
         {
-            new AppUser { Username = "sachithk",  Role = "Admin",  DisplayName = "SachithK" },
-            new AppUser { Username = "stehanis",  Role = "Member", DisplayName = "Stehani"  },
-            new AppUser { Username = "anuradhad", Role = "Admin",  DisplayName = "Anuradha" },
-            new AppUser { Username = "piyumit",   Role = "Member", DisplayName = "Piyumi"   },
-            new AppUser { Username = "sachithm",  Role = "Member", DisplayName = "SachithM" },
-            new AppUser { Username = "chathunia", Role = "Member", DisplayName = "Chathuni" },
-            new AppUser { Username = "kaviyas",   Role = "Member", DisplayName = "Kaviya"   },
+            new AppUser { Username = "sachithk",  Role = "Admin",  DisplayName = "SachithK",  MustChangePassword = true },
+            new AppUser { Username = "stehanis",  Role = "Member", DisplayName = "Stehani",   MustChangePassword = true },
+            new AppUser { Username = "anuradhad", Role = "Admin",  DisplayName = "Anuradha",  MustChangePassword = true },
+            new AppUser { Username = "piyumit",   Role = "Member", DisplayName = "Piyumi",    MustChangePassword = true },
+            new AppUser { Username = "sachithm",  Role = "Member", DisplayName = "SachithM",  MustChangePassword = true },
+            new AppUser { Username = "chathunia", Role = "Member", DisplayName = "Chathuni",  MustChangePassword = true },
+            new AppUser { Username = "kaviyas",   Role = "Member", DisplayName = "Kaviya",    MustChangePassword = true },
         };
         foreach (var u in seeds)
             u.PasswordHash = hasher.HashPassword(u, "Password@123");
@@ -282,6 +285,25 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Redirect any authenticated user with MustChangePassword claim to the forced-change page.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true &&
+        ctx.User.FindFirst("MustChangePassword")?.Value == "1")
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        var skip = path.StartsWith("/Account/ForceChangePassword", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/Account/Logout", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase);
+        if (!skip)
+        {
+            ctx.Response.Redirect("/Account/ForceChangePassword");
+            return;
+        }
+    }
+    await next();
+});
 
 app.MapControllerRoute(
     name: "default",

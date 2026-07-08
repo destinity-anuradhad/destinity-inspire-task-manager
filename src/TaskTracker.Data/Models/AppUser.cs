@@ -21,6 +21,7 @@ public class AppUser
     public string? Department       { get; set; }
     public decimal? DailyCapacityHours { get; set; }
     public string?  WorkingDays     { get; set; } = "Mon,Tue,Wed,Thu,Fri";
-    public string   Status          { get; set; } = "Active";
-    public int?     RequestedTeamId { get; set; }
+    public string   Status            { get; set; } = "Active";
+    public int?     RequestedTeamId   { get; set; }
+    public bool     MustChangePassword { get; set; } = false;
 }
