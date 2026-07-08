@@ -3,17 +3,20 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TaskTracker.Models;
 using TaskTracker.Services;
+using TaskTracker.Services.Options;
 
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class AccountController(IUserService userService, IActivityService activity, IConfiguration config, IHttpClientFactory httpFactory) : AppControllerBase
+public class AccountController(IUserService userService, IActivityService activity, IOptions<RecaptchaOptions> recaptchaOpts, IHttpClientFactory httpFactory) : AppControllerBase
 {
+    private readonly RecaptchaOptions _recaptcha = recaptchaOpts.Value;
 
     // ── Login ─────────────────────────────────────────────────────────────────
 
@@ -237,33 +240,29 @@ public class AccountController(IUserService userService, IActivityService activi
 
     private void SetRecaptchaViewBag()
     {
-        ViewBag.RecaptchaEnabled = config.GetValue("Recaptcha:Enabled", false);
-        ViewBag.RecaptchaSiteKey = config["Recaptcha:SiteKey"] ?? "";
+        ViewBag.RecaptchaEnabled = _recaptcha.Enabled;
+        ViewBag.RecaptchaSiteKey = _recaptcha.SiteKey;
     }
 
     private async Task<bool> VerifyRecaptchaAsync(string? token)
     {
-        if (!config.GetValue("Recaptcha:Enabled", false)) return true;
-
-        var secret = config["Recaptcha:SecretKey"];
-        if (string.IsNullOrWhiteSpace(secret)) return true;
-
+        if (!_recaptcha.Enabled) return true;
+        if (string.IsNullOrWhiteSpace(_recaptcha.SecretKey)) return true;
         if (string.IsNullOrWhiteSpace(token)) return false;
 
         try
         {
-            var verifyUrl = config["Recaptcha:VerifyUrl"] ?? "https://www.google.com/recaptcha/api/siteverify";
-            var client    = httpFactory.CreateClient();
+            var client = httpFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(10);
 
             using var form = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                ["secret"]   = secret,
+                ["secret"]   = _recaptcha.SecretKey,
                 ["response"] = token,
                 ["remoteip"] = HttpContext.Connection.RemoteIpAddress?.ToString() ?? ""
             });
 
-            var resp = await client.PostAsync(verifyUrl, form);
+            var resp = await client.PostAsync(_recaptcha.VerifyUrl, form);
             if (!resp.IsSuccessStatusCode) return true;
 
             var json   = await resp.Content.ReadAsStringAsync();

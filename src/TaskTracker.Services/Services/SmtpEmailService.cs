@@ -1,22 +1,23 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.Extensions.Options;
 using MimeKit;
 using TaskTracker.Data;
 using TaskTracker.Models;
+using TaskTracker.Services.Options;
 
 namespace TaskTracker.Services;
 
-public class SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> logger, IServiceScopeFactory scopeFactory) : IEmailService
+public class SmtpEmailService(IOptions<EmailOptions> opts, ILogger<SmtpEmailService> logger, IServiceScopeFactory scopeFactory) : IEmailService
 {
+    private readonly EmailOptions _email = opts.Value;
+
     public async Task SendAsync(string toEmail, string toName, string subject, string htmlBody)
     {
-        var cfg      = config.GetSection("Email");
-        var password = cfg["Password"] ?? "";
-
         bool    success      = false;
         string? errorMessage = null;
 
-        if (string.IsNullOrWhiteSpace(password))
+        if (string.IsNullOrWhiteSpace(_email.Password))
         {
             logger.LogWarning("Email not sent (no SMTP password configured): {Subject} → {To}", subject, toEmail);
             errorMessage = "No SMTP password configured";
@@ -24,7 +25,9 @@ public class SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> l
         else
         {
             var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(cfg["FromName"] ?? "Task Manager", cfg["FromAddress"]));
+            message.From.Add(new MailboxAddress(
+                string.IsNullOrEmpty(_email.FromName) ? "Task Manager" : _email.FromName,
+                _email.FromAddress));
             message.To.Add(new MailboxAddress(toName, toEmail));
             message.Subject = subject;
             message.Body    = new TextPart("html") { Text = htmlBody };
@@ -32,8 +35,8 @@ public class SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> l
             using var client = new SmtpClient();
             try
             {
-                await client.ConnectAsync(cfg["SmtpHost"], int.Parse(cfg["SmtpPort"] ?? "587"), SecureSocketOptions.StartTls);
-                await client.AuthenticateAsync(cfg["Username"], password);
+                await client.ConnectAsync(_email.SmtpHost, _email.SmtpPort, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(_email.Username, _email.Password);
                 await client.SendAsync(message);
                 await client.DisconnectAsync(true);
                 logger.LogInformation("Email sent: {Subject} → {To}", subject, toEmail);

@@ -7,6 +7,7 @@ using TaskTracker.Data;
 using TaskTracker.Hubs;
 using TaskTracker.Models;
 using TaskTracker.Services;
+using TaskTracker.Services.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,8 @@ RequireSecret(builder.Configuration, "Recaptcha:SecretKey");
 builder.Services.AddControllersWithViews();
 builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+builder.Services.Configure<RecaptchaOptions>(builder.Configuration.GetSection("Recaptcha"));
 builder.Services.AddResponseCompression(opts => {
     opts.EnableForHttps = true;
     opts.Providers.Add<BrotliCompressionProvider>();
