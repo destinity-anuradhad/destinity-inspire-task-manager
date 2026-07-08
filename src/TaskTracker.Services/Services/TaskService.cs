@@ -10,12 +10,14 @@ using TaskTracker.Models.ViewModels;
 
 namespace TaskTracker.Services;
 
-public class TaskService(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailService email) : ITaskService
+public class TaskService(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailService email,
+    ILogger<TaskService> logger) : ITaskService
 {
     private readonly AppDbContext         _db     = db;
     private readonly IConfiguration      _config = config;
     private readonly IHubContext<TaskHub> _hub    = hub;
     private readonly IEmailService       _email  = email;
+    private readonly ILogger<TaskService> _log   = logger;
 
     // ── Permission / scope helpers ─────────────────────────────────────────────
 
@@ -89,7 +91,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             });
             await _db.SaveChangesAsync();
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "Activity log write failed: {Action} on task {TaskId}", action, taskId); }
     }
 
     // ── Cascade helpers ────────────────────────────────────────────────────────
@@ -351,7 +353,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             }
             await _db.SaveChangesAsync();
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "NotifyAssignedAsync failed for task {TaskId}", task.Id); }
     }
 
     // Fire-and-forget: must NOT access _db (request scope may be disposed by then).
@@ -395,7 +397,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                         task.Id, "View Comment", user.DisplayName, "comment-watcher", teamName));
             }
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "NotifyCommentAsync failed for task {TaskId}", task.Id); }
     }
 
     private async Task NotifyWatchersStatusAsync(TaskItem task, string? oldStatus, string? newStatus, UserCtx ctx)
@@ -428,7 +430,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 </table>";
             _ = SendWatcherEmailsAsync(task.Id, task.Goal, targets, actor, statusHtml, teamName);
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "NotifyWatchersStatusAsync failed for task {TaskId}", task.Id); }
     }
 
     // Fire-and-forget: must NOT access _db.
@@ -447,7 +449,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                         taskId, "View Task", u.DisplayName, "status", teamName));
             }
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "SendWatcherEmailsAsync failed for task {TaskId}", taskId); }
     }
 
     private async Task NotifyBlockedAsync(int fromId, int toId)
@@ -492,7 +494,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             }
             if (saved) await _db.SaveChangesAsync();
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "NotifyBlockedAsync failed: blocker {From} → blocked {To}", fromId, toId); }
     }
 
     // ── ITaskService: query methods ────────────────────────────────────────────
@@ -905,7 +907,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             while (await rdr.ReadAsync())
                 list.Add(new { id = rdr.GetInt32(0), code = rdr.GetString(1), name = rdr.GetString(2) });
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "GetModulesAsync: HIM DB query failed"); }
         return list;
     }
 
@@ -955,7 +957,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                     list.Add(new { id, name });
             }
         }
-        catch { }
+        catch (Exception ex) { _log.LogError(ex, "GetClientsAsync: HIM DB query failed for module {ModuleId}", moduleId); }
         return list;
     }
 
