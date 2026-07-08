@@ -1188,6 +1188,10 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             });
             return new TaskSaveResult { Success = true, TaskId = task.Id, CapacityWarning = capacityWarning };
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new TaskSaveResult { Error = "This task was modified by someone else. Please reload and try again." };
+        }
         catch (Exception ex) { return new TaskSaveResult { Error = ex.Message }; }
     }
 
@@ -1210,7 +1214,14 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         task.Status = status;
         if (swimlane != null)
             task.Swimlane = swimlane is "Default" or "" ? null : swimlane;
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new TaskUpdateResult { Error = "This task was modified by someone else. Please reload and try again." };
+        }
         await CascadeParentStatusAsync(task.ParentId, ctx);
         if (old != status) await NotifyWatchersStatusAsync(task, old, status, ctx);
         var logDetails = $"'{old}' → '{status}'" + (swimlane != null ? $"; Swimlane: {swimlane}" : "");

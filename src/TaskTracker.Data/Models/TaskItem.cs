@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace TaskTracker.Models;
@@ -37,4 +38,7 @@ public class TaskItem
     public DateTime? DeletedAt  { get; set; }
     public string?   DeletedBy  { get; set; }
     public int?      TeamId     { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = null!;
 }
