@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text;
 using System.Text.Json;
 using TaskTracker.Data;
@@ -11,13 +12,16 @@ using TaskTracker.Models.ViewModels;
 namespace TaskTracker.Services;
 
 public class TaskService(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailService email,
-    ILogger<TaskService> logger) : ITaskService
+    ILogger<TaskService> logger, IMemoryCache cache) : ITaskService
 {
     private readonly AppDbContext         _db     = db;
     private readonly IConfiguration      _config = config;
     private readonly IHubContext<TaskHub> _hub    = hub;
     private readonly IEmailService       _email  = email;
     private readonly ILogger<TaskService> _log   = logger;
+    private readonly IMemoryCache        _cache  = cache;
+
+    private static readonly TimeSpan _lookupTtl = TimeSpan.FromMinutes(5);
 
     // ── Permission / scope helpers ─────────────────────────────────────────────
 
@@ -590,28 +594,46 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                 .ToDictionaryAsync(g => g.Key, g => g.Count());
         }
 
-        vm.Projects   = await _db.Projects.OrderBy(p => p.Name).ToListAsync();
-        vm.Properties = await _db.Properties.OrderBy(p => p.Name).ToListAsync();
+        vm.Projects = await _cache.GetOrCreateAsync("lookup:projects", async e => {
+            e.AbsoluteExpirationRelativeToNow = _lookupTtl;
+            return await _db.Projects.AsNoTracking().OrderBy(p => p.Name).ToListAsync();
+        }) ?? [];
 
-        IQueryable<AppUser> ownerQ = _db.AppUsers.OrderBy(u => u.DisplayName);
-        if (teamId.HasValue)
-        {
-            var memberIds = await _db.TeamMembers.Where(m => m.TeamId == teamId).Select(m => m.UserId).ToListAsync();
-            ownerQ = ownerQ.Where(u => memberIds.Contains(u.Id));
-        }
-        vm.Owners = (await ownerQ.ToListAsync())
-            .Select(u => new OwnerItem { Id = u.Id, Name = u.DisplayName, Color = u.Color ?? "#094f70", ImagePath = u.ProfileImagePath })
-            .ToList();
+        vm.Properties = await _cache.GetOrCreateAsync("lookup:properties", async e => {
+            e.AbsoluteExpirationRelativeToNow = _lookupTtl;
+            return await _db.Properties.AsNoTracking().OrderBy(p => p.Name).ToListAsync();
+        }) ?? [];
 
-        vm.WorkStates = await _db.WorkStates.OrderBy(s => s.SortOrder).ThenBy(s => s.Id).ToListAsync();
-        if (!vm.WorkStates.Any())
-            vm.WorkStates = TaskListViewModel.AllStatuses
+        vm.WorkStates = await _cache.GetOrCreateAsync("lookup:workstates", async e => {
+            e.AbsoluteExpirationRelativeToNow = _lookupTtl;
+            var ws = await _db.WorkStates.AsNoTracking().OrderBy(s => s.SortOrder).ThenBy(s => s.Id).ToListAsync();
+            return ws.Any() ? ws : TaskListViewModel.AllStatuses
                 .Select((s, i) => new WorkState { Id = i, Name = s, Color = "#094f70", SortOrder = i })
                 .ToList();
+        }) ?? [];
 
-        var sprintQ = _db.Sprints.AsQueryable();
-        if (teamId.HasValue) sprintQ = sprintQ.Where(s => s.TeamId == teamId);
-        var allSprints = await sprintQ.OrderBy(s => s.Name).ToListAsync();
+        var teamKey = teamId.HasValue ? $"lookup:owners:{teamId}" : "lookup:owners:global";
+        vm.Owners = await _cache.GetOrCreateAsync(teamKey, async e => {
+            e.AbsoluteExpirationRelativeToNow = _lookupTtl;
+            IQueryable<AppUser> ownerQ = _db.AppUsers.AsNoTracking().OrderBy(u => u.DisplayName);
+            if (teamId.HasValue)
+            {
+                var memberIds = await _db.TeamMembers.AsNoTracking()
+                    .Where(m => m.TeamId == teamId).Select(m => m.UserId).ToListAsync();
+                ownerQ = ownerQ.Where(u => memberIds.Contains(u.Id));
+            }
+            return (await ownerQ.ToListAsync())
+                .Select(u => new OwnerItem { Id = u.Id, Name = u.DisplayName, Color = u.Color ?? "#094f70", ImagePath = u.ProfileImagePath })
+                .ToList();
+        }) ?? [];
+
+        var sprintCacheKey = teamId.HasValue ? $"lookup:sprints:{teamId}" : "lookup:sprints:global";
+        var allSprints = await _cache.GetOrCreateAsync(sprintCacheKey, async e => {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2);
+            var sprintQ = _db.Sprints.AsNoTracking().AsQueryable();
+            if (teamId.HasValue) sprintQ = sprintQ.Where(s => s.TeamId == teamId);
+            return await sprintQ.OrderBy(s => s.Name).ToListAsync();
+        }) ?? [];
 
         TaskTeamViewData? teamViewData = null;
         if (f.View == "team")

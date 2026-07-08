@@ -29,6 +29,7 @@ RequireSecret(builder.Configuration, "Email:Password");
 RequireSecret(builder.Configuration, "Recaptcha:SecretKey");
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 builder.Services.AddResponseCompression(opts => {
     opts.EnableForHttps = true;
