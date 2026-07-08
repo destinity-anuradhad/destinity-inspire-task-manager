@@ -1,0 +1,247 @@
+@model TaskTracker.Models.AppUser
+@{
+    ViewData["Title"] = "My Profile";
+    var imgPath = Model.ProfileImagePath;
+    var initials = string.Concat(Model.DisplayName.Split(' ').Select(w => w.Length > 0 ? w[0].ToString() : "")).ToUpper();
+    if (initials.Length > 2) initials = initials[..2];
+}
+
+<div class="max-w-2xl mx-auto space-y-6">
+
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>My Profile</h1>
+            <p>Manage your account settings</p>
+        </div>
+    </div>
+
+    @* ── Activity stats ── *@
+    <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-4">Activity Summary</h2>
+        <div class="grid grid-cols-3 gap-4 text-center divide-x divide-gray-100">
+            <div>
+                <p class="text-3xl font-bold text-gray-800">@ViewBag.TasksAssigned</p>
+                <p class="text-xs text-gray-500 mt-1">Tasks Assigned</p>
+            </div>
+            <div>
+                <p class="text-3xl font-bold text-gray-800">@ViewBag.TasksCompleted</p>
+                <p class="text-xs text-gray-500 mt-1">Tasks Completed</p>
+            </div>
+            <div>
+                <p class="text-3xl font-bold text-gray-800">@ViewBag.TasksWatching</p>
+                <p class="text-xs text-gray-500 mt-1">Watching</p>
+            </div>
+        </div>
+    </div>
+
+    @* ── Profile info ── *@
+    <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-5">Profile Photo &amp; Info</h2>
+        <form method="post" action="/Profile/UpdateProfile" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+            <div class="flex items-start gap-6 mb-5">
+                <!-- Avatar -->
+                <div class="flex-shrink-0">
+                    @if (!string.IsNullOrEmpty(imgPath))
+                    {
+                        <img src="@imgPath" alt="avatar"
+                             class="w-20 h-20 rounded-full object-cover border-2 border-gray-200" />
+                    }
+                    else
+                    {
+                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold" style="background:@(Model.Color ?? "#3b82f6")">
+                            @initials
+                        </div>
+                    }
+                </div>
+                <div class="flex-1">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Upload photo</label>
+                    <input type="file" name="avatar" accept="image/*"
+                           class="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                    <p class="text-xs text-gray-400 mt-1">JPG, PNG, GIF or WebP · max 3 MB</p>
+                </div>
+            </div>
+            @* Avatar color picker (shown only when no photo uploaded) *@
+            @if (string.IsNullOrEmpty(imgPath))
+            {
+                <div class="mb-5">
+                    <label class="block text-xs font-medium text-gray-500 mb-2">Avatar Color</label>
+                    <div class="flex gap-3 flex-wrap" id="colorSwatches">
+                        @foreach (var swatch in new[] {
+                            ("#3b82f6","Blue"), ("#8b5cf6","Purple"), ("#10b981","Green"),
+                            ("#f59e0b","Amber"), ("#ef4444","Red"),   ("#ec4899","Pink"),
+                            ("#64748b","Slate"), ("#14b8a6","Teal"),  ("#f97316","Orange")
+                        })
+                        {
+                            var isSelected = (Model.Color ?? "#3b82f6") == swatch.Item1;
+                            <label class="cursor-pointer" title="@swatch.Item2">
+                                <input type="radio" name="color" value="@swatch.Item1" class="sr-only color-radio"
+                                       @(isSelected ? "checked" : "") />
+                                <span class="block w-8 h-8 rounded-full transition-all swatch-dot @(isSelected ? "ring-2 ring-offset-2 ring-gray-500 scale-110" : "")"
+                                      style="background:@swatch.Item1"></span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+            <div class="grid grid-cols-2 gap-4 mb-5">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Username</label>
+                    <input type="text" value="@Model.Username" disabled
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
+                    <input type="text" value="@Model.Role" disabled
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Display Name <span class="text-gray-400">(shown in task owner field)</span></label>
+                    <input type="text" name="displayName" value="@Model.DisplayName" required
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Email <span class="text-gray-400">(used for notifications)</span></label>
+                    <input type="email" name="email" value="@Model.Email" placeholder="you@example.com"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Job Title</label>
+                    <input type="text" name="jobTitle" value="@Model.JobTitle" placeholder="e.g. Senior Developer"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Department</label>
+                    <input type="text" name="department" value="@Model.Department" placeholder="e.g. Engineering"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Member since</label>
+                    <input type="text" value="@Model.CreatedAt.ToString("d MMM yyyy")" disabled
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+            </div>
+            <button type="submit" class="btn-primary text-sm px-5 py-2 rounded-lg">Save Changes</button>
+        </form>
+    </div>
+
+    @* ── Change password ── *@
+    <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-5">Change Password</h2>
+        <form method="post" action="/Profile/ChangePassword">
+            @Html.AntiForgeryToken()
+            <div class="space-y-4 mb-5">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Current Password</label>
+                    <input type="password" name="currentPassword" required autocomplete="current-password"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">New Password</label>
+                    <input type="password" name="newPassword" required autocomplete="new-password"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Confirm New Password</label>
+                    <input type="password" name="confirmPassword" required autocomplete="new-password"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+            </div>
+            <button type="submit" class="btn-primary text-sm px-5 py-2 rounded-lg">Change Password</button>
+        </form>
+    </div>
+
+    @* ── Work preferences ── *@
+    <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-5">Work Preferences</h2>
+        <form method="post" action="/Profile/UpdateWorkPreferences">
+            @Html.AntiForgeryToken()
+            @{
+                var wd = (Model.WorkingDays ?? "Mon,Tue,Wed,Thu,Fri")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .ToHashSet();
+            }
+            <div class="space-y-5 mb-5">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Daily Capacity <span class="text-gray-400">(hours available per working day)</span></label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" name="dailyCapacityHours" value="@Model.DailyCapacityHours" step="0.5" min="1" max="24" placeholder="8"
+                               class="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <span class="text-sm text-gray-500">hrs / day</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-2">Working Days</label>
+                    <div class="flex gap-2 flex-wrap">
+                        @foreach (var day in new[] { "Mon","Tue","Wed","Thu","Fri","Sat","Sun" })
+                        {
+                            <label class="cursor-pointer">
+                                <input type="checkbox" name="work@(day)" value="true" class="sr-only peer"
+                                       @(wd.Contains(day) ? "checked" : "") />
+                                <span class="inline-block px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600
+                                             peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all">
+                                    @day
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn-primary text-sm px-5 py-2 rounded-lg">Save Preferences</button>
+        </form>
+    </div>
+
+    @* ── Notification preferences ── *@
+    <div class="bg-white border border-gray-200 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-5">Notification Preferences</h2>
+        <form method="post" action="/Profile/UpdateNotifications">
+            @Html.AntiForgeryToken()
+            <div class="space-y-3 mb-5">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnAssigned" value="true"
+                           @(Model.NotifyOnAssigned ? "checked" : "")
+                           class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                    <div>
+                        <p class="text-sm font-medium text-gray-800">Notify when assigned to a task</p>
+                        <p class="text-xs text-gray-500">Receive a bell notification when someone assigns you to a task</p>
+                    </div>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnComment" value="true"
+                           @(Model.NotifyOnComment ? "checked" : "")
+                           class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                    <div>
+                        <p class="text-sm font-medium text-gray-800">Notify when someone comments on your task</p>
+                        <p class="text-xs text-gray-500">Receive a bell notification when a comment is added to a task you own</p>
+                    </div>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="notifyOnBlocked" value="true"
+                           @(Model.NotifyOnBlocked ? "checked" : "")
+                           class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                    <div>
+                        <p class="text-sm font-medium text-gray-800">Notify when your task is blocked</p>
+                        <p class="text-xs text-gray-500">Receive a bell notification when a task you own is marked as blocked</p>
+                    </div>
+                </label>
+            </div>
+            <button type="submit" class="btn-primary text-sm px-5 py-2 rounded-lg">Save Preferences</button>
+        </form>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+document.querySelectorAll('.color-radio').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.color-radio').forEach(r => {
+            r.nextElementSibling.classList.toggle('ring-2',        r.checked);
+            r.nextElementSibling.classList.toggle('ring-offset-2', r.checked);
+            r.nextElementSibling.classList.toggle('ring-gray-500', r.checked);
+            r.nextElementSibling.classList.toggle('scale-110',     r.checked);
+        });
+    });
+});
+</script>
+}

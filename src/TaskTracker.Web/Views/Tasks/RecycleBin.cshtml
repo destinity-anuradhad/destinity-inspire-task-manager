@@ -1,0 +1,177 @@
+@model List<TaskTracker.Models.TaskItem>
+@{
+    ViewData["Title"] = "Recycle Bin";
+    var isAdmin = User.IsInRole("Admin");
+}
+
+<div class="space-y-4">
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Recycle Bin</h1>
+            <p>@Model.Count deleted task@(Model.Count != 1 ? "s" : "")</p>
+        </div>
+        <div class="flex items-center gap-2">
+            @if (isAdmin && Model.Any())
+            {
+                <button onclick="emptyBin()"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Empty Bin
+                </button>
+            }
+            <a href="/Tasks"
+               class="inline-flex items-center gap-2 btn-primary text-sm px-4 py-1.5 rounded-lg transition-colors">
+                ← Back to Tasks
+            </a>
+        </div>
+    </div>
+
+    @if (!Model.Any())
+    {
+        <div class="bg-white border border-gray-200 rounded-xl p-16 text-center">
+            <svg class="w-14 h-14 mx-auto text-gray-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <p class="text-gray-500 text-sm font-medium">The Recycle Bin is empty</p>
+            <p class="text-gray-400 text-xs mt-1">Deleted tasks will appear here and can be restored.</p>
+        </div>
+    }
+    else
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-12">#</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Project</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Deleted By</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Deleted At</th>
+                        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{int rn = 1;}
+                    @foreach (var task in Model)
+                    {
+                        <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                            <td class="px-4 py-3 text-gray-400 text-xs">@rn</td>
+                            <td class="px-4 py-3 max-w-xs">
+                                <span class="font-medium text-gray-700">@task.Goal</span>
+                                @if (!string.IsNullOrEmpty(task.ItemType))
+                                {
+                                    <span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">@task.ItemType</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">@task.Project</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">@task.Status</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">@task.DeletedBy</td>
+                            <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                                @task.DeletedAt?.ToString("dd MMM yyyy HH:mm")
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex items-center justify-end gap-1.5">
+                                    <button onclick="restoreTask(@task.Id, '@task.Goal?.Replace("'","\\'")')"
+                                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                        Restore
+                                    </button>
+                                    @if (isAdmin)
+                                    {
+                                        <button onclick="permanentDelete(@task.Id, '@task.Goal?.Replace("'","\\'")')"
+                                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                      d="M6 18L18 6M6 6l12 12"/>
+                                            </svg>
+                                            Delete
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        rn++;
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<form id="rb-aft" style="display:none">@Html.AntiForgeryToken()</form>
+
+<script>
+function rbToken() {
+    return document.querySelector('#rb-aft input[name="__RequestVerificationToken"]')?.value ?? '';
+}
+
+async function restoreTask(id, name) {
+    const { isConfirmed } = await Swal.fire({
+        title: 'Restore task?',
+        html: '<b>' + name + '</b> will be restored to the task list.',
+        icon: 'question', showCancelButton: true,
+        confirmButtonText: 'Restore', confirmButtonColor: '#16a34a'
+    });
+    if (!isConfirmed) return;
+    const fd = new FormData();
+    fd.append('id', id);
+    fd.append('__RequestVerificationToken', rbToken());
+    const r = await fetch('/Tasks/RestoreTask', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (j.success) {
+        Swal.fire({ icon: 'success', text: 'Task restored.', timer: 1400, showConfirmButton: false })
+            .then(() => location.reload());
+    } else {
+        Swal.fire({ icon: 'error', text: j.error || 'Could not restore task.' });
+    }
+}
+
+async function permanentDelete(id, name) {
+    const { isConfirmed } = await Swal.fire({
+        title: 'Permanently delete?',
+        html: '<b>' + name + '</b> will be <strong>permanently removed</strong> and cannot be recovered.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonText: 'Delete forever', confirmButtonColor: '#dc2626'
+    });
+    if (!isConfirmed) return;
+    const fd = new FormData();
+    fd.append('id', id);
+    fd.append('__RequestVerificationToken', rbToken());
+    const r = await fetch('/Tasks/PermanentDelete', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (j.success) {
+        Swal.fire({ icon: 'success', text: 'Permanently deleted.', timer: 1400, showConfirmButton: false })
+            .then(() => location.reload());
+    } else {
+        Swal.fire({ icon: 'error', text: j.error || 'Could not delete.' });
+    }
+}
+
+async function emptyBin() {
+    const { isConfirmed } = await Swal.fire({
+        title: 'Empty the Recycle Bin?',
+        text: 'All deleted tasks will be permanently removed. This cannot be undone.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonText: 'Empty Bin', confirmButtonColor: '#dc2626'
+    });
+    if (!isConfirmed) return;
+    const fd = new FormData();
+    fd.append('__RequestVerificationToken', rbToken());
+    const r = await fetch('/Tasks/EmptyBin', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (j.success) {
+        Swal.fire({ icon: 'success', text: j.count + ' task(s) permanently deleted.', timer: 1600, showConfirmButton: false })
+            .then(() => location.reload());
+    } else {
+        Swal.fire({ icon: 'error', text: 'Could not empty bin.' });
+    }
+}
+</script>

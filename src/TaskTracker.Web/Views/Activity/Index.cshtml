@@ -1,0 +1,310 @@
+@{
+    ViewData["Title"] = "Activity Log";
+    var logs        = ViewBag.Logs as List<TaskTracker.Models.ActivityLog> ?? [];
+    var projects    = ViewBag.Projects  as List<string> ?? [];
+    var users       = ViewBag.Users     as List<string> ?? [];
+    var userColors  = ViewBag.UserColors as Dictionary<string, string> ?? new();
+    var userImages  = ViewBag.UserImages as Dictionary<string, string> ?? new();
+    var teamNames   = ViewBag.TeamNames  as Dictionary<int, string>    ?? new();
+    int page        = (int)(ViewBag.Page       ?? 1);
+    int totalCount  = (int)(ViewBag.TotalCount ?? 0);
+    int totalPages  = (int)(ViewBag.TotalPages ?? 0);
+    bool isAdmin    = (bool)(ViewBag.IsAdmin   ?? false);
+
+    string fProject  = (string)(ViewBag.FilterProject  ?? "");
+    string fUser     = (string)(ViewBag.FilterUser     ?? "");
+    string fDateFrom = (string)(ViewBag.FilterDateFrom ?? "");
+    string fDateTo   = (string)(ViewBag.FilterDateTo   ?? "");
+    string fCategory = (string)(ViewBag.FilterCategory ?? "");
+
+    bool hasFilter = fProject != "" || fUser != "" || fDateFrom != "" || fDateTo != "" || fCategory != "";
+
+    string PageUrl(int p) {
+        var q = new System.Text.StringBuilder($"?page={p}");
+        if (fProject  != "") q.Append($"&project={Uri.EscapeDataString(fProject)}");
+        if (fUser     != "") q.Append($"&user={Uri.EscapeDataString(fUser)}");
+        if (fDateFrom != "") q.Append($"&dateFrom={Uri.EscapeDataString(fDateFrom)}");
+        if (fDateTo   != "") q.Append($"&dateTo={Uri.EscapeDataString(fDateTo)}");
+        if (fCategory != "") q.Append($"&category={Uri.EscapeDataString(fCategory)}");
+        return q.ToString();
+    }
+}
+
+@functions {
+    static (string bg, string color, string icon) ActionStyle(string action) => action switch
+    {
+        "Created"                  => ("bg-green-100",  "text-green-700",  "+"),
+        "Deleted"                  => ("bg-red-100",    "text-red-700",    "×"),
+        "Status Changed"           => ("bg-blue-100",   "text-blue-700",   "↔"),
+        "Comment"                  => ("bg-purple-100", "text-purple-700", "💬"),
+        "Login"                    => ("bg-teal-100",   "text-teal-700",   "→"),
+        "Logout"                   => ("bg-slate-100",  "text-slate-600",  "←"),
+        "Login Failed"             => ("bg-red-100",    "text-red-700",    "!"),
+        "Profile Updated"          => ("bg-sky-100",    "text-sky-700",    "✎"),
+        "Password Changed"         => ("bg-orange-100", "text-orange-700", "🔑"),
+        "Work Preferences Updated" => ("bg-indigo-100", "text-indigo-700", "⚙"),
+        "Notifications Updated"    => ("bg-violet-100", "text-violet-700", "🔔"),
+        "Owner Changed"            => ("bg-amber-100",  "text-amber-700",  "👤"),
+        "Sprint Changed"           => ("bg-cyan-100",   "text-cyan-700",   "◎"),
+        "Attachment"               => ("bg-pink-100",   "text-pink-700",   "📎"),
+        "Restored"                 => ("bg-lime-100",   "text-lime-700",   "↩"),
+        "Auto-Updated"             => ("bg-gray-100",   "text-gray-600",   "⟳"),
+        _                          => ("bg-amber-100",  "text-amber-700",  "✎")
+    };
+
+    static string CatBadgeCss(string? cat) => cat switch
+    {
+        "Auth"   => "bg-teal-50 text-teal-700 ring-1 ring-teal-200",
+        "System" => "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+        _        => "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+    };
+
+    // Minimal UA parser — returns "Browser · OS"
+    static string ParseDevice(string? ua)
+    {
+        if (string.IsNullOrEmpty(ua)) return "Unknown device";
+        string browser = "Unknown browser";
+        string os      = "Unknown OS";
+
+        if (ua.Contains("Edg/") || ua.Contains("EdgA/"))        browser = "Edge";
+        else if (ua.Contains("OPR/") || ua.Contains("Opera"))   browser = "Opera";
+        else if (ua.Contains("Chrome/") && !ua.Contains("Chromium")) browser = "Chrome";
+        else if (ua.Contains("Firefox/"))                        browser = "Firefox";
+        else if (ua.Contains("Safari/") && !ua.Contains("Chrome")) browser = "Safari";
+        else if (ua.Contains("MSIE") || ua.Contains("Trident/")) browser = "IE";
+        else if (ua.Contains("CriOS/"))                          browser = "Chrome iOS";
+        else if (ua.Contains("FxiOS/"))                          browser = "Firefox iOS";
+
+        if (ua.Contains("Windows NT 10"))      os = "Windows 10/11";
+        else if (ua.Contains("Windows NT 6.3")) os = "Windows 8.1";
+        else if (ua.Contains("Windows NT 6.1")) os = "Windows 7";
+        else if (ua.Contains("Windows"))        os = "Windows";
+        else if (ua.Contains("iPhone"))         os = "iPhone";
+        else if (ua.Contains("iPad"))           os = "iPad";
+        else if (ua.Contains("Android"))        os = "Android";
+        else if (ua.Contains("Mac OS X"))       os = "macOS";
+        else if (ua.Contains("Linux"))          os = "Linux";
+
+        return $"{browser} · {os}";
+    }
+
+    static string RelTime(DateTime dt)
+    {
+        var d = DateTime.Now - dt;
+        if (d.TotalMinutes < 1)  return "just now";
+        if (d.TotalHours   < 1)  return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalDays    < 1)  return $"{(int)d.TotalHours}h ago";
+        if (d.TotalDays    < 7)  return $"{(int)d.TotalDays}d ago";
+        return dt.ToString("dd MMM yyyy");
+    }
+}
+
+<div class="space-y-4">
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Activity Log</h1>
+            <p>@totalCount @(hasFilter ? "matching" : "total") entries@(isAdmin ? " · All teams" : "")</p>
+        </div>
+    </div>
+
+    @* Filter bar *@
+    <form method="get" class="bg-white border border-gray-200 rounded-xl p-4">
+        <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex-1 min-w-[130px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">Category</label>
+                <select name="category" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Categories</option>
+                    <option value="Task"   selected="@(fCategory=="Task")">Task</option>
+                    <option value="Auth"   selected="@(fCategory=="Auth")">Auth</option>
+                    <option value="System" selected="@(fCategory=="System")">System</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">Project</label>
+                <select name="project" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Projects</option>
+                    @foreach (var p in projects)
+                    {
+                        <option value="@p" selected="@(p == fProject)">@p</option>
+                    }
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">User</label>
+                <select name="user" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Users</option>
+                    @foreach (var u in users)
+                    {
+                        <option value="@u" selected="@(u == fUser)">@u</option>
+                    }
+                </select>
+            </div>
+            <div class="flex-1 min-w-[120px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">From Date</label>
+                <input type="date" name="dateFrom" value="@fDateFrom"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="flex-1 min-w-[120px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">To Date</label>
+                <input type="date" name="dateTo" value="@fDateTo"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    Filter
+                </button>
+                @if (hasFilter)
+                {
+                    <a href="/Activity" class="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                        Clear
+                    </a>
+                }
+            </div>
+        </div>
+    </form>
+
+    @if (ViewBag.SetupRequired == true)
+    {
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <p class="font-semibold mb-1">Activity log table not set up</p>
+            <p>Run the pending migration or apply the SQL migration script.</p>
+        </div>
+    }
+
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        @if (!logs.Any())
+        {
+            <div class="text-center py-16 text-gray-400">
+                <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                <p class="font-medium">@(hasFilter ? "No entries match your filters" : "No activity recorded yet")</p>
+                @if (!hasFilter) { <p class="text-xs mt-1">Task actions, logins, and profile changes appear here</p> }
+            </div>
+        }
+        else
+        {
+            <div class="divide-y divide-gray-50">
+                @foreach (var log in logs)
+                {
+                    var (bg, color, icon) = ActionStyle(log.Action);
+                    var catCss   = CatBadgeCss(log.Category);
+                    var device   = ParseDevice(log.UserAgent);
+                    var userClr  = !string.IsNullOrEmpty(log.ChangedBy) && userColors.TryGetValue(log.ChangedBy, out var uc) ? uc : "#64748b";
+                    var userInit = !string.IsNullOrEmpty(log.ChangedBy) ? log.ChangedBy[0].ToString().ToUpper() : "?";
+                    bool hasIp   = !string.IsNullOrEmpty(log.IpAddress);
+                    bool hasUa   = !string.IsNullOrEmpty(log.UserAgent);
+                    bool hasTeam = isAdmin && log.TeamId.HasValue && teamNames.TryGetValue(log.TeamId.Value, out _);
+                    string? tname = hasTeam ? teamNames[log.TeamId!.Value] : null;
+
+                    <div class="px-5 py-3.5 hover:bg-gray-50/70 transition-colors">
+                        <div class="flex items-start gap-3.5">
+                            <div class="w-8 h-8 rounded-full @bg @color flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 select-none">@icon</div>
+
+                            <div class="flex-1 min-w-0">
+                                @* Row 1 — title + timestamp *@
+                                <div class="flex items-start justify-between gap-4">
+                                    <div class="min-w-0 flex-1">
+                                        @if (!string.IsNullOrEmpty(log.TaskGoal))
+                                        {
+                                            <p class="text-sm font-semibold text-gray-900 truncate">@log.TaskGoal</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="text-sm font-semibold text-gray-900">@log.Action</p>
+                                        }
+                                    </div>
+                                    <div class="text-right flex-shrink-0 min-w-[100px]">
+                                        <p class="text-xs font-medium text-gray-500">@log.ChangedAt.ToString("dd MMM yyyy")</p>
+                                        <p class="text-xs text-gray-400">@log.ChangedAt.ToString("HH:mm:ss")</p>
+                                        <p class="text-[10px] text-gray-300 mt-0.5">@RelTime(log.ChangedAt)</p>
+                                    </div>
+                                </div>
+
+                                @* Row 2 — tags line *@
+                                <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                                    <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full @catCss">@(log.Category ?? "Task")</span>
+                                    @if (!string.IsNullOrEmpty(log.TaskGoal))
+                                    {
+                                        <span class="text-xs font-medium @color">@log.Action</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(log.Project))
+                                    {
+                                        <span class="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">@log.Project</span>
+                                    }
+                                    @if (tname != null)
+                                    {
+                                        <span class="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">◆ @tname</span>
+                                    }
+                                    @if (log.TaskId.HasValue)
+                                    {
+                                        <span class="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">#@log.TaskId</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(log.ChangedBy))
+                                    {
+                                        <div class="flex items-center gap-1 ml-auto">
+                                            @if (userImages.TryGetValue(log.ChangedBy!, out var _uimg))
+                                            {
+                                                <img src="@_uimg" alt="@log.ChangedBy" class="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                                            }
+                                            else
+                                            {
+                                                <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
+                                                     style="background:@userClr">@userInit</div>
+                                            }
+                                            <span class="text-xs text-gray-600 font-medium">@log.ChangedBy</span>
+                                        </div>
+                                    }
+                                </div>
+
+                                @* Row 3 — details *@
+                                @if (!string.IsNullOrEmpty(log.Details))
+                                {
+                                    <p class="text-xs text-gray-500 mt-1.5 bg-gray-50 rounded-lg px-3 py-2 font-mono">@log.Details</p>
+                                }
+
+                                @* Row 4 — device + IP (always shown when available) *@
+                                @if (hasIp || hasUa)
+                                {
+                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 pt-2 border-t border-gray-100">
+                                        @if (hasIp)
+                                        {
+                                            <span class="flex items-center gap-1 text-[11px] text-gray-500">
+                                                <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                </svg>
+                                                <span class="font-mono font-medium text-gray-600">@log.IpAddress</span>
+                                            </span>
+                                        }
+                                        @if (hasUa)
+                                        {
+                                            <span class="flex items-center gap-1 text-[11px] text-gray-500">
+                                                <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                                </svg>
+                                                <span class="text-gray-600">@device</span>
+                                            </span>
+                                        }
+                                        @if (hasUa)
+                                        {
+                                            <span class="text-[10px] text-gray-300 truncate max-w-xs" title="@log.UserAgent">@log.UserAgent</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (totalPages > 1)
+    {
+        <div class="flex items-center justify-center gap-1">
+            @if (page > 1) { <a href="@PageUrl(page - 1)" class="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100">‹ Prev</a> }
+            <span class="px-3 py-1.5 text-sm text-gray-500">Page @(page) of @totalPages</span>
+            @if (page < totalPages) { <a href="@PageUrl(page + 1)" class="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100">Next ›</a> }
+        </div>
+    }
+</div>
