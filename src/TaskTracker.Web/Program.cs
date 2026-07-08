@@ -185,7 +185,7 @@ using (var scope = app.Services.CreateScope())
             await cmd2.ExecuteNonQueryAsync();
         }
     }
-    catch { /* baseline migrations — non-critical if columns already exist */ }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Baseline column migrations skipped (columns may already exist)"); }
     // Teams feature — isolated so it runs even if earlier migrations partially failed
     try
     {
@@ -235,7 +235,7 @@ using (var scope = app.Services.CreateScope())
             await cmd3.ExecuteNonQueryAsync();
         }
     }
-    catch { /* Teams migration — will retry on next start */ }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Teams migration skipped (tables may already exist — will retry on next start)"); }
     await conn.CloseAsync();
 
     // Apply any pending EF Core migrations
@@ -262,7 +262,7 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
     }
 }
-} catch { /* startup DB init failed — app still starts, will error on DB queries */ }
+} catch (Exception ex) { app.Logger.LogCritical(ex, "Startup DB initialisation failed — app will start but DB queries will error"); }
 
 if (!app.Environment.IsDevelopment())
 {

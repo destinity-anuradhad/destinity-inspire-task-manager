@@ -52,3 +52,7 @@ README.md
 src/TaskTracker.Web/node_modules/
 src/TaskTracker.Web/package-lock.json
 src/TaskTracker.Web/wwwroot/css/app.css
+
+# Scratch / dead weight directories (data research, playwright test rig)
+data/
+test/
