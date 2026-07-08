@@ -210,7 +210,7 @@
                 @foreach (var task in myWorkingOn)
                 {
                     bool isOvr = task.TargetDate.HasValue && task.TargetDate.Value.Date < today;
-                    <a href="/Tasks/Edit/@task.Id"
+                    <a href="/Tasks?highlight=@task.Id"
                        class="flex items-start gap-3 p-3 rounded-xl border transition-all hover:shadow-sm"
                        style="border-color:var(--border);background:var(--surface)">
                         <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style="background:@StClr(task.Status)"></div>
@@ -328,7 +328,7 @@
                     var prioClr = task.Priority switch {
                         "Critical" => "#ef4444", "High" => "#f97316", "Medium" => "#f59e0b", _ => "var(--text-3)"
                     };
-                    <a href="/Tasks/Edit/@task.Id"
+                    <a href="/Tasks?highlight=@task.Id"
                        class="flex items-center gap-2.5 px-2 py-2.5 rounded-lg hover:bg-gray-50 transition-colors">
                         <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:@(isOvr ? "#ef4444" : StClr(task.Status))"></div>
                         <div class="flex-1 min-w-0">
@@ -376,7 +376,7 @@
                     }
                 </div>
                 <div class="p-4">
-                    <a href="/Tasks/Edit/@lastTask.Id" class="group block">
+                    <a href="/Tasks?highlight=@lastTask.Id" class="group block">
                         <p class="text-sm font-semibold truncate group-hover:underline" style="color:var(--text-1)">@lastTask.Goal</p>
                         <div class="flex items-center gap-2 mt-2 flex-wrap">
                             @if (!string.IsNullOrEmpty(lastTask.Property))
