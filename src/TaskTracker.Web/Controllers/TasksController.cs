@@ -176,8 +176,10 @@ public class TasksController(ITaskService tasks, IConfiguration config) : Contro
     [HttpGet]
     public async Task<IActionResult> GetClients(int moduleId = 0)
     {
-        var himCs = config.GetConnectionString("HimConnection");
-        return Json(await tasks.GetClientsAsync(moduleId, himCs));
+        var himCs      = config.GetConnectionString("HimConnection");
+        var privileged = User.IsInRole("Admin") ||
+                         User.FindFirst("TeamRole")?.Value == "TeamAdmin";
+        return Json(await tasks.GetClientsAsync(moduleId, himCs, privileged));
     }
 
     [HttpPost, ValidateAntiForgeryToken]

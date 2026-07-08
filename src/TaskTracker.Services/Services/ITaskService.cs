@@ -47,7 +47,7 @@ public interface ITaskService
     Task<IEnumerable<object>>     SearchAsync(string q, int? teamId);
     Task<IEnumerable<string>>     GetLabelsAsync(int? teamId);
     Task<IEnumerable<object>>     GetModulesAsync(string? himCs);
-    Task<IEnumerable<object>>     GetClientsAsync(int moduleId, string? himCs);
+    Task<IEnumerable<object>>     GetClientsAsync(int moduleId, string? himCs, bool includeContactDetails = false);
     Task<(byte[] Bytes, string FileName)> ExportCsvAsync(ExportFilters f, int? teamId);
     Task<TaskTeamViewData> GetTeamViewDataAsync(DateTime now, string? tlfrom, string? tlto, string? tlmode, int calYear, int calMonth, int? teamId);
 }

@@ -889,7 +889,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         return list;
     }
 
-    public async Task<IEnumerable<object>> GetClientsAsync(int moduleId, string? himCs)
+    public async Task<IEnumerable<object>> GetClientsAsync(int moduleId, string? himCs, bool includeContactDetails = false)
     {
         var list = new List<object>();
         try
@@ -919,14 +919,21 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             if (moduleId > 0) cmd.Parameters.AddWithValue("@mid", moduleId);
             await using var rdr = await cmd.ExecuteReaderAsync();
             while (await rdr.ReadAsync())
-                list.Add(new {
-                    id            = rdr.GetInt32(0),
-                    name          = rdr.IsDBNull(1) ? "" : rdr.GetString(1),
-                    contactPerson = rdr.IsDBNull(2) ? "" : rdr.GetString(2),
-                    contactNo     = rdr.IsDBNull(3) ? "" : rdr.GetString(3),
-                    email         = rdr.IsDBNull(4) ? "" : rdr.GetString(4),
-                    fromCompany   = rdr.GetInt32(5) == 1
-                });
+            {
+                var id   = rdr.GetInt32(0);
+                var name = rdr.IsDBNull(1) ? "" : rdr.GetString(1);
+                if (includeContactDetails)
+                    list.Add(new {
+                        id,
+                        name,
+                        contactPerson = rdr.IsDBNull(2) ? "" : rdr.GetString(2),
+                        contactNo     = rdr.IsDBNull(3) ? "" : rdr.GetString(3),
+                        email         = rdr.IsDBNull(4) ? "" : rdr.GetString(4),
+                        fromCompany   = rdr.GetInt32(5) == 1
+                    });
+                else
+                    list.Add(new { id, name });
+            }
         }
         catch { }
         return list;
