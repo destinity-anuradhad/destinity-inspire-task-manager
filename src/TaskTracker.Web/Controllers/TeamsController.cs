@@ -9,11 +9,8 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class TeamsController(ITeamService teams) : Controller
+public class TeamsController(ITeamService teams) : AppControllerBase
 {
-    private int  CurrentUserId()  => int.Parse(User.FindFirst("UserId")!.Value);
-    private bool IsSysAdmin()     => User.IsInRole("Admin");
-    private int? ActiveTeamId()   => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
 
     public async Task<IActionResult> AutoSelect()
     {

@@ -5,13 +5,12 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class DashboardController(IDashboardService dashboard) : Controller
+public class DashboardController(IDashboardService dashboard) : AppControllerBase
 {
-    private int? ActiveTeamId() => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
 
     public async Task<IActionResult> Index()
     {
-        var displayName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
+        var displayName = CurrentDisplayName();
         var data = await dashboard.GetPersonalAsync(displayName, ActiveTeamId());
 
         ViewBag.DisplayName        = displayName;
@@ -31,7 +30,7 @@ public class DashboardController(IDashboardService dashboard) : Controller
         ViewBag.MyActivity         = data.Activity;
         ViewBag.LastTask           = data.LastTask;
         ViewBag.LastActLog         = data.LastActLog;
-        ViewBag.TeamName           = User.FindFirst("ActiveTeamName")?.Value ?? "";
+        ViewBag.TeamName           = ActiveTeamName();
 
         ViewData["ActiveNav"] = "Dashboard";
         return View();

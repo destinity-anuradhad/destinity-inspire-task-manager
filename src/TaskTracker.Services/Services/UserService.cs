@@ -189,11 +189,21 @@ public class UserService(AppDbContext db) : IUserService
     {
         var owner = await _db.Owners.FirstOrDefaultAsync(o => o.Name == oldName);
         if (owner != null) owner.Name = newName;
-        var tasks = await _db.Tasks.Where(t => t.Owner != null && t.Owner.Contains(oldName)).ToListAsync();
+
+        var tasks = await _db.Tasks.Where(t =>
+            (t.Owner    != null && t.Owner.Contains(oldName)) ||
+            (t.Reporter != null && t.Reporter == oldName) ||
+            (t.CreatedBy != null && t.CreatedBy == oldName)).ToListAsync();
+
         foreach (var task in tasks)
-            task.Owner = string.Join(", ", (task.Owner ?? "").Split(',')
-                .Select(o => o.Trim())
-                .Select(o => string.Equals(o, oldName, StringComparison.OrdinalIgnoreCase) ? newName : o));
+        {
+            if (task.Owner != null && task.Owner.Contains(oldName))
+                task.Owner = string.Join(", ", task.Owner.Split(',')
+                    .Select(o => o.Trim())
+                    .Select(o => string.Equals(o, oldName, StringComparison.OrdinalIgnoreCase) ? newName : o));
+            if (string.Equals(task.Reporter,  oldName, StringComparison.OrdinalIgnoreCase)) task.Reporter  = newName;
+            if (string.Equals(task.CreatedBy, oldName, StringComparison.OrdinalIgnoreCase)) task.CreatedBy = newName;
+        }
         await _db.SaveChangesAsync();
     }
 }

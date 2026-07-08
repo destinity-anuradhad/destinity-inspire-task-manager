@@ -5,11 +5,8 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class QueriesController(IQueryService queries) : Controller
+public class QueriesController(IQueryService queries) : AppControllerBase
 {
-    private string CurrentDisplayName() => User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
-    private bool   IsAdmin()            => User.IsInRole("Admin");
-    private int?   ActiveTeamId()       => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
 
     public async Task<IActionResult> Index()
     {

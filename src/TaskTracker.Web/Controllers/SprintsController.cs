@@ -6,14 +6,11 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class SprintsController(ISprintService sprints) : Controller
+public class SprintsController(ISprintService sprints) : AppControllerBase
 {
-    private int?   ActiveTeamId()     => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
-    private bool   IsAdmin()          => User.IsInRole("Admin");
-    private string TeamRole()         => User.FindFirst("TeamRole")?.Value ?? "";
-    private bool   IsTeamLead()       => TeamRole() is "TeamAdmin" or "Lead";
-    private bool   CanManageSprints() => IsAdmin() || IsTeamLead();
-    private bool   CanDeleteSprints() => IsAdmin() || TeamRole() == "TeamAdmin";
+    private bool IsTeamLead()       => CurrentTeamRole() is "TeamAdmin" or "Lead";
+    private bool CanManageSprints() => IsAdmin() || IsTeamLead();
+    private bool CanDeleteSprints() => IsAdmin() || CurrentTeamRole() == "TeamAdmin";
 
     public async Task<IActionResult> Index()
     {

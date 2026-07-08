@@ -5,7 +5,7 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize(Roles = "Admin")]
-public class MasterController(IUserService userService) : Controller
+public class MasterController(IUserService userService) : AppControllerBase
 {
     public async Task<IActionResult> Index(string tab = "users")
     {

@@ -9,7 +9,7 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class ProfileController(IUserService userService, IActivityService activity, IWebHostEnvironment env) : Controller
+public class ProfileController(IUserService userService, IActivityService activity, IWebHostEnvironment env) : AppControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Index()

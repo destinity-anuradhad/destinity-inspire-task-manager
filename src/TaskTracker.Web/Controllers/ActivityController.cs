@@ -5,7 +5,7 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class ActivityController(IActivityService activity) : Controller
+public class ActivityController(IActivityService activity) : AppControllerBase
 {
     public async Task<IActionResult> Index(
         int page = 1,
@@ -16,8 +16,8 @@ public class ActivityController(IActivityService activity) : Controller
         string? category = null)
     {
         const int pageSize = 50;
-        bool isAdmin = User.IsInRole("Admin");
-        int? teamId  = int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var tid) ? tid : (int?)null;
+        bool isAdmin = IsAdmin();
+        int? teamId  = ActiveTeamId();
 
         var result = await activity.GetLogsAsync(isAdmin, teamId, page, project, user, dateFrom, dateTo, category);
 

@@ -6,22 +6,8 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class TasksController(ITaskService tasks, IConfiguration config) : Controller
+public class TasksController(ITaskService tasks, IConfiguration config) : AppControllerBase
 {
-    private bool   IsAdmin()          => User.IsInRole("Admin");
-    private string CurrentUsername()  => User.Identity?.Name ?? "";
-    private int?   ActiveTeamId()     => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
-
-    private UserCtx BuildUserCtx() => new(
-        int.Parse(User.FindFirst("UserId")?.Value ?? "0"),
-        User.FindFirst("DisplayName")?.Value ?? "",
-        User.Identity?.Name ?? "",
-        User.IsInRole("Admin"),
-        User.FindFirst("TeamRole")?.Value ?? "",
-        ActiveTeamId(),
-        HttpContext.Connection.RemoteIpAddress?.ToString(),
-        HttpContext.Request.Headers["User-Agent"].ToString()
-    );
 
     public async Task<IActionResult> Index(
         string search = "", string project = "", string property = "",
