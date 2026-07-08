@@ -1,9 +1,25 @@
 @model TaskTracker.Models.ViewModels.TaskListViewModel
 @using System.Text.Json
+@using TaskTracker.Models
 @{
     ViewData["Title"] = "Tasks";
     var jsonOpts     = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var today        = DateTime.Today;
+    // Project only the fields the canvas needs; excludes DB internals (IsDeleted, BacklogOrder, TeamId, etc.)
+    // and formats DateTime? as "yyyy-MM-dd" strings for HTML date inputs.
+    Func<TaskItem, string> TaskDataJson = t => JsonSerializer.Serialize(new {
+        t.Id, t.Goal, t.Project, t.Property, t.Priority,
+        t.Owner, t.Status, t.ItemType,
+        targetDate      = t.TargetDate?.ToString("yyyy-MM-dd"),
+        startDate       = t.StartDate?.ToString("yyyy-MM-dd"),
+        endDate         = t.EndDate?.ToString("yyyy-MM-dd"),
+        actualStartDate = t.ActualStartDate?.ToString("yyyy-MM-dd"),
+        actualEndDate   = t.ActualEndDate?.ToString("yyyy-MM-dd"),
+        t.Weight, t.Notes, t.Labels, t.AcceptanceCriteria,
+        t.RelatedFiles, t.Reporter, t.CreatedBy,
+        createdAt       = t.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
+        t.ParentId, t.SprintId, t.ModuleId, t.ClientId, t.Swimlane
+    }, jsonOpts);
     var ownerColorMap = Model.Owners.ToDictionary(
         o => o.Name, o => o.Color ?? "#094f70", StringComparer.OrdinalIgnoreCase);
     var ownerImageMap = Model.Owners
@@ -381,7 +397,7 @@
                     @foreach (var task in Model.Tasks)
                     {
                         var detailId  = $"detail-{task.Id}";
-                        var taskJson  = JsonSerializer.Serialize(task, jsonOpts);
+                        var taskJson  = TaskDataJson(task);
                         var overdue   = IsOverdue(task.EndDate, task.Status);
                         var rowCls    = overdue ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-gray-50";
                         var tOwners    = (task.Owner ?? "").Split(',').Select(o => o.Trim()).Where(o => o.Length > 0).ToList();
@@ -674,7 +690,7 @@
                                 <div class="kanban-empty text-center py-1.5 text-gray-300 text-[10px] @(expTs.Any() ? "hidden" : "")">Drop here</div>
                                 @foreach (var kt in expTs)
                                 {
-                                    var kj  = JsonSerializer.Serialize(kt, jsonOpts);
+                                    var kj  = TaskDataJson(kt);
                                     var kov = IsOverdue(kt.EndDate, kt.Status);
                                     var kCanEdit = kIsAdmin || string.IsNullOrWhiteSpace(kt.Owner)
                                                    || SplitOwners(kt.Owner).Any(o => string.Equals(o, kCurDisplay, StringComparison.OrdinalIgnoreCase))
@@ -734,7 +750,7 @@
                                 <div class="kanban-empty text-center py-6 text-gray-300 text-xs @(defTs.Any() ? "hidden" : "")">Drop tasks here</div>
                                 @foreach (var kt in defTs)
                                 {
-                                    var kj  = JsonSerializer.Serialize(kt, jsonOpts);
+                                    var kj  = TaskDataJson(kt);
                                     var kov = IsOverdue(kt.EndDate, kt.Status);
                                     var kCanEdit = kIsAdmin || string.IsNullOrWhiteSpace(kt.Owner)
                                                    || SplitOwners(kt.Owner).Any(o => string.Equals(o, kCurDisplay, StringComparison.OrdinalIgnoreCase))
@@ -872,7 +888,7 @@
                     }
                     @foreach (var (tlT, tlS, tlE) in tlEntries)
                     {
-                        var tlJ       = JsonSerializer.Serialize(tlT, jsonOpts);
+                        var tlJ       = TaskDataJson(tlT);
                         var barPx     = (tlS - 1) * colW;
                         var barW      = Math.Max(1, tlE - tlS + 1) * colW;
                         var tlCanEdit = tlIsAdmin || SplitOwners(tlT.Owner).Any(o => string.Equals(o, tlCurDisp, StringComparison.OrdinalIgnoreCase));
@@ -942,7 +958,7 @@
                 <div class="flex flex-wrap gap-2">
                     @foreach (var nd in noDateItems)
                     {
-                        var ndJ      = JsonSerializer.Serialize(nd, jsonOpts);
+                        var ndJ      = TaskDataJson(nd);
                         <button type="button" data-task="@ndJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
                                 class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 hover:border-blue-200 text-gray-700 text-left max-w-xs truncate transition-colors">
                             @nd.Goal
