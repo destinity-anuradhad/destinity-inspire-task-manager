@@ -10,6 +10,25 @@ using TaskTracker.Models;
 using TaskTracker.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Fail fast if secrets were not supplied via environment variables.
+// Set these before starting the app:
+//   ConnectionStrings__DefaultConnection   (full SQL Server connection string)
+//   ConnectionStrings__HimConnection       (full HIM SQL Server connection string)
+//   Email__Password                        (Gmail app password)
+//   Recaptcha__SecretKey                   (Google reCAPTCHA server-side secret)
+static void RequireSecret(IConfiguration cfg, string key)
+{
+    var val = cfg[key];
+    if (string.IsNullOrWhiteSpace(val) || val == "PLACEHOLDER")
+        throw new InvalidOperationException(
+            $"Required secret '{key}' is missing. " +
+            $"Set the environment variable '{key.Replace(":", "__")}' before starting the app.");
+}
+RequireSecret(builder.Configuration, "ConnectionStrings:DefaultConnection");
+RequireSecret(builder.Configuration, "Email:Password");
+RequireSecret(builder.Configuration, "Recaptcha:SecretKey");
+
 builder.Services.AddControllersWithViews();
 builder.Services.AddSignalR();
 builder.Services.AddResponseCompression(opts => {

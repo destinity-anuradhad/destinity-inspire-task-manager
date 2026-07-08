@@ -1,3 +1,6 @@
+# Local dev secrets — never commit real values
+src/TaskTracker.Web/appsettings.Development.json
+
 # .NET build output
 bin/
 obj/
