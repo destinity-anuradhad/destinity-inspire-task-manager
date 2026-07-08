@@ -408,7 +408,7 @@
         } catch {}
     }
     loadNotifCount();
-    setInterval(loadNotifCount, 60000);
+    setInterval(loadNotifCount, 300000); // 5-min fallback; SignalR NewNotification updates badge instantly
 
     // ── User menu ──────────────────────────────────────────
     function toggleUserMenu() {
@@ -441,6 +441,7 @@
         .build();
 
     // Global handlers — views can override window.onTaskUpdated / onCommentAdded / onLinkUpdated
+    _srConn.on('NewNotification', () => loadNotifCount());
     _srConn.on('TaskUpdated', data => {
         if (typeof window.onTaskUpdated === 'function') window.onTaskUpdated(data);
         // Toast only if someone else changed it

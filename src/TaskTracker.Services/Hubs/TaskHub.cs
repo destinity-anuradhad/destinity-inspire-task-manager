@@ -15,18 +15,24 @@ public class TaskHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        // Join the team group so task updates are scoped to the active team only.
+        // Join team group (task updates) and user group (notification badge pushes).
         var teamId = Context.User?.FindFirst("ActiveTeamId")?.Value;
+        var userId = Context.User?.FindFirst("UserId")?.Value;
         if (!string.IsNullOrEmpty(teamId))
             await Groups.AddToGroupAsync(Context.ConnectionId, "team-" + teamId);
+        if (!string.IsNullOrEmpty(userId))
+            await Groups.AddToGroupAsync(Context.ConnectionId, "user-" + userId);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var teamId = Context.User?.FindFirst("ActiveTeamId")?.Value;
+        var userId = Context.User?.FindFirst("UserId")?.Value;
         if (!string.IsNullOrEmpty(teamId))
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "team-" + teamId);
+        if (!string.IsNullOrEmpty(userId))
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, "user-" + userId);
         await base.OnDisconnectedAsync(exception);
     }
 }

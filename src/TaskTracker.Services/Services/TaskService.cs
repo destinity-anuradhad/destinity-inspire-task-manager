@@ -325,6 +325,12 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
 
     // ── Notification helpers ────────────────────────────────────────────────────
 
+    private async Task PushNotifBadgeAsync(IEnumerable<int> userIds)
+    {
+        foreach (var uid in userIds)
+            await _hub.Clients.Group("user-" + uid).SendAsync("NewNotification");
+    }
+
     private async Task<List<AppUser>> GetWatcherUsersAsync(int taskId) =>
         await _db.TaskWatchers
             .Where(w => w.TaskId == taskId)
@@ -338,16 +344,20 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             var teamName   = await GetTeamNameAsync(task.TeamId);
             var prevOwners = SplitOwners(previousOwner).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var newOwners  = SplitOwners(task.Owner).Where(o => !prevOwners.Contains(o)).ToList();
+            var pushIds    = new List<int>();
             foreach (var ownerName in newOwners)
             {
                 var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
                 if (user == null || string.Equals(user.Username, ctx.Username, StringComparison.OrdinalIgnoreCase)) continue;
                 if (user.NotifyOnAssigned)
+                {
                     _db.Notifications.Add(new Notification {
                         UserId = user.Id, TaskId = task.Id,
                         Message = $"You were assigned to: {task.Goal}",
                         CreatedAt = DateTime.Now
                     });
+                    pushIds.Add(user.Id);
+                }
                 if (user.NotifyOnAssigned && !string.IsNullOrWhiteSpace(user.Email))
                     _ = _email.SendAsync(user.Email, user.DisplayName,
                         $"[Task Manager] Assigned: {task.Goal}",
@@ -356,6 +366,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                             task.Id, "Open Task", user.DisplayName, "assigned", teamName));
             }
             await _db.SaveChangesAsync();
+            await PushNotifBadgeAsync(pushIds);
         }
         catch (Exception ex) { _log.LogError(ex, "NotifyAssignedAsync failed for task {TaskId}", task.Id); }
     }
@@ -421,6 +432,7 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                     CreatedAt = DateTime.Now
                 });
             await _db.SaveChangesAsync();
+            await PushNotifBadgeAsync(targets.Select(u => u.Id));
             var statusHtml = $@"<table width='100%' cellpadding='0' cellspacing='0' border='0' style='margin:0 0 4px;'>
   <tr><td style='background:#fafafa;border:1px solid #e4e4e7;border-radius:10px;padding:14px 18px;'>
     <p style='margin:0 0 2px;color:#a1a1aa;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.14em;'>Task</p>
@@ -1139,9 +1151,11 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                     && string.IsNullOrWhiteSpace(task.Owner))
                     return new TaskSaveResult { Error = $"Assign an owner before moving this to {task.Status}." };
 
-                var changes   = new List<string>();
-                var oldOwner  = existing.Owner;
-                var oldStatus = existing.Status;
+                var changes    = new List<string>();
+                var oldOwner   = existing.Owner;
+                var oldStatus  = existing.Status;
+                var oldGoal    = existing.Goal;
+                var oldProject = existing.Project;
                 if (existing.Goal     != task.Goal)     changes.Add("Goal");
                 if (existing.Status   != task.Status)   changes.Add($"Status: '{existing.Status}' → '{task.Status}'");
                 if (existing.Priority != task.Priority) changes.Add($"Priority: '{existing.Priority}' → '{task.Priority}'");
@@ -1183,6 +1197,15 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                 if (!string.IsNullOrWhiteSpace(task.Reporter)) existing.Reporter = task.Reporter;
 
                 await _db.SaveChangesAsync();
+
+                // Keep ActivityLog denormalized names fresh when goal/project changes
+                if (existing.Goal != oldGoal || existing.Project != oldProject)
+                    await _db.ActivityLog
+                        .Where(a => a.TaskId == existing.Id)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(a => a.TaskGoal, existing.Goal ?? "")
+                            .SetProperty(a => a.Project,  existing.Project ?? ""));
+
                 await CascadeParentStatusAsync(existing.ParentId, ctx);
                 action  = "Updated";
                 details = changes.Count > 0 ? string.Join("; ", changes) : "Minor update";
@@ -1365,7 +1388,11 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             });
         }
 
+        var commentNotifIds = _db.ChangeTracker.Entries<Notification>()
+            .Where(e => e.State == Microsoft.EntityFrameworkCore.EntityState.Added)
+            .Select(e => e.Entity.UserId).ToList();
         await _db.SaveChangesAsync();
+        await PushNotifBadgeAsync(commentNotifIds);
         var teamName = await GetTeamNameAsync(task.TeamId);
         _ = NotifyCommentAsync(task, comment.Trim(), commenter, allUsers, mentioned, watcherTargets, teamName);
         return (true, null);
