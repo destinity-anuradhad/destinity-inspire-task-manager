@@ -309,7 +309,12 @@ namespace TaskTracker.Migrations
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("TeamId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TeamId");
 
                     b.ToTable("Sprints");
                 });
@@ -412,6 +417,9 @@ namespace TaskTracker.Migrations
                     b.Property<decimal?>("Weight")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int?>("TeamId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
@@ -437,6 +445,8 @@ namespace TaskTracker.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("TargetDate");
+
+                    b.HasIndex("TeamId");
 
                     b.ToTable("Tasks");
                 });

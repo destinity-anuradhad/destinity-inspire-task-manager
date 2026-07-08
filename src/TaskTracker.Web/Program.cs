@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using TaskTracker.Data;
 using TaskTracker.Hubs;
 using TaskTracker.Models;
@@ -37,8 +36,7 @@ builder.Services.AddResponseCompression(opts => {
     opts.Providers.Add<GzipCompressionProvider>();
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
-           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 builder.Services.AddHttpClient();   // used for Google reCAPTCHA verification
 
@@ -228,18 +226,8 @@ using (var scope = app.Services.CreateScope())
                            GETDATE()
                     FROM [AppUsers];
                 END
-                -- TeamId on Tasks (EXEC avoids parse-time column resolution error)
-                IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Tasks' AND COLUMN_NAME='TeamId')
-                BEGIN
-                    ALTER TABLE [Tasks] ADD [TeamId] INT NULL;
-                    EXEC('UPDATE [Tasks] SET [TeamId] = (SELECT TOP 1 [Id] FROM [Teams])');
-                END
-                -- TeamId on Sprints
-                IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Sprints' AND COLUMN_NAME='TeamId')
-                BEGIN
-                    ALTER TABLE [Sprints] ADD [TeamId] INT NULL;
-                    EXEC('UPDATE [Sprints] SET [TeamId] = (SELECT TOP 1 [Id] FROM [Teams])');
-                END";
+                -- TeamId on Tasks and Sprints is now handled by EF migration
+                -- 20260708100000_AddTeamIdToTasksAndSprints";
             await cmd3.ExecuteNonQueryAsync();
         }
     }
