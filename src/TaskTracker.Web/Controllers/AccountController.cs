@@ -12,9 +12,8 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class AccountController(IUserService userService, IActivityService activity, IConfiguration config, IHttpClientFactory httpFactory) : Controller
+public class AccountController(IUserService userService, IActivityService activity, IConfiguration config, IHttpClientFactory httpFactory) : AppControllerBase
 {
-    private int? ActiveTeamId() => int.TryParse(User.FindFirst("ActiveTeamId")?.Value, out var id) ? id : (int?)null;
 
     // ── Login ─────────────────────────────────────────────────────────────────
 
@@ -130,7 +129,7 @@ public class AccountController(IUserService userService, IActivityService activi
             return View();
         }
 
-        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid = CurrentUserId();
         var (ok, error) = await userService.ChangePasswordAsync(uid, currentPassword, newPassword);
         if (!ok)
         {
@@ -165,7 +164,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpGet]
     public async Task<IActionResult> NotificationCount()
     {
-        var uid   = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid   = CurrentUserId();
         var count = await userService.GetNotificationCountAsync(uid, ActiveTeamId());
         return Json(new { count });
     }
@@ -173,7 +172,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpGet]
     public async Task<IActionResult> NotificationList()
     {
-        var uid   = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid   = CurrentUserId();
         var items = await userService.GetNotificationsAsync(uid, ActiveTeamId());
         return PartialView("_NotificationList", items);
     }
@@ -181,7 +180,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> MarkRead(int id)
     {
-        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid = CurrentUserId();
         await userService.MarkNotificationReadAsync(id, uid);
         return Json(new { success = true });
     }
@@ -189,7 +188,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> MarkAllRead()
     {
-        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid = CurrentUserId();
         await userService.MarkAllNotificationsReadAsync(uid, ActiveTeamId());
         return Json(new { success = true });
     }
@@ -199,7 +198,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpGet]
     public async Task<IActionResult> Profile()
     {
-        var uid  = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid  = CurrentUserId();
         var user = await userService.GetByIdAsync(uid);
         if (user == null) return RedirectToAction("Login");
         ViewData["ActiveNav"] = "Profile";
@@ -209,7 +208,7 @@ public class AccountController(IUserService userService, IActivityService activi
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Profile(string? email, bool notifyOnAssigned, bool notifyOnComment, bool notifyOnBlocked)
     {
-        var uid  = int.Parse(User.FindFirst("UserId")!.Value);
+        var uid  = CurrentUserId();
         var user = await userService.GetByIdAsync(uid);
         if (user == null) return RedirectToAction("Login");
 
