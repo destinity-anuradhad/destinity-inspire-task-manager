@@ -52,11 +52,17 @@ public class ProfileController(IUserService userService, IActivityService activi
             {
                 var dir = Path.Combine(env.WebRootPath, "uploads", "avatars");
                 Directory.CreateDirectory(dir);
-                var fileName = $"{user.Username}{ext}";
+                var fileName = $"{Guid.NewGuid():N}{ext}";
                 var filePath = Path.Combine(dir, fileName);
                 await using var fs = System.IO.File.Create(filePath);
                 await avatar.CopyToAsync(fs);
                 newAvatarPath = $"/uploads/avatars/{fileName}";
+                // Delete previous avatar file if it existed and is different
+                if (!string.IsNullOrEmpty(user.ProfileImagePath))
+                {
+                    var oldFile = Path.Combine(env.WebRootPath, user.ProfileImagePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                    if (System.IO.File.Exists(oldFile)) System.IO.File.Delete(oldFile);
+                }
             }
             catch (Exception ex)
             {
