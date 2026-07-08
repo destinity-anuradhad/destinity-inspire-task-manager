@@ -125,6 +125,21 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         return result;
     }
 
+    private async Task<bool> WouldCreateCycleAsync(int taskId, int? parentId)
+    {
+        if (parentId == null) return false;
+        var current = parentId.Value;
+        var visited = new HashSet<int>();
+        while (true)
+        {
+            if (current == taskId) return true;
+            if (!visited.Add(current)) return true; // already-seen node = existing cycle
+            var ancestor = await _db.Tasks.Where(t => t.Id == current).Select(t => t.ParentId).FirstOrDefaultAsync();
+            if (ancestor == null) return false;
+            current = ancestor.Value;
+        }
+    }
+
     private Task<int> CountOpenChildrenAsync(int parentId) =>
         _db.Tasks.CountAsync(c => c.ParentId == parentId && !c.IsDeleted &&
                              !((c.ItemType == "Task"    && c.Status == "Done") ||
@@ -516,6 +531,27 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
         if (!string.IsNullOrEmpty(vm.Owner))
             query = query.Where(t => (t.Owner ?? "").Contains(vm.Owner));
 
+        // Date filters pushed to SQL (TargetDate is now DateTime?)
+        if (DateTime.TryParse(vm.DateFrom, out var dfrom))
+            query = query.Where(t => t.TargetDate >= dfrom.Date);
+        if (DateTime.TryParse(vm.DateTo, out var dto))
+            query = query.Where(t => t.TargetDate <= dto.Date);
+
+        // Status counts before the status filter so the sidebar shows counts for all statuses
+        vm.StatusCounts = (await query
+            .GroupBy(t => t.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync())
+            .ToDictionary(x => x.Status ?? "", x => x.Count);
+
+        if (!string.IsNullOrEmpty(vm.Status))
+            query = vm.Status == "__none__"
+                ? query.Where(t => t.Status == "")
+                : query.Where(t => t.Status == vm.Status);
+
+        if (!string.IsNullOrEmpty(vm.Priority))
+            query = query.Where(t => t.Priority == vm.Priority);
+
         query = (vm.Sort, vm.SortDir) switch {
             ("goal",       "asc")  => query.OrderBy(t => t.Goal),
             ("goal",       _)      => query.OrderByDescending(t => t.Goal),
@@ -534,28 +570,12 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
             _                      => query.OrderByDescending(t => t.CreatedAt),
         };
 
-        var allTasks = await query.ToListAsync();
+        vm.TotalCount = await query.CountAsync();
 
-        if (DateTime.TryParse(vm.DateFrom, out var dfrom))
-            allTasks = allTasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date >= dfrom.Date).ToList();
-        if (DateTime.TryParse(vm.DateTo, out var dto))
-            allTasks = allTasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date <= dto.Date).ToList();
-
-        vm.StatusCounts = allTasks.GroupBy(t => t.Status ?? "").ToDictionary(g => g.Key, g => g.Count());
-
-        if (!string.IsNullOrEmpty(vm.Status))
-            allTasks = vm.Status == "__none__"
-                ? allTasks.Where(t => t.Status == "").ToList()
-                : allTasks.Where(t => t.Status == vm.Status).ToList();
-
-        if (!string.IsNullOrEmpty(vm.Priority))
-            allTasks = allTasks.Where(t => t.Priority == vm.Priority).ToList();
-
-        vm.TotalCount = allTasks.Count;
-
+        // Kanban and calendar need the full set; table/list paginates in SQL
         vm.Tasks = vm.ViewMode is "kanban" or "calendar"
-            ? allTasks
-            : allTasks.Skip((vm.Page - 1) * vm.PageSize).Take(vm.PageSize).ToList();
+            ? await query.ToListAsync()
+            : await query.Skip((vm.Page - 1) * vm.PageSize).Take(vm.PageSize).ToListAsync();
 
         if (vm.ViewMode == "table")
         {
@@ -1109,7 +1129,10 @@ public class TaskService(AppDbContext db, IConfiguration config, IHubContext<Tas
                 existing.AcceptanceCriteria = task.AcceptanceCriteria;
                 existing.Swimlane = task.Swimlane;
                 existing.ModuleId = task.ModuleId; existing.ClientId = task.ClientId;
-                existing.ItemType = task.ItemType; existing.ParentId = task.ParentId;
+                existing.ItemType = task.ItemType;
+                if (task.ParentId.HasValue && await WouldCreateCycleAsync(existing.Id, task.ParentId))
+                    return new TaskSaveResult { Error = "Cannot set parent: it would create a circular task hierarchy." };
+                existing.ParentId = task.ParentId;
                 var oldSprintId = existing.SprintId;
                 existing.SprintId = task.ItemType is "Epic" or "Feature" ? null : task.SprintId;
                 if (existing.SprintId.HasValue && existing.SprintId != oldSprintId
