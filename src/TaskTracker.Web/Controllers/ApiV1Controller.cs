@@ -133,6 +133,14 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         return Ok(new { data = await tasks.GetCommentsAsync(id, ActiveTeamId()) });
     }
 
+    [HttpGet("tasks/{id:int}/history")]
+    public async Task<IActionResult> GetHistory(int id)
+    {
+        var task = await tasks.GetByIdAsync(id, ActiveTeamId());
+        if (task == null) return NotFound();
+        return Ok(new { data = await tasks.GetHistoryAsync(id, ActiveTeamId()) });
+    }
+
     public sealed class CreateTaskRequest
     {
         public string? Goal { get; init; }
