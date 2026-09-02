@@ -15,8 +15,8 @@ using TaskTracker.Services.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fail fast if secrets were not supplied via environment variables.
-// Set these before starting the app:
+// The database connection is required. Supply it through environment variables.
+// Optional SMTP and reCAPTCHA secrets enable their respective integrations:
 //   ConnectionStrings__DefaultConnection   (full SQL Server connection string)
 //   ConnectionStrings__HimConnection       (full HIM SQL Server connection string)
 //   Email__Password                        (Gmail app password)
@@ -30,8 +30,6 @@ static void RequireSecret(IConfiguration cfg, string key)
             $"Set the environment variable '{key.Replace(":", "__")}' before starting the app.");
 }
 RequireSecret(builder.Configuration, "ConnectionStrings:DefaultConnection");
-RequireSecret(builder.Configuration, "Email:Password");
-RequireSecret(builder.Configuration, "Recaptcha:SecretKey");
 
 builder.Services.AddControllersWithViews(options =>
     options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
