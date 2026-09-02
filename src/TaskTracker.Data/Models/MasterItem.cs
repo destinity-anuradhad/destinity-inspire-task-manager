@@ -8,6 +8,14 @@ public class ProjectItem
     public int    Id    { get; set; }
     public string Name  { get; set; } = "";
     public string? Color { get; set; }
+    public int? TeamId { get; set; }
+    public int? LeadUserId { get; set; }
+    public string Status { get; set; } = "Active";
+    public string? Description { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? TargetDate { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string? CreatedBy { get; set; }
 }
 
 [Table("Properties")]

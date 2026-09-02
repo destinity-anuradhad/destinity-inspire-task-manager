@@ -24,4 +24,5 @@ public class AppUser
     public string   Status            { get; set; } = "Active";
     public int?     RequestedTeamId   { get; set; }
     public bool     MustChangePassword { get; set; } = false;
+    public int      SessionVersion     { get; set; } = 1;
 }

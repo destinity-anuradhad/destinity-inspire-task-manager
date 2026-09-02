@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace TaskTracker.Models;
 
-// TeamRole values: "TeamAdmin" | "Lead" | "Member"
+// TeamRole values: "TeamAdmin" | "TeamLead" | "Member"
 [Table("TeamMembers")]
 public class TeamMember
 {

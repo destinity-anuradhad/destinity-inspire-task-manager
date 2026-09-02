@@ -9,11 +9,14 @@ public class TaskItem
     public int Id { get; set; }
     public string? Goal         { get; set; } = "";
     public string? Project      { get; set; } = "";
+    // Optional governed project identity. The legacy Project text remains a
+    // display/integration projection while existing module data is reconciled.
+    public int? ProjectId { get; set; }
     public string? Property     { get; set; } = "";
     public DateTime? TargetDate      { get; set; }
     public string?   Priority        { get; set; } = "";
-    public string?   Owner           { get; set; } = "";
     public string?   Status          { get; set; } = "";
+    public string?   Owner           { get; set; } = "";
     public DateTime? StartDate       { get; set; }
     public DateTime? EndDate         { get; set; }
     public DateTime? ActualStartDate { get; set; }
@@ -22,12 +25,20 @@ public class TaskItem
     public string? Notes           { get; set; } = "";
     public DateTime CreatedAt   { get; set; } = DateTime.Now;
     public string? CreatedBy    { get; set; }
-    public decimal? Weight      { get; set; }
+    public decimal? Weight       { get; set; }
+    // Weight is either story points or hours; capacity may only consume hours.
+    public string EstimateUnit { get; set; } = "Points";
+    public decimal? ActualHours  { get; set; }
+    // Explicitly measured in hours; estimate Weight remains a separately governed unit.
+    public decimal? RemainingWorkHours { get; set; }
     public int? ModuleId        { get; set; }
     public int? ClientId        { get; set; }
     public string? ItemType     { get; set; }   // Epic | Feature | Story | Task | Bug
     public int?    ParentId     { get; set; }   // self-reference for hierarchy
     public int?    SprintId     { get; set; }   // null = Backlog
+    // Pinned once a task first uses a published workflow revision. Existing
+    // legacy tasks remain null until they are transitioned or explicitly migrated.
+    public int?    WorkflowDefinitionId { get; set; }
     public int?    ExternalId   { get; set; }   // ADO Work Item ID (future sync)
     public string? Reporter            { get; set; }   // auto-set on create
     public string? Labels              { get; set; }   // comma-separated tags

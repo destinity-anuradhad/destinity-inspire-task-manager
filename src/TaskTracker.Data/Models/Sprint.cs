@@ -14,4 +14,6 @@ public class Sprint
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public string? CreatedBy  { get; set; }
     public int?    TeamId     { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? CompletedBy { get; set; }
 }
