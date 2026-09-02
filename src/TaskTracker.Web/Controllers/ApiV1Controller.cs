@@ -98,6 +98,15 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         return CreatedAtAction(nameof(GetTask), new { id = result.TaskId }, new { id = result.TaskId, capacityWarning = result.CapacityWarning });
     }
 
+    [HttpPatch("tasks/{id:int}/status")]
+    public async Task<IActionResult> UpdateTaskStatus(int id, [FromBody] UpdateTaskStatusRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Status)) return BadRequest(new { error = "Status is required." });
+        var result = await tasks.UpdateStatusAsync(id, request.Status.Trim(), request.Swimlane?.Trim(), BuildUserCtx(), request.ForceClose, request.ActualHours);
+        if (!result.Success) return BadRequest(new { error = result.Error, result.NeedOwner, result.NeedActualHours, result.OpenChildren });
+        return NoContent();
+    }
+
     public sealed class CreateTaskRequest
     {
         public string? Goal { get; init; }
@@ -118,5 +127,13 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         public string? Labels { get; init; }
         public string? AcceptanceCriteria { get; init; }
         public string? Notes { get; init; }
+    }
+
+    public sealed class UpdateTaskStatusRequest
+    {
+        public string? Status { get; init; }
+        public string? Swimlane { get; init; }
+        public bool ForceClose { get; init; }
+        public decimal? ActualHours { get; init; }
     }
 }
