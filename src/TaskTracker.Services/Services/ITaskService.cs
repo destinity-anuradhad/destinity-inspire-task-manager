@@ -19,7 +19,7 @@ public interface ITaskService
     Task<TaskSaveResult>   SaveAsync(TaskItem task, UserCtx ctx, bool forceClose);
     Task<(bool Success, string? Error)> DeleteAsync(int id, UserCtx ctx);
     Task<(bool Success, string? Error)> ClaimTaskAsync(int taskId, UserCtx ctx);
-    Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null);
+    Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null, byte[]? expectedRowVersion = null);
     Task<TaskSprintResult> AssignSprintAsync(int taskId, int? sprintId, UserCtx ctx);
     Task<TimeEntryResult> LogTimeAsync(int taskId, decimal hours, DateTime workDate, string? note, decimal? remainingWorkHours, UserCtx ctx);
     Task<TimeEntryResult> CorrectTimeEntryAsync(long entryId, string? note, UserCtx ctx);
@@ -108,6 +108,7 @@ public class TaskSaveResult
     public int?    OpenChildren    { get; set; }
     public string? CapacityWarning { get; set; }
     public int     TaskId          { get; set; }
+    public bool    Conflict        { get; set; }   // stale-edit / optimistic-concurrency failure
 }
 
 public class TaskUpdateResult
@@ -117,6 +118,7 @@ public class TaskUpdateResult
     public bool    NeedOwner       { get; set; }
     public bool    NeedActualHours { get; set; }
     public int?    OpenChildren    { get; set; }
+    public bool    Conflict        { get; set; }   // stale-edit / optimistic-concurrency failure
 }
 
 public class TaskSprintResult

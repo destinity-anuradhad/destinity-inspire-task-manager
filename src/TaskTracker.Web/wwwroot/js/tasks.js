@@ -297,7 +297,7 @@ function openCanvas(task) {
     _cvTask   = task || null;
 
     // Clear form fields
-    ['cf-id','cf-goal','cf-owner',
+    ['cf-id','cf-rowversion','cf-goal','cf-owner',
      'cf-status','cf-priority','cf-weight',
      'cf-endDate-vis','cf-labels','cf-notes','cf-ac',
      'cf-item-type','cf-parent-id','cf-sprint-id','cf-swimlane']
@@ -319,6 +319,7 @@ function openCanvas(task) {
         document.getElementById('canvas-subtitle').classList.remove('hidden');
         document.getElementById('canvas-save-label').textContent = 'Save Changes';
         document.getElementById('cf-id').value               = task.id;
+        { const _rv = document.getElementById('cf-rowversion'); if (_rv) _rv.value = task.rowVersion ?? ''; }
         document.getElementById('cf-goal').value             = task.goal ?? '';
         _restoreOwner(task.owner ?? '');
         document.getElementById('cf-status').value           = task.status   ?? '';

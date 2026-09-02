@@ -54,6 +54,13 @@ effect immediately.
 Write endpoints return `400` for validation or business-rule failures and do not bypass the service
 layer. A non-visible task returns `404` from the detail endpoint.
 
+### Optimistic concurrency
+
+`GET /tasks/{id}` returns a `rowVersion` (base64). Pass it back as `rowVersion` on
+`PATCH /tasks/{id}/status` to guard against lost updates: if the task changed since you read it, the
+request returns **`409 Conflict`** (`{ "error": "This task was modified by someone else…" }`) instead
+of silently overwriting. Omitting `rowVersion` keeps the previous last-write-wins behaviour.
+
 ## Operational notes
 
 - **Rate limiting.** Requests are throttled to 120/minute, partitioned per API key (falling back to

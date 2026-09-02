@@ -124,6 +124,12 @@ public partial class TaskService
                     await UpsertSprintHoursLogAsync(existing.SprintId.Value, existing.Id,
                         existing.ActualHours.Value, ctx.DisplayName);
 
+                // Optimistic concurrency: enforce the row version the editor originally loaded, so a
+                // stale form cannot silently overwrite a newer edit. Only enforced when the client
+                // round-trips a token (older forms without it keep working, just unprotected).
+                if (task.RowVersion is { Length: > 0 })
+                    _db.Entry(existing).Property(t => t.RowVersion).OriginalValue = task.RowVersion;
+
                 await _db.SaveChangesAsync();
 
                 // Keep ActivityLog denormalized names fresh when goal/project changes
@@ -181,12 +187,12 @@ public partial class TaskService
         }
         catch (DbUpdateConcurrencyException)
         {
-            return new TaskSaveResult { Error = "This task was modified by someone else. Please reload and try again." };
+            return new TaskSaveResult { Conflict = true, Error = "This task was modified by someone else. Please reload and try again." };
         }
         catch (Exception ex) { return new TaskSaveResult { Error = ex.Message }; }
     }
 
-    public async Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null)
+    public async Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null, byte[]? expectedRowVersion = null)
     {
         var task = await FindTaskInTeam(id, ctx.TeamId);
         if (task == null) return new TaskUpdateResult { Error = "Not found" };
@@ -200,13 +206,15 @@ public partial class TaskService
             await UpsertSprintHoursLogAsync(task.SprintId.Value, task.Id, task.ActualHours.Value, ctx.DisplayName);
         if (swimlane != null)
             task.Swimlane = swimlane is "Default" or "" ? null : swimlane;
+        if (expectedRowVersion is { Length: > 0 })
+            _db.Entry(task).Property(t => t.RowVersion).OriginalValue = expectedRowVersion;
         try
         {
             await _db.SaveChangesAsync();
         }
         catch (DbUpdateConcurrencyException)
         {
-            return new TaskUpdateResult { Error = "This task was modified by someone else. Please reload and try again." };
+            return new TaskUpdateResult { Conflict = true, Error = "This task was modified by someone else. Please reload and try again." };
         }
         await CascadeParentStatusAsync(task.ParentId, ctx);
         if (old != task.Status)

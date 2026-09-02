@@ -78,7 +78,7 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
         {
             if (r.OpenChildren.HasValue)
                 return Json(new { success = false, openChildren = r.OpenChildren, error = r.Error });
-            return Json(new { success = false, error = r.Error });
+            return Json(new { success = false, conflict = r.Conflict, error = r.Error });
         }
         return Json(new { success = true, capacityWarning = r.CapacityWarning, taskId = r.TaskId });
     }

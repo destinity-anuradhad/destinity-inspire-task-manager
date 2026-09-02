@@ -87,7 +87,8 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
             task.ActualStartDate, task.ActualEndDate, task.Notes, task.RelatedFiles,
             task.Weight, task.EstimateUnit, task.ActualHours, task.RemainingWorkHours,
             task.ItemType, task.ParentId, task.SprintId, task.WorkflowDefinitionId,
-            task.Labels, task.AcceptanceCriteria, task.Reporter, task.TeamId, task.CreatedAt
+            task.Labels, task.AcceptanceCriteria, task.Reporter, task.TeamId, task.CreatedAt,
+            rowVersion = task.RowVersion is { Length: > 0 } ? Convert.ToBase64String(task.RowVersion) : null
         });
     }
 
@@ -118,8 +119,21 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     public async Task<IActionResult> UpdateTaskStatus(int id, [FromBody] UpdateTaskStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Status)) return BadRequest(new { error = "Status is required." });
-        var result = await tasks.UpdateStatusAsync(id, request.Status.Trim(), request.Swimlane?.Trim(), BuildUserCtx(), request.ForceClose, request.ActualHours);
-        if (!result.Success) return BadRequest(new { error = result.Error, result.NeedOwner, result.NeedActualHours, result.OpenChildren });
+
+        byte[]? expectedRowVersion = null;
+        if (!string.IsNullOrWhiteSpace(request.RowVersion))
+        {
+            try { expectedRowVersion = Convert.FromBase64String(request.RowVersion); }
+            catch (FormatException) { return BadRequest(new { error = "rowVersion must be base64." }); }
+        }
+
+        var result = await tasks.UpdateStatusAsync(id, request.Status.Trim(), request.Swimlane?.Trim(),
+            BuildUserCtx(), request.ForceClose, request.ActualHours, expectedRowVersion);
+        if (!result.Success)
+        {
+            if (result.Conflict) return Conflict(new { error = result.Error });
+            return BadRequest(new { error = result.Error, result.NeedOwner, result.NeedActualHours, result.OpenChildren });
+        }
         return NoContent();
     }
 
@@ -207,6 +221,8 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         public string? Swimlane { get; init; }
         public bool ForceClose { get; init; }
         public decimal? ActualHours { get; init; }
+        /// <summary>Base64 row version from GET /tasks/{id}. If supplied, a stale value returns 409.</summary>
+        public string? RowVersion { get; init; }
     }
 
     public sealed class LogTimeRequest
