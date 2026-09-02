@@ -19,6 +19,7 @@ namespace TaskTracker.Controllers;
 [EnableRateLimiting("api")]  // per-key (or per-IP) throttling for the integration surface
 [IgnoreAntiforgeryToken]   // replaces the app-wide auto-validation with the conditional filter below
 [ApiAntiforgery]           // enforces antiforgery for cookie callers only; API-key callers are exempt
+[ApiIdempotency]           // replays cached responses for API-key writes carrying Idempotency-Key
 public class ApiV1Controller(IProjectService projects, ITaskService tasks) : AppControllerBase
 {
     [HttpGet("projects")]

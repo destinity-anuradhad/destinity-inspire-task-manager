@@ -54,6 +54,14 @@ effect immediately.
 Write endpoints return `400` for validation or business-rule failures and do not bypass the service
 layer. A non-visible task returns `404` from the detail endpoint.
 
+### Idempotent writes
+
+Send an `Idempotency-Key` header (any unique string, per logical request) on a write. The first call
+runs normally and its **successful** response is cached against your API key; a retry with the same
+key replays that cached response (with `Idempotency-Replayed: true`) instead of acting again — so a
+network retry of `POST /tasks` won't create a duplicate. Failed (non-2xx) responses are not cached,
+so you can safely retry them. Keys are scoped per API client.
+
 ### Optimistic concurrency
 
 `GET /tasks/{id}` returns a `rowVersion` (base64). Pass it back as `rowVersion` on

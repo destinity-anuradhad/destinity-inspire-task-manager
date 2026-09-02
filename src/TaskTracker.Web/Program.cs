@@ -108,6 +108,7 @@ builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
 builder.Services.AddScoped<IRecurringTaskService, RecurringTaskService>();
 builder.Services.AddScoped<ICustomFieldService, CustomFieldService>();
 builder.Services.AddScoped<IApiClientService, ApiClientService>();
+builder.Services.AddScoped<IIdempotencyStore, IdempotencyStore>();
 builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
 builder.Services.AddScoped<IImportService, ImportService>();

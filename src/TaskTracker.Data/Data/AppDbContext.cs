@@ -47,6 +47,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<WebhookDelivery> WebhookDeliveries { get; set; }
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<ImportRow> ImportRows { get; set; }
+    public DbSet<ApiIdempotencyRecord> ApiIdempotencyRecords { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -205,6 +206,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ImportJob>().HasIndex(j => new { j.TeamId, j.Status });
         modelBuilder.Entity<ImportRow>().HasIndex(r => r.ImportJobId);
         modelBuilder.Entity<ImportRow>().HasIndex(r => r.ExternalKey);
+
+        modelBuilder.Entity<ApiIdempotencyRecord>().HasIndex(r => new { r.ApiClientId, r.IdempotencyKey }).IsUnique();
 
         // Teams
         modelBuilder.Entity<Team>().HasIndex(t => t.Name);
