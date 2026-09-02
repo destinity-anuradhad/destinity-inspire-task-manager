@@ -12,7 +12,7 @@ using TaskTracker.Models.ViewModels;
 namespace TaskTracker.Services;
 
 public partial class TaskService(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailQueue emailQueue,
-    ILogger<TaskService> logger, IMemoryCache cache) : ITaskService
+    ILogger<TaskService> logger, IMemoryCache cache, IWebhookService webhooks) : ITaskService
 {
     private readonly AppDbContext         _db         = db;
     private readonly IConfiguration      _config     = config;
@@ -20,6 +20,7 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
     private readonly IEmailQueue         _emailQueue = emailQueue;
     private readonly ILogger<TaskService> _log       = logger;
     private readonly IMemoryCache        _cache      = cache;
+    private readonly IWebhookService     _webhooks   = webhooks;
 
     private static readonly TimeSpan _lookupTtl = TimeSpan.FromMinutes(5);
 

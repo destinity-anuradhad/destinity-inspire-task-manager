@@ -53,6 +53,7 @@ public partial class TaskService
                 action  = "Created";
                 details = $"Goal: {task.Goal}";
                 await NotifyAssignedAsync(task, null, ctx);
+                await PublishTaskWebhookAsync(task, WebhookEvents.TaskCreated, ctx);
             }
             else
             {
@@ -137,12 +138,15 @@ public partial class TaskService
                 action  = "Updated";
                 details = changes.Count > 0 ? string.Join("; ", changes) : "Minor update";
                 await NotifyAssignedAsync(existing, oldOwner, ctx);
+                if (!string.Equals(oldOwner, existing.Owner, StringComparison.Ordinal))
+                    await PublishTaskWebhookAsync(existing, WebhookEvents.TaskAssigned, ctx);
                 if (oldStatus != existing.Status)
                 {
                     await NotifyWatchersStatusAsync(existing, oldStatus, existing.Status, ctx);
                     // Log a canonical "Status Changed" entry so GetBurndownAsync can count completions.
                     await LogAsync(ctx, "Status Changed", $"'{oldStatus}' → '{existing.Status}'",
                         existing.Id, existing.Goal, existing.Project);
+                    await PublishTaskWebhookAsync(existing, WebhookEvents.TaskStatusChanged, ctx);
                 }
 
                 if (existing.SprintId.HasValue && existing.SprintId != oldSprintId
@@ -205,7 +209,11 @@ public partial class TaskService
             return new TaskUpdateResult { Error = "This task was modified by someone else. Please reload and try again." };
         }
         await CascadeParentStatusAsync(task.ParentId, ctx);
-        if (old != task.Status) await NotifyWatchersStatusAsync(task, old, task.Status, ctx);
+        if (old != task.Status)
+        {
+            await NotifyWatchersStatusAsync(task, old, task.Status, ctx);
+            await PublishTaskWebhookAsync(task, WebhookEvents.TaskStatusChanged, ctx);
+        }
         var logDetails = $"'{old}' → '{task.Status}'" + (swimlane != null ? $"; Swimlane: {swimlane}" : "");
         await LogAsync(ctx, "Status Changed", logDetails, id, task.Goal, task.Project);
         await _hub.Clients.Group("team-" + (task.TeamId?.ToString() ?? "0")).SendAsync("TaskUpdated", new {
@@ -586,6 +594,10 @@ public partial class TaskService
         await PushNotifBadgeAsync(commentNotifIds);
         var teamName = await GetTeamNameAsync(task.TeamId);
         await NotifyCommentAsync(task, comment.Trim(), commenter, allUsers, mentioned, watcherTargets, teamName);
+        await _webhooks.PublishAsync(task.TeamId, WebhookEvents.TaskCommentAdded, new
+        {
+            taskId = task.Id, goal = task.Goal, comment = comment.Trim(), author = commenter, teamId = task.TeamId
+        }, commenter);
         return (true, null);
     }
 

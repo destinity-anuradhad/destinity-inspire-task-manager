@@ -42,6 +42,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RecurringTaskRun> RecurringTaskRuns { get; set; }
     public DbSet<CustomFieldDefinition> CustomFieldDefinitions { get; set; }
     public DbSet<TaskCustomFieldValue> TaskCustomFieldValues { get; set; }
+    public DbSet<ApiClient> ApiClients { get; set; }
+    public DbSet<WebhookSubscription> WebhookSubscriptions { get; set; }
+    public DbSet<WebhookDelivery> WebhookDeliveries { get; set; }
+    public DbSet<ImportJob> ImportJobs { get; set; }
+    public DbSet<ImportRow> ImportRows { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -188,6 +193,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<AppUser>().HasIndex(u => u.Username).IsUnique();
         modelBuilder.Entity<AppUser>().HasIndex(u => u.DisplayName);
         modelBuilder.Entity<AppUser>().Property(u => u.DailyCapacityHours).HasPrecision(5, 2);
+
+        modelBuilder.Entity<ApiClient>().HasIndex(c => c.KeyHash).IsUnique();
+        modelBuilder.Entity<ApiClient>().HasIndex(c => new { c.OwnerUserId, c.RevokedAt });
+        modelBuilder.Entity<ApiClient>().HasIndex(c => new { c.TeamId, c.RevokedAt });
+
+        modelBuilder.Entity<WebhookSubscription>().HasIndex(s => new { s.TeamId, s.IsActive });
+        modelBuilder.Entity<WebhookDelivery>().HasIndex(d => new { d.Status, d.AvailableAt });
+        modelBuilder.Entity<WebhookDelivery>().HasIndex(d => d.SubscriptionId);
+
+        modelBuilder.Entity<ImportJob>().HasIndex(j => new { j.TeamId, j.Status });
+        modelBuilder.Entity<ImportRow>().HasIndex(r => r.ImportJobId);
+        modelBuilder.Entity<ImportRow>().HasIndex(r => r.ExternalKey);
 
         // Teams
         modelBuilder.Entity<Team>().HasIndex(t => t.Name);

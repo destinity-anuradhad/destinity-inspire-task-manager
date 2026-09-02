@@ -1,0 +1,93 @@
+@{
+    ViewData["Title"] = "Import Tasks";
+    var jobs = ViewBag.Jobs as IReadOnlyList<ImportJobSummary> ?? new List<ImportJobSummary>();
+}
+
+<div class="max-w-4xl mx-auto mt-10 px-4 pb-16">
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-gray-900">Import Tasks</h1>
+        <p class="text-sm text-gray-500 mt-1">Upload a CSV to bulk-create tasks. You'll preview and confirm before anything is written.</p>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+
+    <form method="post" action="/Import/Upload" enctype="multipart/form-data"
+          class="bg-white border border-gray-200 rounded-2xl p-6 mb-8 space-y-4">
+        @Html.AntiForgeryToken()
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">CSV file</label>
+            <input type="file" name="file" accept=".csv,text/csv" required
+                   class="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200" />
+        </div>
+        <div class="flex justify-end">
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold">Upload &amp; preview</button>
+        </div>
+    </form>
+
+    <div class="bg-white border border-gray-200 rounded-2xl p-6 mb-8">
+        <p class="text-sm font-semibold text-gray-800 mb-2">CSV format</p>
+        <p class="text-xs text-gray-500 mb-3">First row must be a header. <span class="font-medium text-gray-700">Goal</span> is required; all other columns are optional.</p>
+        <div class="overflow-x-auto">
+            <code class="block bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono text-gray-700 whitespace-pre">Goal,ItemType,Status,Priority,Owner,TargetDate,Weight,EstimateUnit,Labels,ExternalKey
+Build login page,Task,New,High,,2026-10-01,5,Points,auth,IMP-001
+Fix logout bug,Bug,To Do,Medium,,,3,Points,auth,IMP-002</code>
+        </div>
+        <p class="text-xs text-gray-400 mt-3">
+            <span class="font-medium">ItemType:</span> Epic, Feature, Story, Task, Bug ·
+            <span class="font-medium">ExternalKey:</span> optional idempotency key — rows already imported for this team are skipped on re-upload.
+        </p>
+    </div>
+
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50"><p class="text-sm font-semibold text-gray-800">Recent imports</p></div>
+        @if (jobs.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No imports yet.</div>
+        }
+        else
+        {
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                        <th class="px-6 py-3 font-medium">File</th>
+                        <th class="px-4 py-3 font-medium">Rows</th>
+                        <th class="px-4 py-3 font-medium">Result</th>
+                        <th class="px-4 py-3 font-medium">State</th>
+                        <th class="px-4 py-3 font-medium">When</th>
+                        <th class="px-4 py-3 font-medium"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var j in jobs)
+                    {
+                        <tr class="border-b border-gray-50">
+                            <td class="px-6 py-3">
+                                <div class="font-medium text-gray-900 truncate max-w-[220px]">@j.FileName</div>
+                                <div class="text-xs text-gray-400">by @j.CreatedBy</div>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600">@j.TotalRows <span class="text-xs text-gray-400">(@j.ValidRows ok, @j.ErrorRows err)</span></td>
+                            <td class="px-4 py-3 text-xs text-gray-500">
+                                @if (j.Status == "Applied") { <span>@j.CreatedRows created · @j.SkippedRows skipped · @j.FailedRows failed</span> }
+                                else { <span>—</span> }
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium @(j.Status == "Applied" ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600")">@j.Status</span>
+                            </td>
+                            <td class="px-4 py-3 text-xs text-gray-500">@j.CreatedAt.ToString("MM-dd HH:mm")</td>
+                            <td class="px-4 py-3 text-right">
+                                <a href="/Import/Preview/@j.Id" class="text-xs text-[#094f70] hover:underline font-medium">@(j.Status == "Applied" ? "View" : "Review")</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

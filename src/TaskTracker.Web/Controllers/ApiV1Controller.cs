@@ -1,17 +1,28 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TaskTracker.Models;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
-/// <summary>Read-only integration endpoints. Cookie authentication is required.</summary>
+/// <summary>
+/// v1 integration endpoints. Accepts either an interactive session cookie or an API key
+/// (<c>X-Api-Key</c> header / <c>Authorization: Bearer</c>). API-key callers are limited to the
+/// scopes granted to their key; cookie callers retain their normal role/team authorization.
+/// </summary>
 [ApiController]
-[Authorize]
+[Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme + "," + ApiKeyDefaults.Scheme)]
 [Route("api/v1")]
+[EnableRateLimiting("api")]  // per-key (or per-IP) throttling for the integration surface
+[IgnoreAntiforgeryToken]   // replaces the app-wide auto-validation with the conditional filter below
+[ApiAntiforgery]           // enforces antiforgery for cookie callers only; API-key callers are exempt
 public class ApiV1Controller(IProjectService projects, ITaskService tasks) : AppControllerBase
 {
     [HttpGet("projects")]
+    [RequireApiScope(ApiScopes.ProjectsRead)]
     public async Task<IActionResult> GetProjects(CancellationToken cancellationToken)
     {
         var teamId = ActiveTeamId();
@@ -31,6 +42,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetTasks([FromQuery] TaskListFilters filters)
     {
         filters.Page = Math.Max(filters.Page, 1);
@@ -54,6 +66,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/export")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> ExportTasks([FromQuery] ExportFilters filters)
     {
         var (bytes, fileName) = await tasks.ExportCsvAsync(filters, ActiveTeamId());
@@ -61,6 +74,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/{id:int}")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetTask(int id)
     {
         var task = await tasks.GetByIdAsync(id, ActiveTeamId());
@@ -78,6 +92,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpPost("tasks")]
+    [RequireApiScope(ApiScopes.TasksWrite)]
     public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Goal))
@@ -99,6 +114,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpPatch("tasks/{id:int}/status")]
+    [RequireApiScope(ApiScopes.TasksWrite)]
     public async Task<IActionResult> UpdateTaskStatus(int id, [FromBody] UpdateTaskStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Status)) return BadRequest(new { error = "Status is required." });
@@ -108,6 +124,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpPost("tasks/{id:int}/time-entries")]
+    [RequireApiScope(ApiScopes.TasksWrite)]
     public async Task<IActionResult> LogTime(int id, [FromBody] LogTimeRequest request)
     {
         if (request.Hours <= 0) return BadRequest(new { error = "Hours must be greater than zero." });
@@ -117,6 +134,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpPost("tasks/{id:int}/comments")]
+    [RequireApiScope(ApiScopes.TasksWrite)]
     public async Task<IActionResult> AddComment(int id, [FromBody] AddCommentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Text)) return BadRequest(new { error = "Comment text is required." });
@@ -126,6 +144,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/{id:int}/comments")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetComments(int id)
     {
         var task = await tasks.GetByIdAsync(id, ActiveTeamId());
@@ -134,6 +153,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/{id:int}/history")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetHistory(int id)
     {
         var task = await tasks.GetByIdAsync(id, ActiveTeamId());
@@ -142,6 +162,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/{id:int}/links")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetLinks(int id)
     {
         var task = await tasks.GetByIdAsync(id, ActiveTeamId());
@@ -150,6 +171,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     }
 
     [HttpGet("tasks/{id:int}/attachments")]
+    [RequireApiScope(ApiScopes.TasksRead)]
     public async Task<IActionResult> GetAttachments(int id)
     {
         var task = await tasks.GetByIdAsync(id, ActiveTeamId());

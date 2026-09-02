@@ -6,12 +6,15 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 using TaskTracker.Data;
 using TaskTracker.Hubs;
 using TaskTracker.Models;
 using TaskTracker.Services;
 using TaskTracker.Services.Options;
+using TaskTracker.Web.Auth;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +65,32 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+
+    // Least-privilege integration API: throttle per API key (falling back to caller IP).
+    // Rate limiting runs before authentication, so we partition on a hash of the presented
+    // key rather than the resolved client id.
+    options.AddPolicy("api", httpContext =>
+    {
+        var presented = httpContext.Request.Headers[ApiKeyDefaults.HeaderName].ToString();
+        if (string.IsNullOrEmpty(presented))
+        {
+            var authHeader = httpContext.Request.Headers.Authorization.ToString();
+            if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                presented = authHeader["Bearer ".Length..];
+        }
+
+        var partitionKey = string.IsNullOrEmpty(presented)
+            ? "ip:" + (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown")
+            : "key:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(presented)));
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
 });
 
 builder.Services.AddScoped<IActivityService, ActivityService>();
@@ -78,6 +107,10 @@ builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
 builder.Services.AddScoped<IRecurringTaskService, RecurringTaskService>();
 builder.Services.AddScoped<ICustomFieldService, CustomFieldService>();
+builder.Services.AddScoped<IApiClientService, ApiClientService>();
+builder.Services.AddScoped<IWebhookService, WebhookService>();
+builder.Services.AddHostedService<WebhookBackgroundService>();
+builder.Services.AddScoped<IImportService, ImportService>();
 builder.Services.AddScoped<RecurringTaskProcessor>();
 builder.Services.AddHostedService<RecurringTaskBackgroundService>();
 
@@ -101,7 +134,29 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             context.RejectPrincipal();
             await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         };
-    });
+        // Integration endpoints must answer with a status code, not an interactive redirect.
+        options.Events.OnRedirectToLogin = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            }
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+            }
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+    })
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyDefaults.Scheme, _ => { });
 
 builder.Services.AddAuthorization(opts =>
 {
