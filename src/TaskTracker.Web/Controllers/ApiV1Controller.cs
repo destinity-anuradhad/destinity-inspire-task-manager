@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TaskTracker.Models;
 using TaskTracker.Services;
 
 namespace TaskTracker.Controllers;
@@ -74,5 +75,48 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
             task.ItemType, task.ParentId, task.SprintId, task.WorkflowDefinitionId,
             task.Labels, task.AcceptanceCriteria, task.Reporter, task.TeamId, task.CreatedAt
         });
+    }
+
+    [HttpPost("tasks")]
+    public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Goal))
+            return ValidationProblem(new Dictionary<string, string[]> { ["goal"] = ["Goal is required."] });
+
+        var task = new TaskItem
+        {
+            Goal = request.Goal.Trim(), Project = request.Project?.Trim(), Property = request.Property?.Trim(),
+            Priority = request.Priority?.Trim(), Status = request.Status?.Trim(), Owner = request.Owner?.Trim(),
+            TargetDate = request.TargetDate?.Date, StartDate = request.StartDate?.Date, EndDate = request.EndDate?.Date,
+            Weight = request.Weight, EstimateUnit = request.EstimateUnit?.Trim() ?? "Points",
+            ItemType = request.ItemType?.Trim(), ParentId = request.ParentId, SprintId = request.SprintId,
+            Labels = request.Labels?.Trim(), AcceptanceCriteria = request.AcceptanceCriteria?.Trim(),
+            Notes = request.Notes?.Trim(), TeamId = ActiveTeamId(), ProjectId = request.ProjectId
+        };
+        var result = await tasks.SaveAsync(task, BuildUserCtx(), forceClose: false);
+        if (!result.Success) return BadRequest(new { error = result.Error });
+        return CreatedAtAction(nameof(GetTask), new { id = result.TaskId }, new { id = result.TaskId, capacityWarning = result.CapacityWarning });
+    }
+
+    public sealed class CreateTaskRequest
+    {
+        public string? Goal { get; init; }
+        public string? Project { get; init; }
+        public int? ProjectId { get; init; }
+        public string? Property { get; init; }
+        public string? Priority { get; init; }
+        public string? Status { get; init; }
+        public string? Owner { get; init; }
+        public DateTime? TargetDate { get; init; }
+        public DateTime? StartDate { get; init; }
+        public DateTime? EndDate { get; init; }
+        public decimal? Weight { get; init; }
+        public string? EstimateUnit { get; init; }
+        public string? ItemType { get; init; }
+        public int? ParentId { get; init; }
+        public int? SprintId { get; init; }
+        public string? Labels { get; init; }
+        public string? AcceptanceCriteria { get; init; }
+        public string? Notes { get; init; }
     }
 }
