@@ -62,6 +62,25 @@ internal sealed class NullEmailQueue : IEmailQueue
     public Task<bool> ReplayAsync(long id, CancellationToken ct = default) => Task.FromResult(false);
 }
 
+// ── Webhook stub ────────────────────────────────────────────────────────────
+
+internal sealed class NullWebhookService : IWebhookService
+{
+    public Task<IReadOnlyList<WebhookSubscriptionSummary>> ListAsync(int? teamId, bool includeGlobal, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<WebhookSubscriptionSummary>>([]);
+    public Task<WebhookCreateResult> CreateAsync(WebhookCreateRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<bool> SetActiveAsync(int id, bool active, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<bool> DeleteAsync(int id, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task PublishAsync(int? teamId, string eventType, object data, string? actor, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<IReadOnlyList<WebhookDeliverySummary>> GetRecentDeliveriesAsync(int? teamId, bool includeGlobal, int maxCount = 100, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<WebhookDeliverySummary>>([]);
+    public Task<bool> ReplayAsync(long deliveryId, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<WebhookDispatch?> ClaimNextAsync(CancellationToken ct = default) => Task.FromResult<WebhookDispatch?>(null);
+    public Task MarkDeliveredAsync(long id, int statusCode, CancellationToken ct = default) => Task.CompletedTask;
+    public Task MarkFailedAsync(long id, int? statusCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
+}
+
 // ── Factory helpers ───────────────────────────────────────────────────────────
 
 internal static class ServiceFactory
@@ -71,7 +90,7 @@ internal static class ServiceFactory
         var config = new ConfigurationBuilder().Build();
         var cache  = new MemoryCache(new MemoryCacheOptions());
         return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
-            NullLogger<TaskService>.Instance, cache);
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService());
     }
 
     public static ActivityService CreateActivityService(TaskTracker.Data.AppDbContext db)

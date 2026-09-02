@@ -114,6 +114,7 @@ public sealed class ImportService(AppDbContext db, ITaskService tasks) : IImport
                 TargetDate = f.TargetDate, Weight = f.Weight,
                 EstimateUnit = string.IsNullOrWhiteSpace(f.EstimateUnit) ? "Points" : f.EstimateUnit!,
                 Labels = f.Labels,
+                RowVersion = [],   // store-generated on SQL Server; set so the in-memory provider accepts the insert
             };
             var result = await tasks.SaveAsync(task, ctx, forceClose: false);
             if (result.Success)
