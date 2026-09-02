@@ -14,6 +14,10 @@ endpoints yet.
 | `PATCH` | `/api/v1/tasks/{id}/status` | Apply a governed status transition |
 | `POST` | `/api/v1/tasks/{id}/time-entries` | Log append-only work time |
 | `POST` | `/api/v1/tasks/{id}/comments` | Add a task comment |
+| `GET` | `/api/v1/tasks/{id}/comments` | Read task comments |
+| `GET` | `/api/v1/tasks/{id}/history` | Read task audit history |
+| `GET` | `/api/v1/tasks/{id}/links` | Read task relationships |
+| `GET` | `/api/v1/tasks/{id}/attachments` | Read attachment metadata |
 
 Write endpoints return `400` for validation or business-rule failures and do
 not bypass the service layer. A non-visible task returns `404` from the detail
