@@ -81,7 +81,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
     public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Goal))
-            return ValidationProblem(new Dictionary<string, string[]> { ["goal"] = ["Goal is required."] });
+            return BadRequest(new { error = "Goal is required." });
 
         var task = new TaskItem
         {
