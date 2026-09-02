@@ -58,4 +58,21 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         var (bytes, fileName) = await tasks.ExportCsvAsync(filters, ActiveTeamId());
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
+
+    [HttpGet("tasks/{id:int}")]
+    public async Task<IActionResult> GetTask(int id)
+    {
+        var task = await tasks.GetByIdAsync(id, ActiveTeamId());
+        if (task == null) return NotFound();
+
+        return Ok(new
+        {
+            task.Id, task.Goal, task.Project, task.ProjectId, task.Property, task.Status,
+            task.Priority, task.Owner, task.TargetDate, task.StartDate, task.EndDate,
+            task.ActualStartDate, task.ActualEndDate, task.Notes, task.RelatedFiles,
+            task.Weight, task.EstimateUnit, task.ActualHours, task.RemainingWorkHours,
+            task.ItemType, task.ParentId, task.SprintId, task.WorkflowDefinitionId,
+            task.Labels, task.AcceptanceCriteria, task.Reporter, task.TeamId, task.CreatedAt
+        });
+    }
 }
