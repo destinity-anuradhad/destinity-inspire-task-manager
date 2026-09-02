@@ -1,4 +1,8 @@
-# TaskM read-only upgrade inventory — 2026-09-02
+# Superseded: TaskM read-only upgrade inventory — 2026-09-02
+
+> This inventory was taken from the wrong local database and is not upgrade
+> evidence. Use `DestiniyInspire_TaskManager` for all reconciliation and
+> upgrade work.
 
 Scope: local development database `TaskM`. All checks were read-only. No
 database schema or data changes were performed.
