@@ -125,6 +125,14 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         return NoContent();
     }
 
+    [HttpGet("tasks/{id:int}/comments")]
+    public async Task<IActionResult> GetComments(int id)
+    {
+        var task = await tasks.GetByIdAsync(id, ActiveTeamId());
+        if (task == null) return NotFound();
+        return Ok(new { data = await tasks.GetCommentsAsync(id, ActiveTeamId()) });
+    }
+
     public sealed class CreateTaskRequest
     {
         public string? Goal { get; init; }
