@@ -116,6 +116,15 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         return Ok(new { result.ActualHours, result.RemainingWorkHours });
     }
 
+    [HttpPost("tasks/{id:int}/comments")]
+    public async Task<IActionResult> AddComment(int id, [FromBody] AddCommentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text)) return BadRequest(new { error = "Comment text is required." });
+        var result = await tasks.AddCommentAsync(id, request.Text.Trim(), BuildUserCtx());
+        if (!result.Success) return BadRequest(new { error = result.Error });
+        return NoContent();
+    }
+
     public sealed class CreateTaskRequest
     {
         public string? Goal { get; init; }
@@ -153,4 +162,6 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         public string? Note { get; init; }
         public decimal? RemainingWorkHours { get; init; }
     }
+
+    public sealed class AddCommentRequest { public string? Text { get; init; } }
 }
