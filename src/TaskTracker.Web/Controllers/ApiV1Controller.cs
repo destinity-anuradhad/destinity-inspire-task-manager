@@ -107,6 +107,15 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         return NoContent();
     }
 
+    [HttpPost("tasks/{id:int}/time-entries")]
+    public async Task<IActionResult> LogTime(int id, [FromBody] LogTimeRequest request)
+    {
+        if (request.Hours <= 0) return BadRequest(new { error = "Hours must be greater than zero." });
+        var result = await tasks.LogTimeAsync(id, request.Hours, request.WorkDate.Date, request.Note?.Trim(), request.RemainingWorkHours, BuildUserCtx());
+        if (!result.Success) return BadRequest(new { error = result.Error });
+        return Ok(new { result.ActualHours, result.RemainingWorkHours });
+    }
+
     public sealed class CreateTaskRequest
     {
         public string? Goal { get; init; }
@@ -135,5 +144,13 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
         public string? Swimlane { get; init; }
         public bool ForceClose { get; init; }
         public decimal? ActualHours { get; init; }
+    }
+
+    public sealed class LogTimeRequest
+    {
+        public decimal Hours { get; init; }
+        public DateTime WorkDate { get; init; } = DateTime.UtcNow;
+        public string? Note { get; init; }
+        public decimal? RemainingWorkHours { get; init; }
     }
 }
