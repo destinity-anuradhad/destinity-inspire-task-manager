@@ -51,4 +51,11 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
             })
         });
     }
+
+    [HttpGet("tasks/export")]
+    public async Task<IActionResult> ExportTasks([FromQuery] ExportFilters filters)
+    {
+        var (bytes, fileName) = await tasks.ExportCsvAsync(filters, ActiveTeamId());
+        return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
 }
