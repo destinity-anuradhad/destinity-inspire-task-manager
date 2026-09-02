@@ -8,12 +8,12 @@
 
     string RoleBadge(string role) => role switch {
         "TeamAdmin" => "bg-purple-100 text-purple-700",
-        "Lead"      => "bg-blue-100 text-blue-700",
+        "TeamLead"  => "bg-blue-100 text-blue-700",
         _           => "bg-gray-100 text-gray-600",
     };
     string RoleLabel(string role) => role switch {
         "TeamAdmin" => "Team Admin",
-        "Lead"      => "Team Lead",
+        "TeamLead"  => "Team Lead",
         _           => "Member",
     };
 }

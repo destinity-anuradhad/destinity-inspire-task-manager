@@ -298,7 +298,7 @@ thead th {
   font-size: .7rem;
   font-weight: 700;
   letter-spacing: .05em;
-  text-transform: uppercase;
+  text-transform: capitalize;
   color: var(--text-3);
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);

@@ -1,0 +1,347 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+@using TaskTracker.Models
+@using TaskTracker.Models.ViewModels
+@{
+    var ownerColorMap = Model.Owners.ToDictionary(
+        o => o.Name, o => o.Color ?? "#094f70", StringComparer.OrdinalIgnoreCase);
+
+    string SortUrl(string col) {
+        var dir = Model.Sort == col && Model.SortDir == "asc" ? "desc" : "asc";
+        return Url.Action("Index", new {
+            search=Model.Search, project=Model.Project, property=Model.Property,
+            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+            page=1, pageSize=Model.PageSize, sort=col, sortDir=dir,
+            view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth
+        }) ?? "#";
+    }
+    string SortIcon(string col)  => Model.Sort != col ? "⇅" : Model.SortDir == "asc" ? "↑" : "↓";
+    string SortClass(string col) => Model.Sort == col ? "text-blue-600" : "text-gray-300 group-hover:text-blue-400";
+    string ItemTypeBadge(string? t) => (t ?? "").ToLower() switch {
+        "bug"     => "bg-red-50 text-red-700 border border-red-200",
+        "feature" => "bg-blue-50 text-blue-700 border border-blue-200",
+        "story"   => "bg-green-50 text-green-700 border border-green-200",
+        "epic"    => "bg-purple-50 text-purple-700 border border-purple-200",
+        _         => "bg-slate-50 text-slate-600 border border-slate-200",
+    };
+
+    var allSprints = ViewBag.AllSprints as List<Sprint> ?? new List<Sprint>();
+}
+
+    @if (Model.ViewMode == "table")
+    {
+        <div class="bg-white border border-gray-200 rounded-xl overflow-x-auto">
+            <table class="w-full text-sm min-w-[900px]">
+                <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                        <th class="px-4 py-3 w-8">
+                            <input type="checkbox" id="bl-select-all" class="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                                   onchange="bulkSelectAll(this)">
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">Type</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Title <span class="@SortClass("goal") text-xs">@SortIcon("goal")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Project <span class="@SortClass("project") text-xs">@SortIcon("project")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("property")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Client <span class="@SortClass("property") text-xs">@SortIcon("property")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-14">
+                            <a href="@SortUrl("priority")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Pri <span class="@SortClass("priority") text-xs">@SortIcon("priority")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("owner")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Assignee <span class="@SortClass("owner") text-xs">@SortIcon("owner")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <a href="@SortUrl("status")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Status <span class="@SortClass("status") text-xs">@SortIcon("status")</span></a>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Created Date</th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            <span class="flex items-center gap-1" title="Estimated effort">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Story Points
+                            </span>
+                        </th>
+                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Due Date</th>
+                        <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10" title="Comments">
+                            <svg class="w-3.5 h-3.5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                        </th>
+                        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!Model.Tasks.Any())
+                    {
+                        <tr>
+                            <td colspan="14" class="text-center py-16 text-gray-500">
+                                <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                                <p class="font-medium">No tasks found</p>
+                                <p class="text-xs mt-1">Try adjusting filters or <button onclick="openCanvas(null)" class="text-blue-600 hover:underline">create a new task</button></p>
+                            </td>
+                        </tr>
+                    }
+                    @{
+                        int rowNum = (Model.Page - 1) * Model.PageSize + 1;
+                        bool isAdmin = User.IsInRole("Admin");
+                        string curDisplay = User.FindFirst("DisplayName")?.Value ?? "";
+                        string curUser    = User.Identity?.Name ?? "";
+                    }
+                    @foreach (var task in Model.Tasks)
+                    {
+                        var detailId  = $"detail-{task.Id}";
+                        var taskJson  = TaskDataJson(task);
+                        var overdue   = IsOverdue(task.EndDate, task.Status);
+                        var rowCls    = overdue ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-gray-50";
+                        var tOwners    = (task.Owner ?? "").Split(',').Select(o => o.Trim()).Where(o => o.Length > 0).ToList();
+                        var tCanEdit   = User.IsInRole("Admin") || tOwners.Count == 0 || tOwners.Contains(curDisplay)
+                                         || task.Reporter == curDisplay || task.CreatedBy == curDisplay;
+                        var tCanDelete = tCanEdit;
+                        <tr class="border-b border-gray-50 cursor-pointer transition-colors @rowCls"
+                            data-overdue="@overdue.ToString().ToLower()"
+                            data-task="@taskJson"
+                            onclick="openCanvas(JSON.parse(this.dataset.task))">
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                <input type="checkbox" class="bl-row-check w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                                       data-id="@task.Id" onchange="bulkCheckChange(event)">
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs">@rowNum</td>
+                            <td class="px-4 py-3">
+                                @if (!string.IsNullOrEmpty(task.ItemType))
+                                {
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold @ItemTypeBadge(task.ItemType)">@task.ItemType</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 max-w-xs">
+                                <span class="font-medium text-gray-900 line-clamp-2">@task.Goal</span>
+                                @if (!string.IsNullOrEmpty(task.Labels))
+                                {
+                                    <div class="flex flex-wrap gap-1 mt-1">
+                                        @foreach (var lbl in task.Labels.Split(',').Select(l => l.Trim()).Where(l => l.Length > 0).Take(4))
+                                        { <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-medium">@lbl</span> }
+                                    </div>
+                                }
+                            </td>
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                @if (!string.IsNullOrEmpty(task.Project))
+                                {
+                                    <span class="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 max-w-[120px] truncate cursor-pointer hover:bg-blue-100 transition-colors"
+                                          title="Filter by module: @task.Project"
+                                          data-val="@task.Project"
+                                          onclick="quickFilterModule(this.dataset.val, event)">@task.Project</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                @if (!string.IsNullOrEmpty(task.Property))
+                                {
+                                    <span class="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 max-w-[120px] truncate cursor-pointer hover:bg-purple-100 transition-colors"
+                                          title="Filter by client: @task.Property"
+                                          data-val="@task.Property"
+                                          onclick="quickFilterClient(this.dataset.val, event)">@task.Property</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3">
+                                @if (!string.IsNullOrEmpty(task.Priority))
+                                {
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold @PriorityBadge(task.Priority)">@task.Priority</span>
+                                }
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap gap-1">
+                                    @if (string.IsNullOrEmpty(task.Owner))
+                                    {
+                                        <span class="text-gray-500 text-xs">—</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var ow in SplitOwners(task.Owner))
+                                        {
+                                            var owClr = ownerColorMap.GetValueOrDefault(ow, "#64748b");
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background:@owClr">@ow</span>
+                                        }
+                                    }
+                                </div>
+                            </td>
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                <button type="button"
+                                        data-task-id="@task.Id"
+                                        data-cur-status="@task.Status"
+                                        data-item-type="@task.ItemType"
+                                        onclick="toggleStatusMenu(this)"
+                                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity @StatusBadge(task.Status)">
+                                    @task.Status
+                                    <svg class="w-2.5 h-2.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                @task.CreatedAt.ToString("yyyy-MM-dd")
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                @if (!string.IsNullOrEmpty(WeightLabel(task.Weight)))
+                                {
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        @WeightLabel(task.Weight)
+                                    </span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.EndDate?.ToString("yyyy-MM-dd")</td>
+                            <td class="px-4 py-3 text-center">
+                                @{ var cmtCount = Model.CommentCounts.GetValueOrDefault(task.Id, 0); }
+                                @if (cmtCount > 0)
+                                {
+                                    <span class="inline-flex items-center gap-1 text-gray-500 text-xs" title="@cmtCount comment@(cmtCount!=1?"s":"")">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                                        @cmtCount
+                                    </span>
+                                }
+                            </td>
+                            <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+                                <div class="flex items-center justify-end gap-1">
+                                    <button data-task="@taskJson" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                            class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                                            title="@(tCanEdit ? "Edit" : "View / Comment")">
+                                        @if (tCanEdit)
+                                        {
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        }
+                                        else
+                                        {
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                        }
+                                    </button>
+                                    @if (tCanDelete)
+                                    {
+                                        <form method="post" action="/Tasks/Delete/@task.Id" id="del-task-@task.Id">
+                                            @Html.AntiForgeryToken()
+                                            <button type="button" onclick="swalDelete(document.getElementById('del-task-@task.Id'), null)" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        <tr id="@detailId" class="hidden bg-blue-50/30">
+                            <td colspan="14" class="px-6 py-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    @if (!string.IsNullOrEmpty(task.Notes))
+                                    {
+                                        <div><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</p><p class="text-sm text-gray-700 whitespace-pre-wrap">@task.Notes</p></div>
+                                    }
+                                    @if (string.IsNullOrEmpty(task.Notes))
+                                    {
+                                        <p class="text-sm text-gray-500 col-span-2">No description.</p>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                        rowNum++;
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (Model.TotalPages > 1 || Model.Tasks.Any())
+        {
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <span>Rows per page:</span>
+                    <form method="get" action="/Tasks">
+                        <input type="hidden" name="search"   value="@Model.Search" />
+                        <input type="hidden" name="project"  value="@Model.Project" />
+                        <input type="hidden" name="property" value="@Model.Property" />
+                        <input type="hidden" name="owner"    value="@Model.Owner" />
+                        <input type="hidden" name="status"   value="@Model.Status" />
+                        <input type="hidden" name="priority" value="@Model.Priority" />
+                        <input type="hidden" name="dateFrom" value="@Model.DateFrom" />
+                        <input type="hidden" name="dateTo"   value="@Model.DateTo" />
+                        <input type="hidden" name="sort"     value="@Model.Sort" />
+                        <input type="hidden" name="sortDir"  value="@Model.SortDir" />
+                        <input type="hidden" name="page"     value="1" />
+                        <select name="pageSize" onchange="this.form.submit()"
+                                asp-items="@(new SelectList(new[]{10,20,50,100}.Select(n=>new SelectListItem(n.ToString(),n.ToString())),"Value","Text",Model.PageSize.ToString()))"
+                                class="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </select>
+                    </form>
+                    <span>Showing @((Model.Page-1)*Model.PageSize+1)–@(Math.Min(Model.Page*Model.PageSize,Model.TotalCount)) of @Model.TotalCount</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    @{
+                        string PageUrl(int p) => Url.Action("Index", new {
+                            search=Model.Search, project=Model.Project, property=Model.Property,
+                            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+                            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+                            page=p, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir
+                        }) ?? "#";
+                        int sp2 = Math.Max(1, Model.Page-2);
+                        int ep2 = Math.Min(Model.TotalPages, Model.Page+2);
+                    }
+                    <a href="@PageUrl(1)"              class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-500 pointer-events-none":"text-gray-600 hover:bg-gray-100")">«</a>
+                    <a href="@PageUrl(Model.Page-1)"   class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-500 pointer-events-none":"text-gray-600 hover:bg-gray-100")">‹</a>
+                    @for (int pg = sp2; pg <= ep2; pg++)
+                    {
+                        <a href="@PageUrl(pg)" class="px-3 py-1.5 rounded-lg text-sm font-medium @(pg==Model.Page?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-100")">@pg</a>
+                    }
+                    <a href="@PageUrl(Model.Page+1)"    class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-500 pointer-events-none":"text-gray-600 hover:bg-gray-100")">›</a>
+                    <a href="@PageUrl(Model.TotalPages)" class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-500 pointer-events-none":"text-gray-600 hover:bg-gray-100")">»</a>
+                </div>
+            </div>
+        }
+    }
+
+@* Bulk action bar — always in DOM so tasks.js can reference it from any view *@
+<form id="tbl-aft" style="display:none">@Html.AntiForgeryToken()</form>
+<div id="bulk-bar" class="hidden fixed bottom-0 left-0 right-0 z-50 flex items-center gap-3 bg-[#0f2a3f] text-white px-6 py-3 shadow-2xl border-t border-white/10">
+        <span id="bulk-count" class="text-sm font-semibold shrink-0">0 selected</span>
+        <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="bulkDelete()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition-colors shrink-0">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Move to Bin
+            </button>
+            <select id="bulk-status-sel" onchange="bulkChangeStatus(this.value)"
+                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                <option value="" disabled selected>Set Status…</option>
+                @foreach (var ws in Model.WorkStates)
+                {
+                    <option value="@ws.Name">@ws.Name</option>
+                }
+            </select>
+            <select id="bulk-owner-sel" onchange="bulkChangeOwner(this.value)"
+                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                <option value="" disabled selected>Set Assignee…</option>
+                @foreach (var ow in Model.Owners)
+                {
+                    <option value="@ow.Name">@ow.Name</option>
+                }
+            </select>
+            @if (allSprints.Any())
+            {
+                <select id="bulk-sprint-sel" onchange="bulkAssignSprint(this.value === '' ? null : parseInt(this.value))"
+                        class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                    <option value="" disabled selected>Set Sprint…</option>
+                    <option value="">Backlog</option>
+                    @foreach (var sp in allSprints)
+                    {
+                        <option value="@sp.Id">@sp.Name</option>
+                    }
+                </select>
+            }
+            <select id="bulk-priority-sel" onchange="bulkChangePriority(this.value)"
+                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                <option value="" disabled selected>Set Priority…</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+            </select>
+        </div>
+        <button onclick="bulkClearSelection()" class="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors shrink-0" title="Clear selection">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>

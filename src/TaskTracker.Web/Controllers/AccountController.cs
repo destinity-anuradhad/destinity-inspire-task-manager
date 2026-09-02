@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using System.Text.Json;
@@ -30,7 +31,7 @@ public class AccountController(IUserService userService, IActivityService activi
         return View();
     }
 
-    [AllowAnonymous, HttpPost, ValidateAntiForgeryToken]
+    [AllowAnonymous, HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("login")]
     public async Task<IActionResult> Login(string username, string password, string? returnUrl = null)
     {
         ViewBag.ReturnUrl = returnUrl;
@@ -47,7 +48,7 @@ public class AccountController(IUserService userService, IActivityService activi
         }
 
         var user = await userService.GetByUsernameAsync(username);
-        if (user == null)
+        if (user == null || !string.Equals(user.Status, "Active", StringComparison.Ordinal))
         {
             await activity.LogAsync(username, "Login Failed", "Auth", "Unknown user", ip, ua);
             ViewBag.Error = "Invalid username or password.";
@@ -66,7 +67,8 @@ public class AccountController(IUserService userService, IActivityService activi
         {
             new(ClaimTypes.Name,    user.Username),
             new(ClaimTypes.Role,    user.Role),
-            new("UserId",           user.Id.ToString()),
+            new(AuthClaims.UserId,   user.Id.ToString()),
+            new(AuthClaims.SessionVersion, user.SessionVersion.ToString()),
             new("DisplayName",      user.DisplayName),
             new("ProfileImagePath", user.ProfileImagePath ?? ""),
             new("AvatarColor",      user.Color ?? "#3b82f6"),
@@ -147,7 +149,8 @@ public class AccountController(IUserService userService, IActivityService activi
         {
             new(ClaimTypes.Name,    user!.Username),
             new(ClaimTypes.Role,    user.Role),
-            new("UserId",           user.Id.ToString()),
+            new(AuthClaims.UserId,   user.Id.ToString()),
+            new(AuthClaims.SessionVersion, user.SessionVersion.ToString()),
             new("DisplayName",      user.DisplayName),
             new("ProfileImagePath", user.ProfileImagePath ?? ""),
             new("AvatarColor",      user.Color ?? "#3b82f6"),

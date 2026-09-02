@@ -37,19 +37,42 @@ public class TeamsController(ITeamService teams) : AppControllerBase
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Switch(int teamId)
+    public async Task<IActionResult> Switch(int teamId, string? returnUrl = null)
     {
         var (team, teamRole) = await teams.GetSwitchDataAsync(teamId, CurrentUserId(), IsSysAdmin());
         if (team == null) return IsSysAdmin() ? NotFound() : Forbid();
         await SignInWithTeamAsync(team, teamRole);
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return Redirect(returnUrl);
         return RedirectToAction("Index", "Dashboard");
     }
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Roles = "Admin")]
-    public async Task<IActionResult> SwitchGlobal()
+    public async Task<IActionResult> SwitchGlobal(string? returnUrl = null)
     {
         await SignInGlobalAsync();
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return Redirect(returnUrl);
         return RedirectToAction("Index", "Dashboard");
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MyTeamsJson()
+    {
+        var uid = CurrentUserId();
+        var memberships = await teams.GetUserMembershipsAsync(uid);
+        var allTeams    = IsSysAdmin() ? await teams.GetAllActiveTeamsAsync() : new List<Team>();
+        var shown       = memberships.Select(m => m.Team.Id).ToHashSet();
+
+        var list = memberships
+            .Select(m => new { id = m.Team.Id, name = m.Team.Name, color = m.Team.Color, role = m.TeamRole })
+            .ToList<object>();
+
+        if (IsSysAdmin())
+            list.AddRange(allTeams.Where(t => !shown.Contains(t.Id))
+                .Select(t => new { id = t.Id, name = t.Name, color = t.Color, role = "TeamAdmin" }));
+
+        return Json(new { isSysAdmin = IsSysAdmin(), teams = list });
     }
 
     [AllowAnonymous]
@@ -79,8 +102,9 @@ public class TeamsController(ITeamService teams) : AppControllerBase
 
     public async Task<IActionResult> Manage(int id)
     {
+        if (id <= 0) return RedirectToAction(IsSysAdmin() ? "Index" : "AutoSelect");
         var data = await teams.GetManageDataAsync(id, CurrentUserId(), IsSysAdmin());
-        if (data == null) return Forbid();
+        if (data == null) return RedirectToAction(IsSysAdmin() ? "Index" : "AutoSelect");
 
         ViewBag.Members        = data.Members;
         ViewBag.NonMembers     = data.NonMembers;
@@ -180,10 +204,10 @@ public class TeamsController(ITeamService teams) : AppControllerBase
         var user = await teams.GetUserForAuthAsync(CurrentUserId());
         if (user == null) return;
         var claims = BuildClaims(user);
-        claims.Add(new Claim("ActiveTeamId",    team.Id.ToString()));
+        claims.Add(new Claim(AuthClaims.ActiveTeamId, team.Id.ToString()));
         claims.Add(new Claim("ActiveTeamName",  team.Name));
         claims.Add(new Claim("ActiveTeamColor", team.Color));
-        claims.Add(new Claim("TeamRole",        teamRole));
+        claims.Add(new Claim(AuthClaims.TeamRole, teamRole));
         await SignInAsync(claims);
     }
 
@@ -198,7 +222,8 @@ public class TeamsController(ITeamService teams) : AppControllerBase
     [
         new(ClaimTypes.Name,    user.Username),
         new(ClaimTypes.Role,    user.Role),
-        new("UserId",           user.Id.ToString()),
+        new(AuthClaims.UserId,   user.Id.ToString()),
+        new(AuthClaims.SessionVersion, user.SessionVersion.ToString()),
         new("DisplayName",      user.DisplayName),
         new("ProfileImagePath", user.ProfileImagePath ?? ""),
         new("AvatarColor",      user.Color ?? "#3b82f6"),

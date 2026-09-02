@@ -16,8 +16,9 @@
     string fDateFrom = (string)(ViewBag.FilterDateFrom ?? "");
     string fDateTo   = (string)(ViewBag.FilterDateTo   ?? "");
     string fCategory = (string)(ViewBag.FilterCategory ?? "");
+    int?   fTeam     = ViewBag.FilterTeam as int?;
 
-    bool hasFilter = fProject != "" || fUser != "" || fDateFrom != "" || fDateTo != "" || fCategory != "";
+    bool hasFilter = fProject != "" || fUser != "" || fDateFrom != "" || fDateTo != "" || fCategory != "" || fTeam.HasValue;
 
     string PageUrl(int p) {
         var q = new System.Text.StringBuilder($"?page={p}");
@@ -26,6 +27,7 @@
         if (fDateFrom != "") q.Append($"&dateFrom={Uri.EscapeDataString(fDateFrom)}");
         if (fDateTo   != "") q.Append($"&dateTo={Uri.EscapeDataString(fDateTo)}");
         if (fCategory != "") q.Append($"&category={Uri.EscapeDataString(fCategory)}");
+        if (fTeam.HasValue)  q.Append($"&team={fTeam.Value}");
         return q.ToString();
     }
 }
@@ -103,7 +105,12 @@
     <div class="page-hd">
         <div class="page-hd-left">
             <h1>Activity Log</h1>
-            <p>@totalCount @(hasFilter ? "matching" : "total") entries@(isAdmin ? " · All teams" : "")</p>
+            @{
+                string teamLabel = isAdmin
+                    ? (fTeam.HasValue && teamNames.TryGetValue(fTeam.Value, out var _tn) ? $" · {_tn}" : " · All teams")
+                    : "";
+            }
+            <p>@totalCount @(hasFilter ? "matching" : "total") entries@teamLabel</p>
         </div>
     </div>
 
@@ -119,6 +126,19 @@
                     <option value="System" selected="@(fCategory=="System")">System</option>
                 </select>
             </div>
+            @if (teamNames.Any())
+            {
+            <div class="flex-1 min-w-[140px]">
+                <label class="block text-xs font-medium text-gray-500 mb-1">Team</label>
+                <select name="team" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">All Teams</option>
+                    @foreach (var t in teamNames.OrderBy(t => t.Value))
+                    {
+                        <option value="@t.Key" selected="@(fTeam == t.Key)">@t.Value</option>
+                    }
+                </select>
+            </div>
+            }
             <div class="flex-1 min-w-[140px]">
                 <label class="block text-xs font-medium text-gray-500 mb-1">Project</label>
                 <select name="project" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">

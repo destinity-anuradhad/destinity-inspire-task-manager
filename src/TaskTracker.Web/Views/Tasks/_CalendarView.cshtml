@@ -1,0 +1,176 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+@{
+    var ownerColorMap = Model.Owners.ToDictionary(
+        o => o.Name, o => o.Color ?? "#094f70", StringComparer.OrdinalIgnoreCase);
+    var ownerImageMap = Model.Owners
+        .Where(o => !string.IsNullOrEmpty(o.ImagePath))
+        .ToDictionary(o => o.Name, o => o.ImagePath!, StringComparer.OrdinalIgnoreCase);
+    var today = DateTime.Today;
+}
+
+    @if (Model.ViewMode == "calendar")
+    {
+        var cy   = Model.CalYear;
+        var cm   = Model.CalMonth;
+        var fd   = new DateTime(cy, cm, 1);
+        var dim  = DateTime.DaysInMonth(cy, cm);
+        var sdow = (int)fd.DayOfWeek;
+        var ld   = new DateTime(cy, cm, dim);
+
+        var prevM = fd.AddMonths(-1);
+        var nextM = fd.AddMonths(1);
+        string TlNav(DateTime m) => Url.Action("Index", new {
+            search=Model.Search, project=Model.Project, property=Model.Property,
+            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+            pageSize=Model.PageSize, view="calendar", calYear=m.Year, calMonth=m.Month
+        }) ?? "#";
+
+        const int colW = 36;
+        var tlEntries   = new List<(TaskItem T, int S, int E)>();
+        var noDateItems = new List<TaskItem>();
+
+        foreach (var t in Model.Tasks)
+        {
+            DateTime? ts = t.StartDate;
+            DateTime? te = t.EndDate ?? t.TargetDate;
+            if (ts == null) ts = te;
+            if (te == null) te = ts;
+
+            if (ts != null && te != null && ts.Value <= ld && te.Value >= fd)
+            {
+                int bs = ts.Value < fd ? 1 : ts.Value.Day;
+                int be = te.Value > ld ? dim : te.Value.Day;
+                if (be < bs) be = bs;
+                tlEntries.Add((t, bs, be));
+            }
+            else
+            {
+                noDateItems.Add(t);
+            }
+        }
+
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <a href="@TlNav(prevM)" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                </a>
+                <div class="text-center">
+                    <h2 class="text-lg font-semibold text-gray-900">@fd.ToString("MMMM yyyy")</h2>
+                    <p class="text-xs text-gray-500">@tlEntries.Count task@(tlEntries.Count != 1 ? "s" : "") in timeline · @noDateItems.Count without dates</p>
+                </div>
+                <a href="@TlNav(nextM)" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </div>
+
+            <div class="overflow-x-auto">
+                <div style="min-width:@(260 + dim * colW)px">
+
+                    <div class="flex border-b border-gray-200 bg-gray-50">
+                        <div class="shrink-0 border-r border-gray-200 px-4 py-2.5" style="width:260px">
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task</span>
+                        </div>
+                        @for (int d = 1; d <= dim; d++)
+                        {
+                            bool dWe  = ((sdow + d - 1) % 7) is 0 or 6;
+                            bool dTod = cy == today.Year && cm == today.Month && d == today.Day;
+                            <div class="shrink-0 flex items-center justify-center text-xs border-r border-gray-100 @(dWe ? "bg-gray-100 text-gray-500" : dTod ? "bg-blue-50 text-blue-600 font-bold" : "text-gray-500")"
+                                 style="width:@(colW)px;height:36px">@d</div>
+                        }
+                    </div>
+
+                    @{
+                        bool tlIsAdmin    = User.IsInRole("Admin");
+                        string tlCurDisp  = User.FindFirst("DisplayName")?.Value ?? "";
+                    }
+                    @if (!tlEntries.Any())
+                    {
+                        <div class="text-center py-16 text-gray-500 text-sm">
+                            No tasks with dates in @fd.ToString("MMMM yyyy")<br>
+                            <span class="text-xs text-gray-500">Tasks need both a Start Date and End Date to appear on the timeline.</span>
+                        </div>
+                    }
+                    @foreach (var (tlT, tlS, tlE) in tlEntries)
+                    {
+                        var tlJ       = TaskDataJson(tlT);
+                        var barPx     = (tlS - 1) * colW;
+                        var barW      = Math.Max(1, tlE - tlS + 1) * colW;
+                        var tlCanEdit = tlIsAdmin || SplitOwners(tlT.Owner).Any(o => string.Equals(o, tlCurDisp, StringComparison.OrdinalIgnoreCase));
+                        var barClr    = tlT.Status switch {
+                            "Done"        => "#16a34a",
+                            "On track"    => "#2563eb",
+                            "Delayed"     => "#dc2626",
+                            "On hold"     => "#6b7280",
+                            "Testing"     => "#d97706",
+                            "Not Started" => "#7c3aed",
+                            _             => "#094f70"
+                        };
+                        var tlOw  = SplitOwners(tlT.Owner).FirstOrDefault() ?? "";
+                        var tlOwC = ownerColorMap.GetValueOrDefault(tlOw, "#64748b");
+
+                        <div class="flex border-b border-gray-50 hover:bg-blue-50/20" style="height:40px">
+                            <div class="shrink-0 border-r border-gray-100 flex items-center gap-2 px-3" style="width:260px">
+                                @if (!string.IsNullOrEmpty(tlT.Priority))
+                                {
+                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 @PriorityBadge(tlT.Priority)">@tlT.Priority</span>
+                                }
+                                <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                        class="text-xs font-medium text-gray-800 hover:text-blue-600 text-left truncate flex-1 leading-tight">
+                                    @tlT.Goal
+                                </button>
+                                @if (!string.IsNullOrEmpty(tlOw))
+                                {
+                                    @Html.Raw(AvatarEl(tlOw, ownerColorMap, ownerImageMap))
+                                }
+                            </div>
+                            <div class="relative flex items-center" style="width:@(dim * colW)px;background:repeating-linear-gradient(90deg,transparent,transparent @(colW-1)px,#f3f4f6 @(colW-1)px,#f3f4f6 @(colW)px)">
+                                @if (cy == today.Year && cm == today.Month)
+                                {
+                                    var tdX = (today.Day - 1) * colW + colW / 2;
+                                    <div class="absolute top-0 bottom-0 w-px bg-blue-400/50 pointer-events-none" style="left:@(tdX)px"></div>
+                                }
+                                @{ var tlBarTitle = tlT.Goal + (tlT.EndDate.HasValue ? " · due " + tlT.EndDate.Value.ToString("yyyy-MM-dd") : ""); }
+                                <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                        class="absolute h-6 rounded text-white text-[10px] font-medium truncate px-1.5 flex items-center shadow-sm hover:opacity-80 transition-opacity"
+                                        style="left:@(barPx)px;width:@(barW)px;background:@barClr"
+                                        title="@tlBarTitle">
+                                    @if (barW >= colW * 2) { @tlT.Goal }
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                </div>
+            </div>
+
+            <div class="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center gap-3">
+                @foreach (var ws2 in Model.WorkStates)
+                {
+                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                        <span class="w-3 h-3 rounded-sm inline-block" style="background:@ws2.Color"></span>@ws2.Name
+                    </span>
+                }
+                <span class="text-xs text-gray-500 ml-auto">Click bars or task names to edit</span>
+            </div>
+
+        </div>
+
+        @if (noDateItems.Any())
+        {
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">@noDateItems.Count task@(noDateItems.Count != 1 ? "s" : "") without dates</p>
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var nd in noDateItems)
+                    {
+                        var ndJ      = TaskDataJson(nd);
+                        <button type="button" data-task="@ndJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 hover:border-blue-200 text-gray-700 text-left max-w-xs truncate transition-colors">
+                            @nd.Goal
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    }

@@ -8,14 +8,14 @@
     // Project only the fields the canvas needs; excludes DB internals (IsDeleted, BacklogOrder, TeamId, etc.)
     // and formats DateTime? as "yyyy-MM-dd" strings for HTML date inputs.
     Func<TaskItem, string> TaskDataJson = t => JsonSerializer.Serialize(new {
-        t.Id, t.Goal, t.Project, t.Property, t.Priority,
+        t.Id, t.Goal, t.Project, t.ProjectId, t.Property, t.Priority,
         t.Owner, t.Status, t.ItemType,
         targetDate      = t.TargetDate?.ToString("yyyy-MM-dd"),
         startDate       = t.StartDate?.ToString("yyyy-MM-dd"),
         endDate         = t.EndDate?.ToString("yyyy-MM-dd"),
         actualStartDate = t.ActualStartDate?.ToString("yyyy-MM-dd"),
         actualEndDate   = t.ActualEndDate?.ToString("yyyy-MM-dd"),
-        t.Weight, t.Notes, t.Labels, t.AcceptanceCriteria,
+        t.Weight, t.EstimateUnit, t.ActualHours, t.RemainingWorkHours, t.Notes, t.Labels, t.AcceptanceCriteria,
         t.RelatedFiles, t.Reporter, t.CreatedBy,
         createdAt       = t.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
         t.ParentId, t.SprintId, t.ModuleId, t.ClientId, t.Swimlane
@@ -27,6 +27,8 @@
         .ToDictionary(o => o.Name, o => o.ImagePath!, StringComparer.OrdinalIgnoreCase);
     var myDisplayName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
     var myImgPath     = User.FindFirst("ProfileImagePath")?.Value ?? "";
+    var governedProjects = ViewBag.GovernedProjects as List<ProjectItem> ?? [];
+    var taskTemplates = ViewBag.TaskTemplates as List<TaskTemplate> ?? [];
 }
 
 @functions {
@@ -81,7 +83,7 @@
 
 @{
     var workStatesJson = JsonSerializer.Serialize(
-        Model.WorkStates.Select(ws => new { name = ws.Name, color = ws.Color }),
+        Model.WorkStates.Select(ws => new { name = ws.Name, color = ws.Color, itemTypes = ws.ItemTypes }),
         jsonOpts);
 }
 
@@ -97,8 +99,7 @@
             view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth
         }) ?? "#";
     }
-    string SortIcon(string col)  => Model.Sort != col ? "⇅" : Model.SortDir == "asc" ? "↑" : "↓";
-    string SortClass(string col) => Model.Sort == col ? "text-blue-600" : "text-gray-300 group-hover:text-blue-400";
+    string SortIcon(string col) => Model.Sort != col ? "⇅" : Model.SortDir == "asc" ? "↑" : "↓";
 
     string ViewUrl(string v) => Url.Action("Index", new {
         search=Model.Search, project=Model.Project, property=Model.Property,
@@ -174,51 +175,41 @@
         </div>
     </div>
 
-    <!-- ── Status Chips ── -->
-    <div class="flex flex-wrap gap-2">
-        @foreach (var ws in Model.WorkStates)
-        {
-            var cnt = Model.StatusCounts.GetValueOrDefault(ws.Name, 0);
-            var act = Model.Status == ws.Name;
-            var cc  = act ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:text-blue-600";
-            <a href="@Url.Action("Index", new { search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status=act?"":ws.Name, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, page=1, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
-               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors @cc">
-                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:@ws.Color"></span>
-                @ws.Name
-                <span class="@(act?"bg-white/20 text-white":"bg-gray-100 text-gray-600") rounded-full px-1.5 py-0.5 text-[10px] font-bold">@cnt</span>
-            </a>
-        }
-        @if (!string.IsNullOrEmpty(Model.Status))
-        {
-            <a href="@Url.Action("Index", new { search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status="", priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, page=1, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
-               class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-200 bg-white text-gray-500 hover:text-red-600">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> Clear
-            </a>
-        }
+    <!-- ── Filter Toggle ── -->
+    <div class="flex items-center">
+        <button id="filter-toggle-btn" onclick="toggleFilterBar()"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
+            <span id="filter-toggle-label">Show filters</span>
+        </button>
     </div>
 
     <!-- ── Filter Bar ── -->
+    <div id="filter-bar-wrap" class="hidden">
     <form method="get" action="/Tasks" class="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap gap-2 items-end">
         <input type="hidden" name="view"     value="@Model.ViewMode" />
         <input type="hidden" name="sort"     value="@Model.Sort" />
         <input type="hidden" name="sortDir"  value="@Model.SortDir" />
         <input type="hidden" name="calYear"  value="@Model.CalYear" />
         <input type="hidden" name="calMonth" value="@Model.CalMonth" />
-        <div class="flex-1 min-w-48">
-            <label class="block text-xs font-medium text-gray-500 mb-1">Search</label>
-            <input type="text" name="search" value="@Model.Search" placeholder="Search tasks, projects…"
-                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
         <div class="min-w-36">
-            <label class="block text-xs font-medium text-gray-500 mb-1">Project</label>
-            <select name="project" asp-items="@(new SelectList(Model.Projects,"Name","Name",Model.Project))"
+            <label for="filter-project" class="block text-xs font-medium text-gray-500 mb-1">Module</label>
+            <select id="filter-project" name="project" data-searchable
+                    onchange="onFilterModuleChange(this)"
                     class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">All Projects</option>
+                <option value="">— Loading… —</option>
             </select>
         </div>
         <div class="min-w-36">
-            <label class="block text-xs font-medium text-gray-500 mb-1">Assignee</label>
-            <select name="owner" class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <label for="filter-property" class="block text-xs font-medium text-gray-500 mb-1">Client</label>
+            <select id="filter-property" name="property" data-searchable
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">— Loading… —</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label for="filter-owner" class="block text-xs font-medium text-gray-500 mb-1">Assignee</label>
+            <select id="filter-owner" name="owner" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 <option value="">All assignees</option>
                 @foreach (var o in Model.Owners)
                 {
@@ -272,8 +263,97 @@
             </button>
         </div>
     </form>
+    </div>
 
     <script>
+    function quickFilterClient(name, e) {
+        if (e) e.stopPropagation();
+        const p = new URLSearchParams(location.search);
+        p.set('property', name); p.set('page', '1');
+        location.href = '/Tasks?' + p.toString();
+    }
+    function quickFilterModule(name, e) {
+        if (e) e.stopPropagation();
+        const p = new URLSearchParams(location.search);
+        p.set('project', name); p.set('page', '1');
+        location.href = '/Tasks?' + p.toString();
+    }
+
+    // ── Filter bar: HIM-driven Module & Client dropdowns ────────────────
+    let _modulesCache = null;  // shared with canvas JS below
+    const _FB_MODULE = '@Html.Raw(Model.Project?.Replace("'", "\\'") ?? "")';
+    const _FB_CLIENT = '@Html.Raw(Model.Property?.Replace("'", "\\'") ?? "")';
+
+    async function _filterLoadModules() {
+        const sel = document.getElementById('filter-project');
+        try {
+            if (!_modulesCache || _modulesCache.length === 0) {
+                const r = await fetch('/Tasks/GetModules');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                _modulesCache = await r.json();
+            }
+            sel.innerHTML = '<option value="">All Modules</option>';
+            _modulesCache.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.name;
+                opt.dataset.mid = m.id;
+                opt.textContent = m.name;
+                if (m.name === _FB_MODULE) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } catch(e) {
+            sel.innerHTML = '<option value="">All Modules</option>';
+            console.warn('Filter GetModules failed:', e);
+        }
+        const picked = sel.options[sel.selectedIndex];
+        const mid = picked ? (parseInt(picked.dataset.mid) || 0) : 0;
+        await _filterLoadClients(mid, _FB_CLIENT);
+    }
+
+    async function _filterLoadClients(moduleId, restoreClientName) {
+        const sel = document.getElementById('filter-property');
+        sel.innerHTML = '<option value="">— Loading… —</option>';
+        try {
+            const r = await fetch('/Tasks/GetClients?moduleId=' + moduleId);
+            const clients = await r.json();
+            sel.innerHTML = '<option value="">All Clients</option>';
+            clients.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.name;
+                opt.textContent = c.name + (c.fromCompany ? ' ★' : '');
+                if (c.name === restoreClientName) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } catch(e) {
+            sel.innerHTML = '<option value="">All Clients</option>';
+            console.warn('Filter GetClients failed:', e);
+        }
+    }
+
+    async function onFilterModuleChange(selectEl) {
+        const opt = selectEl.options[selectEl.selectedIndex];
+        const mid = opt ? (parseInt(opt.dataset.mid) || 0) : 0;
+        await _filterLoadClients(mid, '');
+    }
+
+    // Initialise filter dropdowns as soon as the page loads
+    _filterLoadModules();
+
+    function toggleFilterBar() {
+        const wrap  = document.getElementById('filter-bar-wrap');
+        const label = document.getElementById('filter-toggle-label');
+        const hidden = wrap.classList.toggle('hidden');
+        label.textContent = hidden ? 'Show filters' : 'Hide filters';
+    }
+    // Auto-open if any filter is active in the URL
+    (function() {
+        const p = new URLSearchParams(location.search);
+        if (['search','project','property','owner','status','priority','dateFrom','dateTo'].some(k => p.get(k))) {
+            document.getElementById('filter-bar-wrap').classList.remove('hidden');
+            document.getElementById('filter-toggle-label').textContent = 'Hide filters';
+        }
+    })();
+
     async function saveCurrentQuery() {
         const { value: val } = await Swal.fire({
             title: 'Save as Query',
@@ -334,215 +414,216 @@
     @* ════════════════════ TABLE VIEW ════════════════════ *@
     @if (Model.ViewMode == "table")
     {
-        <div class="bg-white border border-gray-200 rounded-xl overflow-x-auto">
-            <table class="w-full text-sm min-w-[900px]">
-                <thead>
-                    <tr class="border-b border-gray-100 bg-gray-50">
-                        <th class="px-4 py-3 w-8">
-                            <input type="checkbox" id="bl-select-all" class="w-4 h-4 rounded accent-blue-600 cursor-pointer"
-                                   onchange="bulkSelectAll(this)">
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Title <span class="@SortClass("goal") text-xs">@SortIcon("goal")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Project <span class="@SortClass("project") text-xs">@SortIcon("project")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <a href="@SortUrl("property")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Client <span class="@SortClass("property") text-xs">@SortIcon("property")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-14">
-                            <a href="@SortUrl("priority")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Pri <span class="@SortClass("priority") text-xs">@SortIcon("priority")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <a href="@SortUrl("owner")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Assignee <span class="@SortClass("owner") text-xs">@SortIcon("owner")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <a href="@SortUrl("status")" class="flex items-center gap-1 hover:text-blue-600 group whitespace-nowrap">Status <span class="@SortClass("status") text-xs">@SortIcon("status")</span></a>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Created Date</th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            <span class="flex items-center gap-1" title="Estimated effort">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                Story Points
-                            </span>
-                        </th>
-                        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Due Date</th>
-                        <th class="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10" title="Comments">
-                            <svg class="w-3.5 h-3.5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
-                        </th>
-                        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (!Model.Tasks.Any())
-                    {
-                        <tr>
-                            <td colspan="13" class="text-center py-16 text-gray-400">
-                                <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                </svg>
-                                <p class="font-medium">No tasks found</p>
-                                <p class="text-xs mt-1">Try adjusting filters or <button onclick="openCanvas(null)" class="text-blue-600 hover:underline">create a new task</button></p>
-                            </td>
+        string curDisplay = User.FindFirst("DisplayName")?.Value ?? "";
+        string PageUrl(int p) => Url.Action("Index", new {
+            search=Model.Search, project=Model.Project, property=Model.Property,
+            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+            page=p, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir
+        }) ?? "#";
+        int sp2 = Math.Max(1, Model.Page - 2);
+        int ep2 = Math.Min(Model.TotalPages, Model.Page + 2);
+
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm border-collapse">
+                    <thead>
+                        <tr class="bg-[#0f2a3f] text-white text-xs">
+                            <th class="px-3 py-2.5 w-8">
+                                <input type="checkbox" id="bl-select-all" class="w-4 h-4 rounded cursor-pointer" onchange="bulkSelectAll(this)">
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-20">Type</th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-28">
+                                <a href="@SortUrl("status")" class="flex items-center gap-1 hover:text-blue-300 group">Status <span class="text-xs opacity-60">@SortIcon("status")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                                <a href="@SortUrl("property")" class="flex items-center gap-1 hover:text-blue-300 group">Client <span class="text-xs opacity-60">@SortIcon("property")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                                <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-300 group">Project <span class="text-xs opacity-60">@SortIcon("project")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide">
+                                <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-300 group">Title <span class="text-xs opacity-60">@SortIcon("goal")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                                <a href="@SortUrl("priority")" class="flex items-center gap-1 hover:text-blue-300 group">Priority <span class="text-xs opacity-60">@SortIcon("priority")</span></a>
+                            </th>
+                            <th class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16">
+                                <a href="@SortUrl("weight")" class="flex items-center justify-end gap-1 hover:text-blue-300 group">Est. <span class="text-xs opacity-60">@SortIcon("weight")</span></a>
+                            </th>
+                            <th class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16">
+                                <a href="@SortUrl("actual")" class="flex items-center justify-end gap-1 hover:text-blue-300 group">Actual <span class="text-xs opacity-60">@SortIcon("actual")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                                <a href="@SortUrl("owner")" class="flex items-center gap-1 hover:text-blue-300 group">Assignee <span class="text-xs opacity-60">@SortIcon("owner")</span></a>
+                            </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                                <a href="@SortUrl("created")" class="flex items-center gap-1 hover:text-blue-300 group">Created <span class="text-xs opacity-60">@SortIcon("created")</span></a>
+                            </th>
+                            <th class="px-3 py-2.5 w-24 text-center font-semibold tracking-wide whitespace-nowrap">Actions</th>
                         </tr>
-                    }
-                    @{
-                        int rowNum = (Model.Page - 1) * Model.PageSize + 1;
-                        bool isAdmin = User.IsInRole("Admin");
-                        string curDisplay = User.FindFirst("DisplayName")?.Value ?? "";
-                        string curUser    = User.Identity?.Name ?? "";
-                    }
-                    @foreach (var task in Model.Tasks)
-                    {
-                        var detailId  = $"detail-{task.Id}";
-                        var taskJson  = TaskDataJson(task);
-                        var overdue   = IsOverdue(task.EndDate, task.Status);
-                        var rowCls    = overdue ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-gray-50";
-                        var tOwners    = (task.Owner ?? "").Split(',').Select(o => o.Trim()).Where(o => o.Length > 0).ToList();
-                        var tCanEdit   = User.IsInRole("Admin") || tOwners.Count == 0 || tOwners.Contains(curDisplay)
-                                         || task.Reporter == curDisplay || task.CreatedBy == curDisplay;
-                        var tCanDelete = tCanEdit;
-                        <tr class="border-b border-gray-50 cursor-pointer transition-colors @rowCls"
-                            data-overdue="@overdue.ToString().ToLower()"
-                            data-task="@taskJson"
-                            onclick="openCanvas(JSON.parse(this.dataset.task))">
-                            <td class="px-4 py-3" onclick="event.stopPropagation()">
-                                <input type="checkbox" class="bl-row-check w-4 h-4 rounded accent-blue-600 cursor-pointer"
-                                       data-id="@task.Id" onchange="bulkCheckChange(event)">
-                            </td>
-                            <td class="px-4 py-3 text-gray-400 text-xs">@rowNum</td>
-                            <td class="px-4 py-3 max-w-xs">
-                                <span class="font-medium text-gray-900 line-clamp-2">@task.Goal</span>
-                                @if (!string.IsNullOrEmpty(task.Labels))
-                                {
-                                    <div class="flex flex-wrap gap-1 mt-1">
-                                        @foreach (var lbl in task.Labels.Split(',').Select(l => l.Trim()).Where(l => l.Length > 0).Take(4))
-                                        { <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-medium">@lbl</span> }
-                                    </div>
-                                }
-                            </td>
-                            <td class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">@task.Project</td>
-                            <td class="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">@task.Property</td>
-                            <td class="px-4 py-3">
-                                @if (!string.IsNullOrEmpty(task.Priority))
-                                {
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold @PriorityBadge(task.Priority)">@task.Priority</span>
-                                }
-                            </td>
-                            <td class="px-4 py-3">
-                                <div class="flex flex-wrap gap-1">
-                                    @if (string.IsNullOrEmpty(task.Owner))
+                    </thead>
+                    <tbody>
+                        @if (!Model.Tasks.Any())
+                        {
+                            <tr>
+                                <td colspan="12" class="text-center py-20 text-gray-400">
+                                    <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    <p class="font-medium">No tasks found</p>
+                                    <button onclick="openCanvas(null)" class="text-xs text-blue-600 hover:underline mt-1">Create a task</button>
+                                </td>
+                            </tr>
+                        }
+                        @foreach (var task in Model.Tasks)
+                        {
+                            var taskJson     = TaskDataJson(task);
+                            var overdue      = IsOverdue(task.EndDate, task.Status);
+                            var taskOwners   = SplitOwners(task.Owner ?? "").ToList();
+                            var tCanEdit     = User.IsInRole("Admin") || taskOwners.Count == 0 || taskOwners.Contains(curDisplay)
+                                               || task.Reporter == curDisplay || task.CreatedBy == curDisplay;
+                            string typeCls   = task.ItemType switch {
+                                "Epic"    => "bg-purple-100 text-purple-700",
+                                "Feature" => "bg-indigo-100 text-indigo-700",
+                                "Story"   => "bg-sky-100 text-sky-700",
+                                "Bug"     => "bg-red-100 text-red-700",
+                                _         => "bg-emerald-100 text-emerald-700"
+                            };
+                            <tr class="tbl-row border-b border-gray-100 hover:bg-blue-50/40 cursor-pointer transition-colors @(overdue ? "bg-red-50/30" : "")"
+                                data-task="@taskJson" data-task-id="@task.Id"
+                                onclick="openCanvas(JSON.parse(this.dataset.task))">
+
+                                <td class="px-3 py-2" onclick="event.stopPropagation()">
+                                    <input type="checkbox" class="bl-row-check w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                                           data-id="@task.Id" onchange="bulkCheckChange(event)">
+                                </td>
+
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    <span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit @typeCls">@(task.ItemType ?? "Task")</span>
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap" onclick="event.stopPropagation()">
+                                    <button type="button"
+                                            data-task-id="@task.Id" data-cur-status="@task.Status" data-item-type="@task.ItemType"
+                                            data-owner="@task.Owner" data-reporter="@task.Reporter" data-created-by="@task.CreatedBy"
+                                            onclick="toggleStatusMenu(this)"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer hover:opacity-80 transition-opacity @StatusBadge(task.Status)">
+                                        @task.Status
+                                        <svg class="w-2 h-2 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                    </button>
+                                </td>
+
+                                <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Property">@task.Property</td>
+                                <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Project">@task.Project</td>
+
+                                <td class="px-3 py-2">
+                                    <span class="text-sm text-gray-900 line-clamp-1">@task.Goal</span>
+                                    @if (!string.IsNullOrEmpty(task.Labels))
                                     {
-                                        <span class="text-gray-300 text-xs">—</span>
+                                        <div class="flex gap-1 mt-0.5 flex-wrap">
+                                            @foreach (var lbl in task.Labels.Split(',').Select(l=>l.Trim()).Where(l=>l.Length>0).Take(3))
+                                            { <span class="text-[9px] px-1 py-px rounded bg-violet-50 text-violet-600 font-medium border border-violet-100">@lbl</span> }
+                                        </div>
                                     }
+                                </td>
+
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    @if (!string.IsNullOrEmpty(task.Priority))
+                                    { <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold @PriorityBadge(task.Priority)">@task.Priority</span> }
+                                </td>
+
+                                <td class="px-3 py-2 text-right whitespace-nowrap">
+                                    @if (task.Weight is > 0)
+                                    { <span class="text-xs font-medium text-cyan-600">@($"{task.Weight:0.##}")h</span> }
+                                    else { <span class="text-gray-200 text-xs">—</span> }
+                                </td>
+
+                                <td class="px-3 py-2 text-right whitespace-nowrap">
+                                    @if (task.ActualHours is > 0)
+                                    {
+                                        var over = task.Weight is > 0 && task.ActualHours > task.Weight;
+                                        <span class="text-xs font-medium @(over ? "text-red-500" : "text-emerald-600")">@($"{task.ActualHours:0.##}")h</span>
+                                    }
+                                    else { <span class="text-gray-200 text-xs">—</span> }
+                                </td>
+
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    @if (taskOwners.Count == 0)
+                                    { <span class="text-gray-300 text-xs">—</span> }
                                     else
                                     {
-                                        @foreach (var ow in SplitOwners(task.Owner))
-                                        {
-                                            var owClr = ownerColorMap.GetValueOrDefault(ow, "#64748b");
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background:@owClr">@ow</span>
-                                        }
+                                        <div class="flex items-center gap-1.5">
+                                            <div class="flex -space-x-1">
+                                                @foreach (var ow in taskOwners.Take(3))
+                                                {
+                                                    var owClr = ownerColorMap.GetValueOrDefault(ow, "#64748b");
+                                                    <span class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold text-white"
+                                                          style="background:@owClr" title="@ow">@(ow.Length > 0 ? ow[0].ToString().ToUpper() : "?")</span>
+                                                }
+                                            </div>
+                                            @if (taskOwners.Count == 1)
+                                            { <span class="text-xs text-gray-600 truncate max-w-[80px]">@taskOwners[0]</span> }
+                                            else if (taskOwners.Count > 3)
+                                            { <span class="text-xs text-gray-400">+@(taskOwners.Count-3)</span> }
+                                        </div>
                                     }
-                                </div>
-                            </td>
-                            <td class="px-4 py-3" onclick="event.stopPropagation()">
-                                <button type="button"
-                                        data-task-id="@task.Id"
-                                        data-cur-status="@task.Status"
-                                        onclick="toggleStatusMenu(this)"
-                                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity @StatusBadge(task.Status)">
-                                    @task.Status
-                                    <svg class="w-2.5 h-2.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                                </button>
-                            </td>
-                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                                @task.CreatedAt.ToString("yyyy-MM-dd")
-                            </td>
-                            <td class="px-4 py-3 whitespace-nowrap">
-                                @if (!string.IsNullOrEmpty(WeightLabel(task.Weight)))
-                                {
-                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                        @WeightLabel(task.Weight)
-                                    </span>
-                                }
-                            </td>
-                            <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">@task.EndDate?.ToString("yyyy-MM-dd")</td>
-                            <td class="px-4 py-3 text-center">
-                                @{ var cmtCount = Model.CommentCounts.GetValueOrDefault(task.Id, 0); }
-                                @if (cmtCount > 0)
-                                {
-                                    <span class="inline-flex items-center gap-1 text-gray-400 text-xs" title="@cmtCount comment@(cmtCount!=1?"s":"")">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
-                                        @cmtCount
-                                    </span>
-                                }
-                            </td>
-                            <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
-                                <div class="flex items-center justify-end gap-1">
-                                    <button data-task="@taskJson" onclick="openCanvas(JSON.parse(this.dataset.task))"
-                                            class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                                            title="@(tCanEdit ? "Edit" : "View / Comment")">
+                                </td>
+
+                                <td class="px-3 py-2 text-xs whitespace-nowrap text-gray-400">
+                                    @task.CreatedAt.ToString("dd MMM yy")
+                                </td>
+
+                                <td class="px-3 py-2" onclick="event.stopPropagation()">
+                                    <div class="flex items-center justify-center gap-1">
+                                        <button data-task="@taskJson" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                                class="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                                title="@(tCanEdit ? "Edit" : "View")">
+                                            @if (tCanEdit)
+                                            {
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                            }
+                                            else
+                                            {
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            }
+                                        </button>
                                         @if (tCanEdit)
                                         {
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                            <form method="post" action="/Tasks/Delete/@task.Id" id="del-@task.Id">
+                                                @Html.AntiForgeryToken()
+                                                <button type="button" onclick="swalDelete(document.getElementById('del-@task.Id'), null)"
+                                                        class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                </button>
+                                            </form>
                                         }
-                                        else
-                                        {
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                        }
-                                    </button>
-                                    @if (tCanDelete)
-                                    {
-                                        <form method="post" action="/Tasks/Delete/@task.Id" id="del-task-@task.Id">
-                                            @Html.AntiForgeryToken()
-                                            <button type="button" onclick="swalDelete(document.getElementById('del-task-@task.Id'), null)" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                            </button>
-                                        </form>
-                                    }
-                                </div>
-                            </td>
-                        </tr>
-                        <tr id="@detailId" class="hidden bg-blue-50/30">
-                            <td colspan="13" class="px-6 py-4">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    @if (!string.IsNullOrEmpty(task.Notes))
-                                    {
-                                        <div><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</p><p class="text-sm text-gray-700 whitespace-pre-wrap">@task.Notes</p></div>
-                                    }
-                                    @if (string.IsNullOrEmpty(task.Notes))
-                                    {
-                                        <p class="text-sm text-gray-400 col-span-2">No description.</p>
-                                    }
-                                </div>
-                            </td>
-                        </tr>
-                        rowNum++;
-                    }
-                </tbody>
-            </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         </div>
 
+        @* Pagination *@
         @if (Model.TotalPages > 1 || Model.Tasks.Any())
         {
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2 text-sm text-gray-500">
                     <span>Rows per page:</span>
                     <form method="get" action="/Tasks">
-                        <input type="hidden" name="search"   value="@Model.Search" />
-                        <input type="hidden" name="project"  value="@Model.Project" />
-                        <input type="hidden" name="property" value="@Model.Property" />
-                        <input type="hidden" name="owner"    value="@Model.Owner" />
-                        <input type="hidden" name="status"   value="@Model.Status" />
-                        <input type="hidden" name="priority" value="@Model.Priority" />
-                        <input type="hidden" name="dateFrom" value="@Model.DateFrom" />
-                        <input type="hidden" name="dateTo"   value="@Model.DateTo" />
-                        <input type="hidden" name="sort"     value="@Model.Sort" />
-                        <input type="hidden" name="sortDir"  value="@Model.SortDir" />
-                        <input type="hidden" name="page"     value="1" />
+                        <input type="hidden" name="search"   value="@Model.Search"/>
+                        <input type="hidden" name="project"  value="@Model.Project"/>
+                        <input type="hidden" name="property" value="@Model.Property"/>
+                        <input type="hidden" name="owner"    value="@Model.Owner"/>
+                        <input type="hidden" name="status"   value="@Model.Status"/>
+                        <input type="hidden" name="priority" value="@Model.Priority"/>
+                        <input type="hidden" name="dateFrom" value="@Model.DateFrom"/>
+                        <input type="hidden" name="dateTo"   value="@Model.DateTo"/>
+                        <input type="hidden" name="sort"     value="@Model.Sort"/>
+                        <input type="hidden" name="sortDir"  value="@Model.SortDir"/>
+                        <input type="hidden" name="page"     value="1"/>
                         <select name="pageSize" onchange="this.form.submit()"
                                 asp-items="@(new SelectList(new[]{10,20,50,100}.Select(n=>new SelectListItem(n.ToString(),n.ToString())),"Value","Text",Model.PageSize.ToString()))"
                                 class="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -551,22 +632,10 @@
                     <span>Showing @((Model.Page-1)*Model.PageSize+1)–@(Math.Min(Model.Page*Model.PageSize,Model.TotalCount)) of @Model.TotalCount</span>
                 </div>
                 <div class="flex items-center gap-1">
-                    @{
-                        string PageUrl(int p) => Url.Action("Index", new {
-                            search=Model.Search, project=Model.Project, property=Model.Property,
-                            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
-                            dateFrom=Model.DateFrom, dateTo=Model.DateTo,
-                            page=p, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir
-                        }) ?? "#";
-                        int sp2 = Math.Max(1, Model.Page-2);
-                        int ep2 = Math.Min(Model.TotalPages, Model.Page+2);
-                    }
-                    <a href="@PageUrl(1)"              class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">«</a>
-                    <a href="@PageUrl(Model.Page-1)"   class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">‹</a>
+                    <a href="@PageUrl(1)"               class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">«</a>
+                    <a href="@PageUrl(Model.Page-1)"    class="px-2 py-1.5 rounded-lg text-sm @(Model.Page<=1?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">‹</a>
                     @for (int pg = sp2; pg <= ep2; pg++)
-                    {
-                        <a href="@PageUrl(pg)" class="px-3 py-1.5 rounded-lg text-sm font-medium @(pg==Model.Page?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-100")">@pg</a>
-                    }
+                    { <a href="@PageUrl(pg)" class="px-3 py-1.5 rounded-lg text-sm font-medium @(pg==Model.Page?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-100")">@pg</a> }
                     <a href="@PageUrl(Model.Page+1)"    class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">›</a>
                     <a href="@PageUrl(Model.TotalPages)" class="px-2 py-1.5 rounded-lg text-sm @(Model.Page>=Model.TotalPages?"text-gray-300 pointer-events-none":"text-gray-600 hover:bg-gray-100")">»</a>
                 </div>
@@ -726,7 +795,8 @@
                                                 }
                                             </div>
                                             <div class="flex items-center gap-1.5">
-                                                @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
+                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@($"{kt.Weight:0.##}")h</span> }
+                                                @if (kt.ActualHours is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium @(kt.Weight is > 0 && kt.ActualHours > kt.Weight ? "bg-red-50 text-red-500 border border-red-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200")" title="Actual">A:@($"{kt.ActualHours:0.##}")h</span> }
                                                 @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
                                         </div>
@@ -786,7 +856,8 @@
                                                 }
                                             </div>
                                             <div class="flex items-center gap-1.5">
-                                                @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
+                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@($"{kt.Weight:0.##}")h</span> }
+                                                @if (kt.ActualHours is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium @(kt.Weight is > 0 && kt.ActualHours > kt.Weight ? "bg-red-50 text-red-500 border border-red-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200")" title="Actual">A:@($"{kt.ActualHours:0.##}")h</span> }
                                                 @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
                                         </div>
@@ -1085,7 +1156,7 @@
                 html+='<\/div><\/div>';
                 for(var r=0;r<rows.length;r++){
                     var row=rows[r];
-                    var owImg = CV_IMAGES && CV_IMAGES[row.owner];
+                    var owImg = (typeof CV_IMAGES !== 'undefined') && CV_IMAGES && CV_IMAGES[row.owner];
                     var avEl = owImg
                         ? '<img src="'+owImg.replace(/"/g,'&quot;')+'" class="tl2-av" style="object-fit:cover;border-radius:8px;" />'
                         : (function(){ var ini=(row.owner.split(/\s+/).map(function(w){return w.charAt(0)||'';}).join('').substring(0,2).toUpperCase())||'?'; return '<div class="tl2-av">'+ini+'<\/div>'; })();
@@ -1750,7 +1821,15 @@
             <div id="bd-burndown-panel" class="hidden bg-white border border-gray-200 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-sm font-semibold text-gray-700">Sprint Burndown</h3>
-                    <button onclick="_bdToggleBurndown()" class="text-gray-400 hover:text-gray-600 text-xs">✕ Close</button>
+                    <div class="flex items-center gap-3">
+                        <div class="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                            <button id="bd-mode-tasks" onclick="_bdSetBurnMode('tasks')"
+                                    class="px-2.5 py-1 bg-blue-600 text-white font-medium transition-colors">Tasks</button>
+                            <button id="bd-mode-weight" onclick="_bdSetBurnMode('weight')"
+                                    class="px-2.5 py-1 bg-white text-gray-500 hover:bg-gray-50 font-medium transition-colors">Hrs</button>
+                        </div>
+                        <button onclick="_bdToggleBurndown()" class="text-gray-400 hover:text-gray-600 text-xs">✕ Close</button>
+                    </div>
                 </div>
                 <div style="height:220px;position:relative">
                     <canvas id="bd-burndown-chart"></canvas>
@@ -1790,9 +1869,10 @@
             <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="min-height:420px">
                 <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-todo" data-col="todo">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-gray-50 border border-gray-200 border-b-0">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">To Do</span>
                             <span id="bd-count-todo" class="text-xs bg-gray-200 text-gray-600 font-semibold px-2 py-0.5 rounded-full"></span>
+                            <span id="bd-hours-todo" class="text-[10px] text-gray-400"></span>
                         </div>
                         <button onclick="_bdAddTask('todo')" title="Add task"
                                 class="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors text-lg leading-none">+</button>
@@ -1802,9 +1882,10 @@
                 </div>
                 <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-wip" data-col="wip">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-blue-50 border border-blue-200 border-b-0">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">In Progress</span>
                             <span id="bd-count-wip" class="text-xs bg-blue-200 text-blue-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                            <span id="bd-hours-wip" class="text-[10px] text-blue-500"></span>
                         </div>
                         <button onclick="_bdAddTask('wip')" title="Add task"
                                 class="w-6 h-6 flex items-center justify-center rounded-md text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition-colors text-lg leading-none">+</button>
@@ -1814,9 +1895,10 @@
                 </div>
                 <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-done" data-col="done">
                     <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-green-50 border border-green-200 border-b-0">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Done</span>
                             <span id="bd-count-done" class="text-xs bg-green-200 text-green-700 font-semibold px-2 py-0.5 rounded-full"></span>
+                            <span id="bd-hours-done" class="text-[10px] text-green-600"></span>
                         </div>
                         <button onclick="_bdAddTask('done')" title="Add task"
                                 class="w-6 h-6 flex items-center justify-center rounded-md text-green-400 hover:bg-green-200 hover:text-green-700 transition-colors text-lg leading-none">+</button>
@@ -1905,11 +1987,16 @@
         function _bdRender() {
             let visible = _bdType ? _bdTasks.filter(t => t.itemType === _bdType) : _bdTasks;
             if (_bdPersonFilter) visible = visible.filter(t => (t.owner||'').split(',').map(o=>o.trim()).includes(_bdPersonFilter));
+            const _fmtH = v => { const n = Math.round(+(v) || 0); return `${n}h`; };
             BOARD_COLS.forEach(col => {
-                const cards = visible.filter(t => _bdColFor(t.status) === col.key);
-                const el    = document.getElementById('bd-cards-' + col.key);
-                const count = document.getElementById('bd-count-' + col.key);
+                const cards   = visible.filter(t => _bdColFor(t.status) === col.key);
+                const el      = document.getElementById('bd-cards-' + col.key);
+                const count   = document.getElementById('bd-count-' + col.key);
+                const hoursEl = document.getElementById('bd-hours-' + col.key);
                 count.textContent = cards.length || '';
+                const estH = cards.reduce((s, t) => s + (+(t.weight)      || 0), 0);
+                const actH = cards.reduce((s, t) => s + (+(t.actualHours) || 0), 0);
+                if (hoursEl) hoursEl.textContent = cards.length ? `est: ${_fmtH(estH)}  act: ${_fmtH(actH)}` : '';
                 if (!cards.length) {
                     el.innerHTML = `<div class="flex flex-col items-center justify-center py-10 text-gray-300 text-xs gap-1"><svg class="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>No items</div>`;
                 } else {
@@ -1977,9 +2064,17 @@
             if (!task) return;
             const newStatus = BOARD_DROP[colKey][task.itemType || ''] || BOARD_DROP[colKey][''];
             if (task.status === newStatus) return;
+            // Require actual hours when dragging into done column
+            let bdActualHours = null;
+            if (_isDoneStatus(task.itemType || '', newStatus)) {
+                const hrs = await _promptActualHours();
+                if (hrs === false) return;
+                bdActualHours = hrs;
+            }
             const token = document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value;
             const fd = new FormData();
             fd.append('id', taskId); fd.append('status', newStatus);
+            if (bdActualHours !== null) fd.append('actualHours', bdActualHours);
             fd.append('__RequestVerificationToken', token);
             try {
                 const r = await fetch('/Tasks/UpdateStatus', { method:'POST', body: fd });
@@ -1988,6 +2083,8 @@
                     task.status = newStatus;
                     _bdUpdateInfo();
                     _bdRender();
+                } else if (j.needActualHours) {
+                    showToast('Enter actual hours before marking as done.', 'error');
                 } else if (j.needOwner) {
                     const owner = await _promptAssignOwner(taskId, task.goal, newStatus);
                     if (owner) {
@@ -2055,6 +2152,17 @@
         // ── Burndown chart ────────────────────────────────────────────────────
         let _bdChart = null;
         let _bdBurndownVisible = false;
+        let _bdBurnMode = 'tasks';
+        let _bdLastBurnData = null;
+
+        function _bdSetBurnMode(mode) {
+            _bdBurnMode = mode;
+            document.getElementById('bd-mode-tasks').className =
+                'px-2.5 py-1 font-medium transition-colors ' + (mode === 'tasks' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50');
+            document.getElementById('bd-mode-weight').className =
+                'px-2.5 py-1 font-medium transition-colors ' + (mode === 'weight' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50');
+            if (_bdLastBurnData) _bdRenderBurndown(_bdLastBurnData);
+        }
 
         function _bdToggleBurndown() {
             _bdBurndownVisible = !_bdBurndownVisible;
@@ -2076,6 +2184,7 @@
                 const r = await fetch('/Tasks/GetBurndown?sprintId=' + sprintId);
                 if (!r.ok) { showToast('No burndown data yet.', 'info'); return; }
                 const d = await r.json();
+                _bdLastBurnData = d;
                 _bdRenderBurndown(d);
             } catch { showToast('Could not load burndown.', 'error'); }
         }
@@ -2084,9 +2193,11 @@
             const ctx = document.getElementById('bd-burndown-chart');
             if (!ctx) return;
             if (_bdChart) { _bdChart.destroy(); _bdChart = null; }
-            const labels  = d.days.map(x => x.date);
-            const actual  = d.days.map(x => x.remaining);
-            const ideal   = d.ideal.map(x => x.remaining);
+            const useWeight = _bdBurnMode === 'weight' && (d.weightDays || []).length > 0;
+            const labels = (useWeight ? d.weightDays : d.days).map(x => x.date);
+            const actual = (useWeight ? d.weightDays : d.days).map(x => x.remaining);
+            const ideal  = (useWeight ? d.weightIdeal : d.ideal).map(x => x.remaining);
+            const yLabel = useWeight ? 'Hours remaining' : 'Tasks remaining';
             _bdChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -2099,11 +2210,11 @@
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 20 } },
-                               tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} remaining` } } },
+                               tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y}${useWeight ? 'h' : ''} remaining` } } },
                     scales: {
                         x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { color: '#f1f5f9' } },
-                        y: { beginAtZero: true, ticks: { font: { size: 10 }, stepSize: 1 }, grid: { color: '#f1f5f9' },
-                             title: { display: true, text: 'Tasks remaining', font: { size: 10 }, color: '#94a3b8' } }
+                        y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: '#f1f5f9' },
+                             title: { display: true, text: yLabel, font: { size: 10 }, color: '#94a3b8' } }
                     }
                 }
             });
@@ -2150,21 +2261,67 @@ function _owAv(o, sz, ml) {
     return '<div style="' + style + 'background:' + clr + ';color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">' + ((o[0] || '?').toUpperCase()) + '<\/div>';
 }
 const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
+const CV_LEAD   = @Html.Raw(User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead" ? "true" : "false");
 const CV_USERS  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
     Model.Owners.Select(o => o.Name).Where(n => !string.IsNullOrEmpty(n)).ToList(),
     jsonOpts));
+const CV_USER_COLORS = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+    Model.Owners.Where(o => !string.IsNullOrEmpty(o.Name))
+               .ToDictionary(o => o.Name!, o => o.Color ?? "#094f70"),
+    jsonOpts));
 
-// Statuses available per item type
-const ITEM_STATUSES = {
-    'Epic':    ['New', 'Active', 'Resolved', 'Closed'],
-    'Feature': ['New', 'Active', 'Resolved', 'Closed'],
-    'Story':   ['New', 'Active', 'Resolved', 'Closed'],
-    'Task':    ['To Do', 'In Progress', 'Done'],
-    'Bug':     ['New', 'Active', 'Resolved', 'Closed'],
-    '':        ['New', 'To Do', 'Active', 'In Progress', 'Resolved', 'Done', 'Closed'],
-};
+// Statuses available per item type — built from WorkStates.ItemTypes (DB-driven, null = all types)
+const ITEM_STATUSES = (() => {
+    const ws = @Html.Raw(workStatesJson);
+    const types = ['Epic', 'Feature', 'Story', 'Task', 'Bug'];
+    const map = { '': ws.map(w => w.name) };
+    types.forEach(t => {
+        map[t] = ws
+            .filter(w => !w.itemTypes || w.itemTypes.split(',').map(s => s.trim()).includes(t))
+            .map(w => w.name);
+    });
+    return map;
+})();
 // Valid parent type for each item type
 const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'Story' };
+
+// Allowed status transitions per item type (mirrors TaskStatusRules server-side).
+// TeamLead+ bypass on the server; CV_ADMIN bypasses client-side filtering too.
+const ALLOWED_TRANSITIONS = {
+    Task: {
+        'To Do':            ['In Progress', 'Blocked'],
+        'In Progress':      ['Development Done', 'Blocked', 'To Do'],
+        'Development Done': ['Done', 'In Progress', 'Blocked'],
+        'Done':             ['In Progress', 'To Do'],
+        'Blocked':          ['To Do', 'In Progress', 'Development Done'],
+    },
+    Bug: {
+        'New':      ['Active', 'Resolved', 'Blocked'],
+        'Active':   ['Resolved', 'Blocked', 'New'],
+        'Resolved': ['Closed', 'Active', 'New'],
+        'Closed':   ['Active', 'New'],
+        'Blocked':  ['New', 'Active', 'Resolved'],
+    },
+    Story: {
+        'New':      ['Active', 'Blocked'],
+        'Active':   ['Resolved', 'Blocked', 'New'],
+        'Resolved': ['Closed', 'Active', 'New'],
+        'Closed':   ['Active', 'New'],
+        'Blocked':  ['New', 'Active', 'Resolved'],
+    },
+    Feature: {
+        'New':      ['Active', 'Blocked'],
+        'Active':   ['Resolved', 'Blocked', 'New'],
+        'Resolved': ['Closed', 'Active', 'New'],
+        'Closed':   ['Active', 'New'],
+        'Blocked':  ['New', 'Active', 'Resolved'],
+    },
+    Epic: {
+        'New':    ['Active'],
+        'Active': ['Closed', 'New'],
+        'Closed': ['Active', 'New'],
+    },
+};
 </script>
 
 <!-- ═══ OFF-CANVAS BACKDROP ═══ -->
@@ -2236,6 +2393,14 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
     <form id="canvas-form" class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
         @Html.AntiForgeryToken()
         <input type="hidden" id="cf-id" name="Id" value="0" />
+        <div id="cf-template-row">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Start from Template</label>
+            <select id="cf-template" data-searchable onchange="applyTaskTemplate(this.value)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="">— Blank task —</option>
+                @foreach (var template in taskTemplates) { <option value="@template.Id">@template.Name</option> }
+            </select>
+            <p id="cf-template-hint" class="hidden text-xs text-blue-600 mt-1"></p>
+        </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Title <span class="text-red-500">*</span></label>
             <textarea id="cf-goal" name="Goal" rows="3" required placeholder="Enter task title…"
@@ -2247,10 +2412,10 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
         <input type="hidden" id="cf-parent-id"  name="ParentId"  value="" />
         <input type="hidden" id="cf-sprint-id"  name="SprintId"  value="" />
         <!-- Item Type + Parent -->
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Item Type</label>
-                <select id="cf-item-type-sel" onchange="onItemTypeChange(this.value)"
+                <select id="cf-item-type-sel" onchange="onItemTypeChange(this.value)" data-searchable
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
                     <option value="Epic">🟦 Epic</option>
@@ -2262,7 +2427,7 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Parent</label>
-                <select id="cf-parent-sel" onchange="_onParentChange(this)"
+                <select id="cf-parent-sel" onchange="_onParentChange(this)" data-searchable
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
                 </select>
@@ -2274,7 +2439,7 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Module</label>
-                <select id="cf-project" name="Project"
+                <select id="cf-project" name="Project" data-searchable
                         onchange="onModuleChange(this)"
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— Loading… —</option>
@@ -2282,17 +2447,28 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Client</label>
-                <select id="cf-property" name="Property"
+                <select id="cf-property" name="Property" data-searchable
                         onchange="document.getElementById('cf-client-id').value = this.options[this.selectedIndex]?.dataset.cid ?? ''"
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— Loading… —</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Delivery Project</label>
+                <select id="cf-governed-project" name="ProjectId" data-searchable
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— None —</option>
+                    @foreach (var project in governedProjects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
                 </select>
             </div>
         </div>
         <!-- Sprint — hidden for Epic / Feature (they span sprints) -->
         <div id="cf-sprint-row">
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Sprint</label>
-            <select id="cf-sprint-sel" onchange="document.getElementById('cf-sprint-id').value = this.value"
+            <select id="cf-sprint-sel" data-searchable onchange="document.getElementById('cf-sprint-id').value = this.value"
                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 <option value="">— Backlog —</option>
             </select>
@@ -2345,13 +2521,13 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                <select id="cf-status" name="Status" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <select id="cf-status" name="Status" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
                 </select>
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
-                <select id="cf-priority" name="Priority" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <select id="cf-priority" name="Priority" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
                     @foreach (var pr in TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities) { <option value="@pr">@pr</option> }
                 </select>
@@ -2359,15 +2535,15 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Swimlane</label>
-            <select id="cf-swimlane" name="Swimlane" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <select id="cf-swimlane" name="Swimlane" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 <option value="">Default</option>
                 <option value="Expedite">⚡ Expedite</option>
             </select>
         </div>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Reporter</label>
-                <select id="cf-reporter-sel" name="Reporter"
+                <select id="cf-reporter-sel" name="Reporter" data-searchable
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     @foreach (var o in Model.Owners)
                     {
@@ -2379,9 +2555,28 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
                     <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Estimate (hours)
+                    Estimate
                 </label>
+                <div class="flex gap-2">
                 <input id="cf-weight" name="Weight" type="number" min="0" max="999" step="0.5" placeholder="e.g. 8"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                <select id="cf-estimate-unit" name="EstimateUnit" class="w-28 border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white">
+                    <option value="Hours">Hours</option>
+                    <option value="Points">Points</option>
+                </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Actual (h)
+                </label>
+                <input id="cf-actual-hours" name="ActualHours" type="number" min="0" max="9999" step="0.5" placeholder="e.g. 6.5"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Remaining (h)</label>
+                <input id="cf-remaining-work-hours" name="RemainingWorkHours" type="number" min="0" max="9999" step="0.5" placeholder="e.g. 2"
                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
             </div>
         </div>
@@ -2412,6 +2607,12 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             <textarea id="cf-ac" name="AcceptanceCriteria" rows="4" placeholder="Given… When… Then…"
                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
             <div id="cf-ac-preview" class="hidden w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 min-h-[4.5rem] text-sm text-gray-700 prose prose-sm max-w-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:bg-gray-100 [&_pre]:rounded [&_pre]:p-2 [&_code]:bg-gray-100 [&_code]:rounded [&_code]:px-1"></div>
+        </div>
+        <!-- Checklist — shown for existing tasks -->
+        <div id="cf-checklist-section" class="hidden border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between mb-3"><h3 class="text-sm font-semibold text-gray-700">Checklist</h3><span id="cf-checklist-progress" class="text-[10px] text-gray-400"></span></div>
+            <div id="cf-checklist-list" class="space-y-2 mb-3"></div>
+            <div id="cf-checklist-add" class="flex gap-2"><input id="cf-checklist-text" maxlength="500" placeholder="Add a checklist item…" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" onkeydown="if(event.key==='Enter'){event.preventDefault();addChecklistItem();}" /><button type="button" onclick="addChecklistItem()" class="btn-primary text-sm px-3 rounded-lg">Add</button></div>
         </div>
         <!-- Comments — shown for existing tasks, always enabled -->
         <div id="cf-comments-section" class="hidden border-t border-gray-100 pt-4">
@@ -2475,6 +2676,23 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
             </div>
             <div id="cf-att-list" class="space-y-1.5 text-xs"></div>
         </div>
+        <!-- Pending attachments — shown for new tasks, staged before save -->
+        <div id="cf-pending-att-section" class="hidden border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                    Attachments
+                    <span id="cf-pending-att-count" class="hidden ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 rounded-full font-semibold"></span>
+                </h3>
+                <label class="cursor-pointer text-xs text-[#094f70] hover:underline font-medium flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    Add files
+                    <input type="file" id="cf-pending-att-file" class="hidden" onchange="addPendingFiles(this)" multiple />
+                </label>
+            </div>
+            <div id="cf-pending-att-list" class="space-y-1.5 text-xs"></div>
+            <p class="text-[10px] text-gray-400 mt-2 italic">Files will be uploaded when the task is saved.</p>
+        </div>
         <!-- Links — shown for existing tasks -->
         <div id="cf-links-section" class="hidden border-t border-gray-100 pt-4">
             <div class="flex items-center justify-between mb-3">
@@ -2531,10 +2749,18 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
      class="fixed z-[9999] hidden bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-40"></div>
 
 @section Scripts {
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css"
+      integrity="sha384-uqD/OYCNfagd1EgXMgl5QedTD5K+B3e9b8GYo/41t7+Serf7CBxvl+tU1gHd+qd1"
+      crossorigin="anonymous" />
+<script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"
+        integrity="sha384-KtB38COewxfrhJxoN2d+olxJAeT08LF8cVZ6DQ8Poqu89zIptqO6zAXoIxpGNWYE"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"
+        integrity="sha384-odPBjvtXVM/5hOYIr3A1dB+flh0c3wAT3bSesIOqEGmyUA4JoKf/YTWy0XKOYAY7"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+        integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
+        crossorigin="anonymous"></script>
 <script>
 function splitDateTime(s) {
     if (!s) return { date: '', time: '' };
@@ -2558,7 +2784,38 @@ const panel    = document.getElementById('task-canvas');
 let _cvTaskId   = null;
 let _cvTask     = null;    // current task object open in canvas
 let _cvEditable = false;   // current canvas editable state
-let _modulesCache = null;  // cache modules for session
+let _pendingFiles = [];    // files staged for upload when creating a new task
+let _templateChecklistSeeds = [];
+// tt-select.js (loaded via _Layout) handles all searchable selects via data-searchable attribute.
+
+async function applyTaskTemplate(id) {
+    _templateChecklistSeeds = [];
+    const hint = document.getElementById('cf-template-hint');
+    if (!id) { hint.classList.add('hidden'); return; }
+    try {
+        const r = await fetch('/Tasks/GetTemplate?id=' + encodeURIComponent(id));
+        if (!r.ok) throw new Error('Template is no longer available.');
+        const data = await r.json();
+        const t = data.template;
+        const itemType = t.itemType || 'Task';
+        document.getElementById('cf-item-type').value = itemType;
+        document.getElementById('cf-item-type-sel').value = itemType;
+        _updateStatusOptions(itemType, '');
+        document.getElementById('cf-priority').value = t.priority || '';
+        document.getElementById('cf-weight').value = t.estimate ?? '';
+        document.getElementById('cf-estimate-unit').value = t.estimateUnit || 'Points';
+        document.getElementById('cf-labels').value = t.labels || '';
+        document.getElementById('cf-notes').value = t.notes || '';
+        document.getElementById('cf-ac').value = t.acceptanceCriteria || '';
+        document.getElementById('cf-ac-section').classList.toggle('hidden', itemType !== 'Story');
+        _templateChecklistSeeds = (data.checklist || []).map(i => i.text).filter(Boolean);
+        hint.textContent = `Applied ${t.name}${_templateChecklistSeeds.length ? ` and ${_templateChecklistSeeds.length} checklist item(s)` : ''}.`;
+        hint.classList.remove('hidden');
+    } catch (e) {
+        hint.classList.add('hidden');
+        showToast(e.message || 'Could not apply template.', 'error');
+    }
+}
 
 // Load modules into the Module dropdown, then load clients. isEditable re-applies disabled state after load.
 async function _loadModules(moduleId, moduleName, clientId, clientName, isEditable) {
@@ -2602,6 +2859,11 @@ async function _loadModules(moduleId, moduleName, clientId, clientName, isEditab
 // Load clients for the selected module ID
 async function _loadClients(moduleId, restoreClientId, restoreClientName) {
     const sel = document.getElementById('cf-property');
+    if (!moduleId) {
+        sel.innerHTML = '<option value="">— Select a module first —</option>';
+        document.getElementById('cf-client-id').value = '';
+        return;
+    }
     sel.innerHTML = '<option value="">— Loading… —</option>';
     try {
         const r = await fetch('/Tasks/GetClients?moduleId=' + moduleId);
@@ -2754,7 +3016,8 @@ async function _loadSprints(currentSprintId) {
 
 function _updateStatusOptions(itemType, currentVal) {
     const sel = document.getElementById('cf-status');
-    const opts = ITEM_STATUSES[itemType] || ITEM_STATUSES[''];
+    let opts = ITEM_STATUSES[itemType] || ITEM_STATUSES[''];
+    if (currentVal && !opts.includes(currentVal)) opts = [...opts, currentVal];
     sel.innerHTML = '<option value="">— None —</option>' +
         opts.map(s => `<option value="${s}"${s === currentVal ? ' selected' : ''}>${s}</option>`).join('');
 }
@@ -2836,13 +3099,17 @@ function openCanvas(task) {
 
     // Clear form fields
     ['cf-id','cf-goal','cf-owner',
-     'cf-status','cf-priority','cf-weight',
+     'cf-status','cf-priority','cf-weight','cf-actual-hours',
      'cf-endDate-vis','cf-labels','cf-notes','cf-ac',
      'cf-item-type','cf-parent-id','cf-sprint-id','cf-swimlane']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('cf-comment-text').value = '';
     document.getElementById('cf-module-id').value = '';
     document.getElementById('cf-client-id').value = '';
+    document.getElementById('cf-governed-project').value = '';
+    document.getElementById('cf-template').value = '';
+    document.getElementById('cf-template-hint').classList.add('hidden');
+    _templateChecklistSeeds = [];
     document.getElementById('cf-item-type-sel').value = '';
     document.getElementById('cf-sprint-sel').value = '';
     _updateStatusOptions('', '');
@@ -2865,7 +3132,10 @@ function openCanvas(task) {
         const reporterSel = document.getElementById('cf-reporter-sel');
         if (reporterSel) reporterSel.value = task.reporter || task.createdBy || '';
         document.getElementById('cf-endDate-vis').value      = task.endDate ? task.endDate.split('T')[0] : '';
-        document.getElementById('cf-weight').value           = task.weight  ?? '';
+        document.getElementById('cf-weight').value           = task.weight       ?? '';
+        document.getElementById('cf-estimate-unit').value    = task.estimateUnit ?? 'Points';
+        document.getElementById('cf-remaining-work-hours').value = task.remainingWorkHours ?? '';
+        document.getElementById('cf-actual-hours').value    = task.actualHours  ?? '';
         document.getElementById('cf-labels').value           = task.labels  ?? '';
         document.getElementById('cf-notes').value            = task.notes   ?? '';
         document.getElementById('cf-ac').value               = task.acceptanceCriteria ?? '';
@@ -2874,6 +3144,7 @@ function openCanvas(task) {
         document.getElementById('cf-item-type-sel').value = itemType;
         document.getElementById('cf-parent-id').value     = task.parentId ?? '';
         document.getElementById('cf-sprint-id').value     = task.sprintId ?? '';
+        document.getElementById('cf-governed-project').value = task.projectId ?? '';
         document.getElementById('cf-ac-section').classList.toggle('hidden', itemType !== 'Story');
         const noSprint = itemType === 'Epic' || itemType === 'Feature';
         document.getElementById('cf-sprint-row').classList.toggle('hidden', noSprint);
@@ -2912,25 +3183,36 @@ function openCanvas(task) {
     }
 
     // Show comments, history, attachments, links for existing tasks
-    const commSection  = document.getElementById('cf-comments-section');
-    const histSection  = document.getElementById('cf-history-section');
-    const attSection   = document.getElementById('cf-attachments-section');
-    const linksSection = document.getElementById('cf-links-section');
+    const commSection       = document.getElementById('cf-comments-section');
+    const checklistSection  = document.getElementById('cf-checklist-section');
+    const histSection       = document.getElementById('cf-history-section');
+    const attSection        = document.getElementById('cf-attachments-section');
+    const pendingAttSection = document.getElementById('cf-pending-att-section');
+    const linksSection      = document.getElementById('cf-links-section');
     if (task) {
+        document.getElementById('cf-template-row').classList.add('hidden');
+        checklistSection.classList.remove('hidden');
+        _loadChecklist(task.id);
         commSection.classList.remove('hidden');
         _loadComments(task.id);
         histSection.classList.remove('hidden');
         _loadHistory(task.id);
         attSection.classList.remove('hidden');
         _loadAttachments(task.id);
+        pendingAttSection.classList.add('hidden');
         linksSection.classList.remove('hidden');
         _clearLinkSearch();
         _loadLinks(task.id);
         _loadChildStats(task.id, itemType);
     } else {
+        document.getElementById('cf-template-row').classList.remove('hidden');
+        checklistSection.classList.add('hidden');
         commSection.classList.add('hidden');
         histSection.classList.add('hidden');
         attSection.classList.add('hidden');
+        pendingAttSection.classList.remove('hidden');
+        _pendingFiles = [];
+        _renderPendingFiles();
         linksSection.classList.add('hidden');
         document.getElementById('canvas-progress-bar').classList.add('hidden');
     }
@@ -3052,6 +3334,61 @@ async function _loadChildStats(taskId, itemType) {
     } catch {
         bar.classList.add('hidden');
     }
+}
+
+async function _loadChecklist(taskId) {
+    const list = document.getElementById('cf-checklist-list');
+    const progress = document.getElementById('cf-checklist-progress');
+    const add = document.getElementById('cf-checklist-add');
+    add.classList.toggle('hidden', !_cvEditable);
+    list.innerHTML = '<p class="text-xs text-gray-400">Loading…</p>';
+    try {
+        const r = await fetch('/Tasks/GetChecklist?taskId=' + taskId);
+        if (!r.ok) throw new Error('Could not load checklist.');
+        const items = await r.json();
+        const done = items.filter(i => i.isCompleted).length;
+        progress.textContent = items.length ? `${done}/${items.length} complete` : '';
+        if (!items.length) { list.innerHTML = '<p class="text-xs text-gray-400">No checklist items yet.</p>'; return; }
+        list.innerHTML = items.map(i => `<div class="flex items-center gap-2 text-sm"><input type="checkbox" ${i.isCompleted ? 'checked' : ''} ${_cvEditable ? '' : 'disabled'} onchange="toggleChecklistItem(${i.id},this.checked)" class="w-4 h-4" /><span class="flex-1 ${i.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}">${_esc(i.text)}</span>${_cvEditable ? `<button type="button" onclick="deleteChecklistItem(${i.id})" class="text-xs text-red-500">Remove</button>` : ''}</div>`).join('');
+    } catch (e) { list.innerHTML = `<p class="text-xs text-red-500">${_esc(e.message || 'Could not load checklist.')}</p>`; }
+}
+
+async function _postChecklist(path, values) {
+    const fd = new FormData();
+    Object.entries(values).forEach(([key, value]) => fd.append(key, value));
+    fd.append('__RequestVerificationToken', document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value);
+    const r = await fetch(path, { method: 'POST', body: fd });
+    return r.json();
+}
+
+async function addChecklistItem() {
+    if (!_cvTaskId || !_cvEditable) return;
+    const input = document.getElementById('cf-checklist-text');
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    try {
+        const result = await _postChecklist('/Tasks/AddChecklistItem', { taskId: _cvTaskId, text });
+        if (!result.success) return showToast(result.error || 'Could not add checklist item.', 'error');
+        input.value = ''; await _loadChecklist(_cvTaskId);
+    } catch { showToast('Could not add checklist item.', 'error'); }
+}
+
+async function toggleChecklistItem(id, isCompleted) {
+    if (!_cvEditable) return;
+    try {
+        const result = await _postChecklist('/Tasks/ToggleChecklistItem', { id, isCompleted });
+        if (!result.success) return showToast(result.error || 'Could not update checklist item.', 'error');
+        await _loadChecklist(_cvTaskId);
+    } catch { showToast('Could not update checklist item.', 'error'); }
+}
+
+async function deleteChecklistItem(id) {
+    if (!_cvEditable) return;
+    try {
+        const result = await _postChecklist('/Tasks/DeleteChecklistItem', { id });
+        if (!result.success) return showToast(result.error || 'Could not remove checklist item.', 'error');
+        await _loadChecklist(_cvTaskId);
+    } catch { showToast('Could not remove checklist item.', 'error'); }
 }
 
 async function _loadComments(taskId) {
@@ -3566,6 +3903,40 @@ async function _loadAttachments(taskId) {
     }
 }
 
+function addPendingFiles(input) {
+    if (!input.files || !input.files.length) return;
+    for (const f of input.files) _pendingFiles.push(f);
+    input.value = '';  // reset so the same file can be re-added after removal
+    _renderPendingFiles();
+}
+
+function removePendingFile(idx) {
+    _pendingFiles.splice(idx, 1);
+    _renderPendingFiles();
+}
+
+function _renderPendingFiles() {
+    const list  = document.getElementById('cf-pending-att-list');
+    const count = document.getElementById('cf-pending-att-count');
+    if (!list) return;
+    if (_pendingFiles.length === 0) {
+        list.innerHTML = '';
+        if (count) count.classList.add('hidden');
+        return;
+    }
+    if (count) { count.textContent = _pendingFiles.length; count.classList.remove('hidden'); }
+    list.innerHTML = _pendingFiles.map((f, i) => `
+        <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+            <div class="flex items-center gap-1.5 min-w-0">
+                <svg class="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                <span class="truncate text-gray-700 font-medium">${_esc(f.name)}</span>
+                <span class="text-gray-400 flex-shrink-0">${_fmtSize(f.size)}</span>
+            </div>
+            <button type="button" onclick="removePendingFile(${i})"
+                class="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 text-xs leading-none">✕</button>
+        </div>`).join('');
+}
+
 async function uploadAttachment(input) {
     if (!input.files || !input.files.length || !_cvTaskId) return;
     const attList = document.getElementById('cf-att-list');
@@ -3662,6 +4033,27 @@ async function submitCanvas() {
         const j = await r.json();
         if (j.success) {
             const isEdit = !!document.getElementById('cf-id').value;
+            if (!isEdit && _templateChecklistSeeds.length > 0 && j.taskId) {
+                for (const text of _templateChecklistSeeds) {
+                    try {
+                        const result = await _postChecklist('/Tasks/AddChecklistItem', { taskId: j.taskId, text });
+                        if (!result.success) showToast(result.error || 'A template checklist item could not be added.', 'warning');
+                    } catch { showToast('A template checklist item could not be added.', 'warning'); }
+                }
+                _templateChecklistSeeds = [];
+            }
+            if (!isEdit && _pendingFiles.length > 0 && j.taskId) {
+                const tok = document.querySelector('[name=__RequestVerificationToken]').value;
+                for (const file of _pendingFiles) {
+                    const fd = new FormData();
+                    fd.append('taskId', j.taskId);
+                    fd.append('file', file);
+                    fd.append('__RequestVerificationToken', tok);
+                    try { await fetch('/Tasks/UploadAttachment', { method: 'POST', body: fd }); }
+                    catch { /* best-effort: attachment failures don't block task creation */ }
+                }
+                _pendingFiles = [];
+            }
             if (j.capacityWarning)
                 sessionStorage.setItem('__toast', JSON.stringify({ msg: j.capacityWarning, type: 'warning' }));
             else
@@ -3794,6 +4186,143 @@ const _wsData = @Html.Raw(workStatesJson);
 const _statusDd = document.getElementById('status-dropdown');
 let   _statusDdBtn = null;
 
+// ── Split-pane table view ───────────────────────────────────────────────
+let _selectedTask = null;
+
+function selectTask(task, rowEl) {
+    _selectedTask = task;
+    document.querySelectorAll('.tbl-row').forEach(r => r.classList.remove('bg-blue-50', 'ring-1', 'ring-inset', 'ring-blue-200'));
+    if (rowEl) { rowEl.classList.add('bg-blue-50', 'ring-1', 'ring-inset', 'ring-blue-200'); }
+    document.getElementById('detail-placeholder').classList.add('hidden');
+    const content = document.getElementById('detail-content');
+    content.classList.remove('hidden');
+    content.innerHTML = _buildDetailHtml(task);
+}
+
+function _buildDetailHtml(t) {
+    if (!t) return '';
+    const typeCls = { Epic:'bg-purple-100 text-purple-700', Feature:'bg-indigo-100 text-indigo-700', Story:'bg-sky-100 text-sky-700', Bug:'bg-red-100 text-red-700' };
+    const tc  = typeCls[t.itemType] || 'bg-emerald-100 text-emerald-700';
+    const ws  = (_wsData || []).find(w => w.name === t.status);
+    const stClr = ws ? ws.color : '#94a3b8';
+
+    const ownerNames = (t.owner || '').split(',').map(s => s.trim()).filter(Boolean);
+    const ownersHtml = ownerNames.length === 0
+        ? '<span class="text-gray-400 text-xs">Unassigned</span>'
+        : ownerNames.map(n => {
+            const clr = (CV_USER_COLORS && CV_USER_COLORS[n]) || '#094f70';
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white" style="background:${clr}">${n}</span>`;
+          }).join('');
+
+    const labels = (t.labels || '').split(',').map(s => s.trim()).filter(Boolean);
+    const labelsHtml = labels.length === 0 ? '' : `
+        <div>
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Labels</p>
+            <div class="flex flex-wrap gap-1.5">${labels.map(l => `<span class="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 font-medium">${l}</span>`).join('')}</div>
+        </div>`;
+
+    const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const pts  = t.weight ? (t.weight >= 8 ? 'XL' : t.weight >= 5 ? 'L' : t.weight >= 3 ? 'M' : 'S') + ` (${t.weight} pts)` : '—';
+    const cmtCnt = (typeof t.commentCount !== 'undefined') ? t.commentCount : '';
+
+    const metaRows = [
+        ['Status',     `<span class="inline-flex items-center gap-1.5 text-xs font-medium"><span class="w-2 h-2 rounded-full" style="background:${stClr}"></span>${t.status || '—'}</span>`],
+        ['Priority',   t.priority || '—'],
+        ['Type',       `<span class="text-xs font-bold px-1.5 py-0.5 rounded ${tc}">${t.itemType || 'Task'}</span>`],
+        ['Project',    t.project || '—'],
+        ['Client',     t.property || '—'],
+        ['Owners',     ownersHtml],
+        ['Reporter',   t.reporter || '—'],
+        ['Story Pts',  pts],
+        ['Actual Hrs', t.actualHours ? t.actualHours + 'h' : null],
+        ['Due Date',    fmt(t.endDate)],
+        ['Target Date', fmt(t.targetDate)],
+        ['Start Date',  fmt(t.startDate)],
+        ['Actual End',  fmt(t.actualEndDate)],
+    ].filter(([, v]) => v && v !== '—');
+
+    const currentUser = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(User.FindFirst("DisplayName")?.Value ?? "", jsonOpts));
+    const canEdit = @Html.Raw(User.IsInRole("Admin") ? "true" : "false")
+        || !t.owner
+        || ownerNames.includes(currentUser);
+    const showClaim = !ownerNames.includes(currentUser)
+        && t.status !== 'Done' && t.status !== 'Closed' && t.status !== 'Resolved';
+
+    return `
+    <div class="p-6 space-y-5">
+        <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded ${tc}">${t.itemType || 'Task'}</span>
+                    ${t.id ? `<span class="text-xs text-gray-400">#${t.id}</span>` : ''}
+                </div>
+                <h2 class="text-lg font-semibold text-gray-900 leading-snug">${_esc(t.goal || '')}</h2>
+            </div>
+            <div class="flex gap-2">
+                ${showClaim ? `<button onclick="claimTask(${t.id})"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-600 text-white hover:bg-teal-700 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    Claim</button>` : ''}
+                ${canEdit ? `<button onclick="openCanvas(_selectedTask)"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    Edit</button>` : `<button onclick="openCanvas(_selectedTask)"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    View</button>`}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-x-6 gap-y-3">
+            ${metaRows.map(([k, v]) => `
+            <div>
+                <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">${k}</p>
+                <div class="text-sm text-gray-800">${v}</div>
+            </div>`).join('')}
+        </div>
+
+        ${labelsHtml}
+
+        ${t.notes ? `
+        <div>
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Description</p>
+            <div class="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 border border-gray-100 leading-relaxed">${_esc(t.notes)}</div>
+        </div>` : ''}
+
+        ${t.acceptanceCriteria ? `
+        <div>
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Acceptance Criteria</p>
+            <div class="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 border border-gray-100 leading-relaxed">${_esc(t.acceptanceCriteria)}</div>
+        </div>` : ''}
+    </div>`;
+}
+
+function _esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function claimTask(id) {
+    const fd = new FormData();
+    fd.append('id', id);
+    fd.append('__RequestVerificationToken', document.querySelector('[name=__RequestVerificationToken]').value);
+    try {
+        const r = await fetch('/Tasks/ClaimTask', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!j.success) { showToast(j.error || 'Could not claim task.', 'error'); return; }
+        showToast('Task claimed — you are now an owner.', 'success');
+        const tr = await fetch(`/Tasks/GetTask?id=${id}`);
+        if (tr.ok) {
+            const opts = { };
+            const updated = await tr.json();
+            _selectedTask = updated;
+            const content = document.getElementById('detail-content');
+            if (content && !content.classList.contains('hidden'))
+                content.innerHTML = _buildDetailHtml(updated);
+        }
+    } catch { showToast('Network error.', 'error'); }
+}
+// ────────────────────────────────────────────────────────────────────────
+
 function closeStatusDropdown() {
     _statusDd.classList.add('hidden');
     _statusDdBtn = null;
@@ -3805,9 +4334,31 @@ function toggleStatusMenu(btn) {
 
     const taskId    = btn.dataset.taskId;
     const curStatus = btn.dataset.curStatus;
+    const itemType  = btn.dataset.itemType || '';
+    const owners    = (btn.dataset.owner || '').split(',').map(s => s.trim().toLowerCase());
+    const isMyTask  = !btn.dataset.owner
+                   || owners.includes(CV_ME.toLowerCase())
+                   || (btn.dataset.reporter  || '').toLowerCase() === CV_ME.toLowerCase()
+                   || (btn.dataset.createdBy || '').toLowerCase() === CV_ME.toLowerCase();
+
+    // Members cannot change status on tasks they don't own
+    if (!CV_ADMIN && !CV_LEAD && !isMyTask) return;
+
+    const WORKFLOW = {
+        'Task':    ['To Do', 'In Progress', 'Development Done', 'Done'],
+        'Bug':     ['New', 'Active', 'Resolved', 'Closed'],
+        'Story':   ['New', 'Active', 'Resolved', 'Closed'],
+        'Feature': ['New', 'Active', 'Resolved', 'Closed'],
+        'Epic':    ['New', 'Active', 'Closed'],
+    };
+    const workflowStatuses = WORKFLOW[itemType] || null;
+    // Always include current status even if it's outside the workflow (legacy data)
+    const allowed = workflowStatuses
+        ? (curStatus && !workflowStatuses.includes(curStatus) ? [curStatus, ...workflowStatuses] : workflowStatuses)
+        : (_wsData.map(w => w.name));
 
     _statusDd.innerHTML = '';
-    _wsData.forEach(ws => {
+    _wsData.filter(ws => allowed.includes(ws.name)).forEach(ws => {
         const isCur = ws.name === curStatus;
         const item  = document.createElement('button');
         item.type   = 'button';
@@ -3815,7 +4366,7 @@ function toggleStatusMenu(btn) {
                        + (isCur ? 'font-semibold text-blue-600' : 'text-gray-700');
         item.innerHTML  = `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${ws.color}"></span>${ws.name}`
                         + (isCur ? '<span class="ml-auto text-blue-600">✓</span>' : '');
-        item.addEventListener('click', () => setTaskStatus(taskId, ws.name));
+        item.addEventListener('click', () => setTaskStatus(taskId, ws.name, itemType, curStatus));
         _statusDd.appendChild(item);
     });
 
@@ -3864,8 +4415,48 @@ async function _promptAssignOwner(taskId, goal, statusLabel) {
     return chosenOwner;
 }
 
-async function setTaskStatus(taskId, status) {
+// Mirrors TaskStatusRules.IsDone — true when the item has reached its completion state
+function _isDoneStatus(itemType, status) {
+    switch (itemType) {
+        case 'Task':    return status === 'Done';
+        case 'Bug':     return status === 'Resolved' || status === 'Closed';
+        case 'Story':   return status === 'Resolved' || status === 'Closed';
+        case 'Feature': return status === 'Resolved' || status === 'Closed';
+        case 'Epic':    return status === 'Closed';
+        default:        return status === 'Done' || status === 'Resolved' || status === 'Closed';
+    }
+}
+
+// Returns: false = cancelled (abort), number = actual hours (required)
+async function _promptActualHours() {
+    const res = await Swal.fire({
+        title: 'How long did this take?',
+        html: '<p class="text-sm text-gray-500 mt-1 mb-2">Actual hours are required to mark this as done.</p>',
+        input: 'number',
+        inputPlaceholder: 'e.g. 6.5',
+        inputAttributes: { min: '0.5', max: '9999', step: '0.5' },
+        showCancelButton: true,
+        confirmButtonText: 'Mark Done',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#6b7280',
+        inputValidator: v => !v ? 'Actual hours are required.' : (parseFloat(v) <= 0 ? 'Hours must be greater than 0.' : null),
+    });
+    if (res.isDismissed) return false;
+    return parseFloat(res.value);
+}
+
+async function setTaskStatus(taskId, status, itemType = '', curStatus = '') {
     closeStatusDropdown();
+
+    // Require actual hours only on first transition into a done state
+    let actualHours = null;
+    if (_isDoneStatus(itemType, status) && !_isDoneStatus(itemType, curStatus)) {
+        const hrs = await _promptActualHours();
+        if (hrs === false) return;  // cancelled — abort
+        actualHours = hrs;
+    }
+
     const btn = document.querySelector(`[data-task-id="${taskId}"]`);
     if (btn) {
         btn.disabled = true;
@@ -3874,12 +4465,17 @@ async function setTaskStatus(taskId, status) {
     const fd = new FormData();
     fd.append('id', taskId);
     fd.append('status', status);
+    if (actualHours !== null) fd.append('actualHours', actualHours);
     fd.append('__RequestVerificationToken',
         document.querySelector('[name=__RequestVerificationToken]').value);
     try {
         const r = await fetch('/Tasks/UpdateStatus', { method:'POST', body: fd });
         const j = await r.json();
         if (j.success) { sessionStorage.setItem('scrollY', window.scrollY); window.location.reload(); }
+        else if (j.needActualHours) {
+            if (btn) { btn.disabled = false; btn.textContent = status; }
+            showToast('Enter actual hours before marking as done.', 'error');
+        }
         else if (j.needOwner) {
             const goal = btn?.closest('tr')?.querySelector('.font-medium')?.textContent?.trim() ?? '';
             if (btn) { btn.disabled = false; btn.textContent = status; }
@@ -3935,10 +4531,28 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('scroll', closeStatusDropdown, true);
 
-// Restore scroll after reload
+// Restore scroll after reload + handle ?highlight=<id>
 window.addEventListener('DOMContentLoaded', () => {
     const y = sessionStorage.getItem('scrollY');
     if (y) { window.scrollTo(0, parseInt(y)); sessionStorage.removeItem('scrollY'); }
+
+    const hlId = new URLSearchParams(window.location.search).get('highlight');
+    if (hlId) {
+        const cb  = document.querySelector(`input[data-id="${hlId}"]`);
+        const row = cb?.closest('tr');
+        if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.style.transition = 'background-color 0.8s';
+            row.style.backgroundColor = '#fef9c3';
+            setTimeout(() => { row.style.backgroundColor = ''; }, 2500);
+            const taskData = row.dataset.task;
+            if (taskData) openCanvas(JSON.parse(taskData));
+        }
+        // Remove ?highlight from URL without reloading
+        const url = new URL(window.location.href);
+        url.searchParams.delete('highlight');
+        history.replaceState(null, '', url);
+    }
 });
 
 // ── Kanban drag-and-drop ──────────────────────────────────

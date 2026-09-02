@@ -89,6 +89,80 @@
 
     </div>
 
+    <!-- Active Sprint widget -->
+    @{
+        var activeSprint     = ViewBag.ActiveSprint as TaskTracker.Models.Sprint;
+        int sprintTotal      = ViewBag.SprintTotal      != null ? (int)ViewBag.SprintTotal      : 0;
+        int sprintDone       = ViewBag.SprintDone       != null ? (int)ViewBag.SprintDone       : 0;
+        int sprintInProgress = ViewBag.SprintInProgress != null ? (int)ViewBag.SprintInProgress : 0;
+        int sprintPct        = sprintTotal > 0 ? (int)Math.Round((double)sprintDone / sprintTotal * 100) : 0;
+    }
+    @if (activeSprint != null)
+    {
+        var daysLeft = activeSprint.EndDate.HasValue
+            ? (int)(activeSprint.EndDate.Value.Date - DateTime.Today).TotalDays
+            : (int?)null;
+        <div class="dash-panel mb-5">
+            <div class="dash-panel-hd flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-[#f47920]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <h2>Active Sprint</h2>
+                    <span class="ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold" style="background:#fef3c7;color:#92400e">ACTIVE</span>
+                </div>
+                <a href="/Sprints" class="text-xs text-[#094f70] hover:underline font-medium">View Sprints →</a>
+            </div>
+            <div class="p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <p class="text-base font-bold text-gray-900">@activeSprint.Name</p>
+                        @if (activeSprint.EndDate.HasValue)
+                        {
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                Ends @activeSprint.EndDate.Value.ToString("MMM d, yyyy")
+                                @if (daysLeft.HasValue)
+                                {
+                                    @(daysLeft > 0 ? $" · {daysLeft} day{(daysLeft == 1 ? "" : "s")} left"
+                                                   : daysLeft == 0 ? " · ends today"
+                                                   : $" · {-daysLeft} day{(-daysLeft == 1 ? "" : "s")} overdue")
+                                }
+                            </p>
+                        }
+                    </div>
+                    <div class="flex items-center gap-6 text-center">
+                        <div>
+                            <p class="text-xl font-bold text-gray-900">@sprintTotal</p>
+                            <p class="text-[11px] text-gray-400">Total</p>
+                        </div>
+                        <div>
+                            <p class="text-xl font-bold text-[#094f70]">@sprintInProgress</p>
+                            <p class="text-[11px] text-gray-400">In Progress</p>
+                        </div>
+                        <div>
+                            <p class="text-xl font-bold text-green-600">@sprintDone</p>
+                            <p class="text-[11px] text-gray-400">Done</p>
+                        </div>
+                        <div>
+                            <p class="text-xl font-bold @(sprintPct >= 80 ? "text-green-600" : sprintPct >= 50 ? "text-[#f47920]" : "text-gray-600")">@sprintPct%</p>
+                            <p class="text-[11px] text-gray-400">Complete</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+                        <span>Sprint progress</span>
+                        <span>@sprintDone / @sprintTotal tasks done</span>
+                    </div>
+                    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all"
+                             style="width:@sprintPct%;background:@(sprintPct >= 80 ? "#16a34a" : sprintPct >= 50 ? "#f47920" : "#094f70")"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- Charts row 1 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div class="dash-panel">
@@ -257,7 +331,9 @@
 </div>
 
 @section Scripts {
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+        integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+        crossorigin="anonymous"></script>
 <script>
 const STATUS_COLORS = {
     'New':         '#94A3B8',

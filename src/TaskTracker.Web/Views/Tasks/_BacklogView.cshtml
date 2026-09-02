@@ -1,0 +1,550 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+
+    @if (Model.ViewMode == "backlog")
+    {
+        <div class="space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-medium text-gray-500 mr-1">Sprint:</span>
+                    <div id="bl-sprint-tabs" class="flex gap-1 flex-wrap">
+                        <div class="h-7 w-40 bg-gray-100 animate-pulse rounded-full"></div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-medium text-gray-500 mr-1">Type:</span>
+                    @foreach (var (type, label, cls) in new[]{
+                        ("","All","bg-gray-800 text-white"),
+                        ("Epic","🟦 Epic","bg-blue-100 text-blue-700"),
+                        ("Feature","🟩 Feature","bg-emerald-100 text-emerald-700"),
+                        ("Story","📋 Story","bg-violet-100 text-violet-700"),
+                        ("Task","✅ Task","bg-gray-100 text-gray-600"),
+                        ("Bug","🐛 Bug","bg-red-100 text-red-600")})
+                    {
+                        <button class="bl-type-btn text-xs px-3 py-1 rounded-full font-medium transition-all @cls"
+                                data-type="@type" onclick="_blSetType('@type')">@label</button>
+                    }
+                    <button id="bl-plan-btn" onclick="_blTogglePlan()"
+                            class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        Plan Sprint
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex gap-3 items-start">
+                <div class="flex-1 min-w-0">
+                    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                        <div id="backlog-tree" class="divide-y divide-gray-50 min-h-[200px]"
+                             ondragover="event.preventDefault()" ondrop="_blTreeDrop(event)">
+                            <div class="flex items-center justify-center py-16 text-gray-500 text-sm gap-2">
+                                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                                </svg>
+                                Loading backlog…
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 px-3 py-1 bg-gray-50 border-t border-gray-100">Alt+↑/↓ to reorder · Enter to open</p>
+                    </div>
+                </div>
+                <div id="bl-plan-panel" class="w-72 hidden flex-shrink-0 sticky top-4">
+                </div>
+            </div>
+        </div>
+
+        <style>
+            .bl-drop-before { box-shadow: inset 0 2px 0 0 #3b82f6; }
+            .bl-drop-after  { box-shadow: inset 0 -2px 0 0 #3b82f6; }
+            .bl-plan-drop-active { border-color: #3b82f6 !important; background-color: #eff6ff !important; color: #2563eb !important; }
+        </style>
+
+        <script>
+        let _blAllTasks    = [];
+        let _blTasks       = [];
+        let _blSprints     = [];
+        let _blSprint      = 'all';
+        let _blType        = '';
+        let _blExpanded    = new Set();
+        let _blPlanOpen    = false;
+        let _blPlanSprintId = null;
+        let _blDragId      = null;
+        let _blDragDepth   = -1;
+        let _blDropTarget  = null;
+        let _blDropBefore  = true;
+
+        const _blTypeCfg = {
+            Epic:    { cls:'bg-blue-100 text-blue-700',       lbl:'Epic'  },
+            Feature: { cls:'bg-emerald-100 text-emerald-700', lbl:'Feat'  },
+            Story:   { cls:'bg-violet-100 text-violet-700',   lbl:'Story' },
+            Task:    { cls:'bg-gray-100 text-gray-600',       lbl:'Task'  },
+            Bug:     { cls:'bg-red-100 text-red-600',         lbl:'Bug'   },
+        };
+        const _blChildType = { Epic:'Feature', Feature:'Story', Story:'Task' };
+
+        async function _blLoad() {
+            try {
+                const r = await fetch('/Tasks/GetBacklog?sprintFilter=all');
+                const d = await r.json();
+                _blAllTasks = d.tasks;
+                _blSprints  = d.sprints;
+                _blFilterTasks();
+                _blRenderSprintTabs();
+                _blRender();
+            } catch(e) {
+                document.getElementById('backlog-tree').innerHTML =
+                    `<div class="text-center py-12 text-red-400 text-sm">Error loading backlog — ${e.message}</div>`;
+            }
+        }
+
+        function _blFilterTasks() {
+            if (_blSprint === 'all') {
+                _blTasks = [..._blAllTasks];
+            } else if (_blSprint === 'backlog') {
+                _blTasks = _blAllTasks.filter(t => !t.sprintId);
+            } else {
+                const sid = parseInt(_blSprint);
+                _blTasks = _blAllTasks.filter(t => t.sprintId === sid);
+            }
+        }
+
+        function _blRenderSprintTabs() {
+            const el = document.getElementById('bl-sprint-tabs');
+            const s  = _blSprint;
+            const btn = (val, label) =>
+                `<button onclick="_blSetSprint('${val}')"
+                         class="text-xs px-3 py-1 rounded-full font-medium transition-all ${s===val?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}">${label}</button>`;
+            el.innerHTML = btn('all','All') + btn('backlog','Backlog') +
+                _blSprints.map(sp => btn(String(sp.id), (sp.isActive?'⚡ ':'')+_esc(sp.name))).join('');
+        }
+
+        function _blSetSprint(val) {
+            _blSprint = val;
+            _blFilterTasks();
+            _blRenderSprintTabs();
+            _blRender();
+        }
+
+        function _blSetType(val) {
+            _blType = val;
+            document.querySelectorAll('.bl-type-btn').forEach(b => {
+                const active = b.dataset.type === val;
+                b.classList.toggle('ring-2', active);
+                b.classList.toggle('ring-offset-1', active);
+                b.classList.toggle('ring-current', active);
+            });
+            _blRender();
+        }
+
+        function _blRender() {
+            let tasks = _blType ? _blTasks.filter(t => t.itemType === _blType) : _blTasks;
+
+            const map = {};
+            tasks.forEach(t => map[t.id] = { ...t, children: [] });
+            const roots = [];
+            tasks.forEach(t => {
+                if (t.parentId && map[t.parentId]) map[t.parentId].children.push(map[t.id]);
+                else roots.push(map[t.id]);
+            });
+
+            const typeOrder = {Epic:0,Feature:1,Story:2,Task:3,Bug:4,'':5};
+            const sortFn = (a,b) => {
+                const ao = a.backlogOrder ?? 999999, bo = b.backlogOrder ?? 999999;
+                if (ao !== bo) return ao - bo;
+                return (typeOrder[a.itemType||'']??5) - (typeOrder[b.itemType||'']??5) || (a.goal||'').localeCompare(b.goal||'');
+            };
+            function sortTree(nodes) { nodes.sort(sortFn); nodes.forEach(n => sortTree(n.children)); }
+            sortTree(roots);
+
+            if (_blExpanded.size === 0) roots.forEach(n => { if(n.children.length) _blExpanded.add(n.id); });
+
+            const container = document.getElementById('backlog-tree');
+            if (!roots.length) {
+                container.innerHTML = '<div class="text-center py-16 text-gray-500 text-sm">No items in this view<br><span class="text-xs text-gray-500">Try a different sprint or type filter</span></div>';
+                return;
+            }
+            container.innerHTML = roots.map(n => _blNode(n, 0)).join('');
+        }
+
+        function _blSprintProgress(node) {
+            let total = 0, inSprint = 0;
+            (function walk(pid) {
+                _blAllTasks.forEach(t => {
+                    if (t.parentId !== pid) return;
+                    if (t.itemType !== 'Epic' && t.itemType !== 'Feature') {
+                        total++;
+                        if (t.sprintId) inSprint++;
+                    }
+                    walk(t.id);
+                });
+            })(node.id);
+            return { total, inSprint };
+        }
+
+        function _blNode(node, depth) {
+            const hasKids  = node.children.length > 0;
+            const expanded = _blExpanded.has(node.id);
+            const tc       = _blTypeCfg[node.itemType] || { cls:'bg-gray-50 text-gray-400', lbl:'—' };
+            const indent   = 12 + depth * 24;
+
+            const sprint   = node.sprintId ? _blSprints.find(s => s.id === node.sprintId) : null;
+            let sprintEl = sprint
+                ? `<span class="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 shrink-0">${_esc(sprint.name)}</span>`
+                : `<span class="hidden sm:inline text-[10px] text-gray-500 shrink-0">Backlog</span>`;
+
+            if (node.itemType === 'Epic' || node.itemType === 'Feature') {
+                const p = _blSprintProgress(node);
+                if (p.total > 0) {
+                    const pct = Math.round(p.inSprint / p.total * 100);
+                    sprintEl = `<span class="hidden sm:flex items-center gap-1.5 shrink-0" title="${p.inSprint} of ${p.total} item(s) assigned to a sprint">
+                        <span class="w-14 h-1.5 rounded-full bg-gray-100 overflow-hidden"><span class="block h-full rounded-full ${pct === 100 ? 'bg-green-400' : 'bg-blue-400'}" style="width:${pct}%"></span></span>
+                        <span class="text-[10px] ${pct === 100 ? 'text-green-500 font-semibold' : 'text-gray-500'}">${p.inSprint}/${p.total}</span>
+                    </span>`;
+                } else {
+                    sprintEl = `<span class="hidden sm:inline text-[10px] text-gray-500 shrink-0">No items</span>`;
+                }
+            }
+
+            const ownerEl = (node.owner||'').split(',').map(o=>o.trim()).filter(Boolean).slice(0,2)
+                .map(o=>_owAv(o,'20px')).join('');
+            const modPill = node.project  ? `<span class="hidden lg:inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0 max-w-[90px] truncate cursor-pointer hover:bg-blue-100" title="Filter by module: ${_esc(node.project)}" data-val="${_esc(node.project)}" onclick="event.stopPropagation();quickFilterModule(this.dataset.val,event)">${_esc(node.project)}</span>`   : '';
+            const cliPill = node.property ? `<span class="hidden lg:inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 shrink-0 max-w-[90px] truncate cursor-pointer hover:bg-purple-100" title="Filter by client: ${_esc(node.property)}" data-val="${_esc(node.property)}" onclick="event.stopPropagation();quickFilterClient(this.dataset.val,event)">${_esc(node.property)}</span>` : '';
+
+            const childType = _blChildType[node.itemType] || '';
+            const addBtn    = childType
+                ? `<button onclick="event.stopPropagation();_blAddChild(${node.id},'${childType}')" class="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 shrink-0 transition-all text-base leading-none" title="Add ${childType}">+</button>`
+                : `<span class="w-6 shrink-0"></span>`;
+
+            const taskJson = JSON.stringify(node).replace(/\\/g,'\\\\').replace(/"/g,'&quot;');
+
+            const canAssign = node.itemType !== 'Epic' && node.itemType !== 'Feature';
+            const assignBtn = _blPlanOpen && canAssign
+                ? (node.sprintId
+                    ? `<button onclick="event.stopPropagation();_blRemoveFromSprint(${node.id})" class="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500 shrink-0 transition-all" title="Move to Backlog">↩ Backlog</button>`
+                    : `<button onclick="event.stopPropagation();_blQuickAssign(${node.id})" class="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 shrink-0 transition-all" title="Assign to selected sprint">→ Sprint</button>`)
+                : '';
+
+            const reorderAttrs = depth === 0
+                ? `ondragover="_blRowDragOver(event,${node.id})" ondrop="_blRowDrop(event,${node.id})"`
+                : '';
+
+            // Keyboard support: Enter/Space opens; Alt+↑/↓ reorders root items (#62)
+            let html = `<div class="backlog-row group flex items-center gap-2 py-2 pr-3 hover:bg-gray-50 transition-colors cursor-grab active:cursor-grabbing"
+                             style="padding-left:${indent}px" data-bl-id="${node.id}" data-bl-depth="${depth}"
+                             draggable="true"
+                             tabindex="0"
+                             role="listitem"
+                             aria-label="${_esc(node.goal||'—')}"
+                             ondragstart="_blDragStart(event,${node.id},${depth})"
+                             ondragend="_blDragEnd(event)"
+                             onkeydown="_blKeyDown(event,${node.id},${depth})"
+                             ${reorderAttrs}>
+                <span class="w-4 text-center text-gray-500 text-[10px] shrink-0 ${hasKids?'cursor-pointer hover:text-gray-600':''}" onclick="${hasKids?`event.stopPropagation();_blToggle(${node.id})`:''}">
+                    ${hasKids ? (expanded ? '▼' : '▶') : ''}
+                </span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${tc.cls}">${tc.lbl}</span>
+                <button class="flex-1 text-sm text-left text-gray-800 hover:text-blue-600 truncate" onclick='openCanvas(JSON.parse(this.dataset.task))' data-task="${taskJson}">${_esc(node.goal||'—')}</button>
+                ${modPill}${cliPill}
+                ${node.status?`<span class="hidden md:inline text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${_esc(node.status)}</span>`:''}
+                ${sprintEl}
+                <div class="flex items-center gap-0.5 shrink-0">${ownerEl}</div>
+                ${assignBtn}
+                ${addBtn}
+            </div>`;
+
+            if (hasKids) {
+                html += `<div id="bl-kids-${node.id}" class="${expanded?'':'hidden'}">${node.children.map(c=>_blNode(c,depth+1)).join('')}</div>`;
+            }
+            return html;
+        }
+
+        // Keyboard handler for backlog rows (#62)
+        function _blKeyDown(e, taskId, depth) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const btn = document.querySelector(`[data-bl-id="${taskId}"] button.flex-1`);
+                if (btn) btn.click();
+                return;
+            }
+            if (depth !== 0) return;
+            const isUp   = e.key === 'ArrowUp'   && e.altKey;
+            const isDown = e.key === 'ArrowDown' && e.altKey;
+            if (!isUp && !isDown) return;
+            e.preventDefault();
+            const roots = _blTasks
+                .filter(t => !t.parentId || !_blAllTasks.find(x => x.id === t.parentId))
+                .sort((a,b) => { const ao=a.backlogOrder??999999,bo=b.backlogOrder??999999; return ao!==bo?ao-bo:(a.goal||'').localeCompare(b.goal||''); });
+            const idx = roots.findIndex(t => t.id === taskId);
+            if (idx < 0) return;
+            const swapIdx = isUp ? idx - 1 : idx + 1;
+            if (swapIdx < 0 || swapIdx >= roots.length) return;
+            [roots[idx].backlogOrder, roots[swapIdx].backlogOrder] = [roots[swapIdx].backlogOrder, roots[idx].backlogOrder];
+            roots.forEach((t,i) => {
+                t.backlogOrder = i + 1;
+                const at = _blAllTasks.find(x => x.id === t.id);
+                if (at) at.backlogOrder = i + 1;
+            });
+            _blRender();
+            setTimeout(() => { document.querySelector(`[data-bl-id="${taskId}"]`)?.focus(); }, 0);
+            fetch('/Tasks/ReorderBacklog', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value },
+                body: JSON.stringify(roots.map(t => t.id))
+            }).catch(err => console.warn('ReorderBacklog failed', err));
+        }
+
+        function _blToggle(id) {
+            const el  = document.getElementById('bl-kids-' + id);
+            const row = document.querySelector(`[data-bl-id="${id}"] span:first-child`);
+            if (!el) return;
+            const hide = !el.classList.contains('hidden');
+            el.classList.toggle('hidden', hide);
+            if (row) row.textContent = hide ? '▶' : '▼';
+            if (hide) _blExpanded.delete(id); else _blExpanded.add(id);
+        }
+
+        function _blAddChild(parentId, childType) {
+            openCanvas(null);
+            setTimeout(() => {
+                document.getElementById('cf-item-type-sel').value = childType;
+                document.getElementById('cf-item-type').value     = childType;
+                document.getElementById('cf-parent-id').value     = parentId;
+                onItemTypeChange(childType);
+                setTimeout(() => { document.getElementById('cf-parent-sel').value = String(parentId); }, 600);
+            }, 80);
+        }
+
+        function _blTogglePlan() {
+            _blPlanOpen = !_blPlanOpen;
+            const panel = document.getElementById('bl-plan-panel');
+            const btn   = document.getElementById('bl-plan-btn');
+            panel.classList.toggle('hidden', !_blPlanOpen);
+            btn.classList.toggle('bg-blue-50',     _blPlanOpen);
+            btn.classList.toggle('text-blue-600',  _blPlanOpen);
+            btn.classList.toggle('border-blue-200',_blPlanOpen);
+            if (_blPlanOpen) {
+                if (!_blPlanSprintId) {
+                    const active = _blSprints.find(s => s.isActive);
+                    if (active) _blPlanSprintId = active.id;
+                }
+                _blRenderPlanPanel();
+            }
+            _blRender();
+        }
+
+        function _blPlanSelectSprint(val) {
+            _blPlanSprintId = val ? parseInt(val) : null;
+            _blRenderPlanPanel();
+        }
+
+        function _blRenderPlanPanel() {
+            const panel = document.getElementById('bl-plan-panel');
+            if (!panel) return;
+            const sprint      = _blPlanSprintId ? _blSprints.find(s => s.id === _blPlanSprintId) : null;
+            const sprintItems = sprint ? _blAllTasks.filter(t => t.sprintId === sprint.id) : [];
+            const pts         = sprintItems.reduce((s,t) => s + (t.weight||0), 0);
+
+            const sprintOpts = _blSprints.map(s =>
+                `<option value="${s.id}" ${_blPlanSprintId === s.id ? 'selected' : ''}>${s.isActive?'⚡ ':''}${_esc(s.name)}</option>`
+            ).join('');
+
+            const sd = sprint?.startDate ? String(sprint.startDate).slice(0,10) : null;
+            const ed = sprint?.endDate   ? String(sprint.endDate).slice(0,10)   : null;
+            const dateRow = sprint && (sd||ed)
+                ? `<div class="flex justify-between mt-2 text-[10px] text-gray-500"><span>${sd||'—'} → ${ed||'—'}</span><span>${sprintItems.length} item${sprintItems.length!==1?'s':''} · ${pts}h</span></div>`
+                : sprint ? `<div class="text-right mt-2 text-[10px] text-gray-500">${sprintItems.length} items · ${pts}h</div>` : '';
+
+            const itemsHtml = sprintItems.length
+                ? sprintItems.map(t => `
+                    <div class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group/pi border-b border-gray-50 last:border-0">
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${_blTypeCfg[t.itemType]?.cls||'bg-gray-100 text-gray-500'}">${_blTypeCfg[t.itemType]?.lbl||'—'}</span>
+                        <span class="flex-1 text-xs text-gray-700 truncate" title="${_esc(t.goal||'')}">${_esc(t.goal||'—')}</span>
+                        ${t.weight ? `<span class="text-[10px] text-gray-500 shrink-0">${t.weight}h</span>` : ''}
+                        <button onclick="_blRemoveFromSprint(${t.id})" class="opacity-0 group-hover/pi:opacity-100 text-gray-500 hover:text-red-500 text-sm shrink-0 transition-all" title="Move to Backlog">↩</button>
+                    </div>`).join('')
+                : `<div class="text-center py-8 text-xs text-gray-500 px-4">No items in this sprint<br>Drag rows here to assign</div>`;
+
+            panel.innerHTML = `
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col" style="max-height:calc(100vh - 160px)">
+                <div class="p-3 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Sprint Plan</span>
+                        <button onclick="_blTogglePlan()" class="text-gray-500 hover:text-gray-600 text-sm transition-colors leading-none">✕</button>
+                    </div>
+                    <select onchange="_blPlanSelectSprint(this.value)"
+                            class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="">— Select Sprint —</option>
+                        ${sprintOpts}
+                    </select>
+                    ${dateRow}
+                </div>
+                <div id="bl-plan-drop"
+                     class="m-2 p-3 border-2 border-dashed rounded-lg text-xs text-center transition-all flex-shrink-0 ${sprint ? 'border-gray-200 text-gray-500' : 'border-gray-100 text-gray-500 cursor-not-allowed'}"
+                     ondragover="_blPlanDragOver(event)" ondrop="_blDropOnSprint(event)" ondragleave="_blPlanDragLeave(event)">
+                    ${sprint ? '⬇ Drop item here to add to sprint' : 'Select a sprint above'}
+                </div>
+                <div class="flex-1 overflow-y-auto">${itemsHtml}</div>
+            </div>`;
+        }
+
+        function _blDragStart(e, taskId, depth) {
+            _blDragId    = taskId;
+            _blDragDepth = depth;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(taskId));
+            setTimeout(() => document.querySelector(`[data-bl-id="${taskId}"]`)?.classList.add('opacity-40'), 0);
+        }
+
+        function _blDragEnd(e) {
+            if (_blDragId) document.querySelector(`[data-bl-id="${_blDragId}"]`)?.classList.remove('opacity-40');
+            document.querySelectorAll('.bl-drop-before,.bl-drop-after').forEach(el => el.classList.remove('bl-drop-before','bl-drop-after'));
+            _blDragId = null; _blDragDepth = -1; _blDropTarget = null;
+        }
+
+        function _blRowDragOver(e, taskId) {
+            if (!_blDragId || _blDragId === taskId || _blDragDepth !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const el = document.querySelector(`[data-bl-id="${taskId}"]`);
+            if (!el) return;
+            const rect   = el.getBoundingClientRect();
+            const before = e.clientY < rect.top + rect.height / 2;
+            document.querySelectorAll('.bl-drop-before,.bl-drop-after').forEach(x => x.classList.remove('bl-drop-before','bl-drop-after'));
+            el.classList.add(before ? 'bl-drop-before' : 'bl-drop-after');
+            _blDropTarget = taskId;
+            _blDropBefore = before;
+        }
+
+        async function _blRowDrop(e, taskId) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.querySelectorAll('.bl-drop-before,.bl-drop-after').forEach(x => x.classList.remove('bl-drop-before','bl-drop-after'));
+            if (!_blDragId || _blDragId === taskId || _blDragDepth !== 0) return;
+
+            const roots = _blTasks.filter(t => !t.parentId || !_blAllTasks.find(x => x.id === t.parentId));
+            roots.sort((a,b) => { const ao=a.backlogOrder??999999,bo=b.backlogOrder??999999; return ao!==bo?ao-bo:(a.goal||'').localeCompare(b.goal||''); });
+
+            const dragIdx = roots.findIndex(t => t.id === _blDragId);
+            if (dragIdx < 0) return;
+            const [moved] = roots.splice(dragIdx, 1);
+            const tgtIdx  = roots.findIndex(t => t.id === taskId);
+            roots.splice(tgtIdx < 0 ? roots.length : (_blDropBefore ? tgtIdx : tgtIdx+1), 0, moved);
+
+            roots.forEach((t,i) => {
+                t.backlogOrder = i + 1;
+                const at = _blAllTasks.find(x => x.id === t.id);
+                if (at) at.backlogOrder = i + 1;
+            });
+            _blRender();
+
+            try {
+                await fetch('/Tasks/ReorderBacklog', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                    },
+                    body: JSON.stringify(roots.map(t => t.id))
+                });
+            } catch(err) { console.warn('ReorderBacklog failed', err); }
+        }
+
+        function _blTreeDrop(e) { e.preventDefault(); }
+
+        function _blPlanDragOver(e) {
+            if (!_blPlanSprintId || !_blDragId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.add('bl-plan-drop-active');
+        }
+
+        function _blPlanDragLeave(e) {
+            e.currentTarget.classList.remove('bl-plan-drop-active');
+        }
+
+        async function _blDropOnSprint(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('bl-plan-drop-active');
+            if (!_blPlanSprintId) return;
+            const taskId = _blDragId || parseInt(e.dataTransfer.getData('text/plain'));
+            if (!taskId) return;
+            await _blCheckOwnerThenAssign(taskId, _blPlanSprintId);
+        }
+
+        async function _blQuickAssign(taskId) {
+            if (!_blPlanSprintId) {
+                Swal.fire({ icon:'info', text:'Select a sprint in the Plan Sprint panel first.', timer:2000, showConfirmButton:false });
+                return;
+            }
+            await _blCheckOwnerThenAssign(taskId, _blPlanSprintId);
+        }
+
+        async function _blCheckOwnerThenAssign(taskId, sprintId) {
+            const task = _blAllTasks.find(t => t.id === taskId);
+            if (task && !task.owner) {
+                const userOpts = (CV_USERS || []).map(u => `<option value="${u}">${u}</option>`).join('');
+                const { value: chosenOwner, isConfirmed } = await Swal.fire({
+                    title: 'Assign Owner',
+                    html: `<p class="text-sm text-gray-600 mb-3">
+                             <strong>${task.goal || 'This task'}</strong> has no owner.<br>
+                             Assign an owner before adding to the sprint.
+                           </p>
+                           <select id="swal-owner-sel" class="swal2-input" style="width:90%;margin:0 auto;">
+                             <option value="">— Select owner —</option>${userOpts}
+                           </select>`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Assign & Add to Sprint',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#2563eb',
+                    cancelButtonColor: '#94a3b8',
+                    preConfirm: () => {
+                        const v = document.getElementById('swal-owner-sel').value;
+                        if (!v) { Swal.showValidationMessage('Please select an owner.'); return false; }
+                        return v;
+                    }
+                });
+                if (!isConfirmed || !chosenOwner) return;
+                const fd = new FormData();
+                fd.append('id', taskId);
+                fd.append('owner', chosenOwner);
+                fd.append('__RequestVerificationToken', document.querySelector('[name=__RequestVerificationToken]').value);
+                const r = await fetch('/Tasks/QuickSetOwner', { method:'POST', body:fd });
+                const d = await r.json();
+                if (!d.success) { showToast(d.error || 'Could not set owner.', 'error'); return; }
+                if (task) task.owner = chosenOwner;
+                showToast(`Owner set to ${chosenOwner}.`, 'success');
+            }
+            await _blAssignToSprint(taskId, sprintId);
+        }
+
+        async function _blRemoveFromSprint(taskId) {
+            await _blAssignToSprint(taskId, null);
+        }
+
+        async function _blAssignToSprint(taskId, sprintId) {
+            const fd = new FormData();
+            fd.append('taskId', taskId);
+            if (sprintId) fd.append('sprintId', sprintId);
+            fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+            try {
+                const r = await fetch('/Tasks/AssignSprint', { method:'POST', body:fd });
+                const d = await r.json();
+                if (d.success) {
+                    const at = _blAllTasks.find(x => x.id === taskId);
+                    if (at) at.sprintId = sprintId || null;
+                    _blFilterTasks();
+                    _blRender();
+                    if (_blPlanOpen) _blRenderPlanPanel();
+                    if (d.capacityWarning)
+                        Swal.fire({ icon:'warning', title:'Over capacity', text: d.capacityWarning, timer:4000, showConfirmButton:false });
+                } else {
+                    Swal.fire({ icon:'warning', text: d.error || 'Could not assign to sprint.', timer:2500, showConfirmButton:false });
+                }
+            } catch(err) { console.warn('AssignSprint failed', err); }
+        }
+
+        _blLoad();
+        </script>
+    }

@@ -11,9 +11,26 @@
     <ProjectReference Include="..\TaskTracker.Services\TaskTracker.Services.csproj" />
   </ItemGroup>
 
+  <!-- Exclude orphaned / source-only assets that are not served to browsers (#70) -->
+  <ItemGroup>
+    <Content Remove="wwwroot\assets\img\destinity-inspire-login-bg.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <!-- Build purged Tailwind CSS before publish -->
   <Target Name="BuildTailwind" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <Exec Command="npm run css:build" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+  <!-- Regenerate WebP logo from PNG source at publish time (#70).
+       Run 'npm install' once in src/TaskTracker.Web/ to install sharp-cli. -->
+  <Target Name="OptimiseImages" AfterTargets="BuildTailwind" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="npm run img:optimize" WorkingDirectory="$(MSBuildProjectDirectory)" ContinueOnError="true" />
   </Target>
 
 </Project>

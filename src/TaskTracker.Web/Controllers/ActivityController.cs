@@ -4,7 +4,7 @@ using TaskTracker.Services;
 
 namespace TaskTracker.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Admin")]
 public class ActivityController(IActivityService activity) : AppControllerBase
 {
     public async Task<IActionResult> Index(
@@ -13,13 +13,14 @@ public class ActivityController(IActivityService activity) : AppControllerBase
         string? user     = null,
         string? dateFrom = null,
         string? dateTo   = null,
-        string? category = null)
+        string? category = null,
+        int?    team     = null)
     {
         const int pageSize = 50;
         bool isAdmin = IsAdmin();
         int? teamId  = ActiveTeamId();
 
-        var result = await activity.GetLogsAsync(isAdmin, teamId, page, project, user, dateFrom, dateTo, category);
+        var result = await activity.GetLogsAsync(isAdmin, teamId, page, project, user, dateFrom, dateTo, category, team);
 
         ViewBag.Logs       = result.Logs;
         ViewBag.Page       = page;
@@ -39,6 +40,7 @@ public class ActivityController(IActivityService activity) : AppControllerBase
         ViewBag.FilterDateFrom = dateFrom ?? "";
         ViewBag.FilterDateTo   = dateTo   ?? "";
         ViewBag.FilterCategory = category ?? "";
+        ViewBag.FilterTeam     = team;
 
         ViewData["ActiveNav"] = "Activity";
         return View();

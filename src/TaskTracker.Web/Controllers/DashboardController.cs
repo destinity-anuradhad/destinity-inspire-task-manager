@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using TaskTracker.Data;
 using TaskTracker.Services;
 
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class DashboardController(IDashboardService dashboard) : AppControllerBase
+public class DashboardController(IDashboardService dashboard, AppDbContext db) : AppControllerBase
 {
 
     public async Task<IActionResult> Index()
@@ -60,6 +62,20 @@ public class DashboardController(IDashboardService dashboard) : AppControllerBas
         ViewBag.OwnerPending   = data.OwnerPending;
         ViewBag.RecentActivity = data.RecentActivity;
         ViewBag.TeamName       = User.FindFirst("ActiveTeamName")?.Value ?? "";
+
+        var teamId = ActiveTeamId();
+        var activeSprint = teamId.HasValue
+            ? await db.Sprints.AsNoTracking().FirstOrDefaultAsync(s => s.IsActive && s.TeamId == teamId)
+            : null;
+        if (activeSprint != null)
+        {
+            var sprintTasks = await db.Tasks.AsNoTracking()
+                .Where(t => t.SprintId == activeSprint.Id && !t.IsDeleted).ToListAsync();
+            ViewBag.ActiveSprint     = activeSprint;
+            ViewBag.SprintTotal      = sprintTasks.Count;
+            ViewBag.SprintDone       = sprintTasks.Count(t => TaskStatusRules.IsDone(t.ItemType, t.Status));
+            ViewBag.SprintInProgress = sprintTasks.Count(TaskStatusRules.IsActive);
+        }
 
         ViewData["ActiveNav"] = "Team";
         return View();

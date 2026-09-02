@@ -22,6 +22,7 @@ public class ProfileController(IUserService userService, IActivityService activi
         ViewBag.TasksAssigned  = stats.TasksAssigned;
         ViewBag.TasksCompleted = stats.TasksCompleted;
         ViewBag.TasksWatching  = stats.TasksWatching;
+        ViewBag.TimeOff = await userService.GetTimeOffAsync(uid, DateTime.Today);
 
         ViewData["ActiveNav"] = "Profile";
         return View(user);
@@ -149,6 +150,45 @@ public class ProfileController(IUserService userService, IActivityService activi
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             HttpContext.Request.Headers["User-Agent"].ToString());
         TempData["WorkPrefSuccess"] = "Work preferences saved.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddTimeOff(DateTime startDate, DateTime endDate, string? reason)
+    {
+        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var displayName = User.FindFirst("DisplayName")?.Value ?? "";
+        var (ok, error) = await userService.AddTimeOffAsync(uid, startDate, endDate, reason, displayName);
+        if (!ok)
+        {
+            TempData["TimeOffError"] = error ?? "Time off could not be saved.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        await activity.LogAsync(displayName, "Time Off Added", "System",
+            $"{startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}",
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            HttpContext.Request.Headers["User-Agent"].ToString());
+        TempData["TimeOffSuccess"] = "Time off saved.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveTimeOff(int id)
+    {
+        var uid = int.Parse(User.FindFirst("UserId")!.Value);
+        var (ok, error) = await userService.RemoveTimeOffAsync(id, uid);
+        if (!ok)
+        {
+            TempData["TimeOffError"] = error ?? "Time off entry could not be removed.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var displayName = User.FindFirst("DisplayName")?.Value ?? "";
+        await activity.LogAsync(displayName, "Time Off Removed", "System", $"Entry {id}",
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            HttpContext.Request.Headers["User-Agent"].ToString());
+        TempData["TimeOffSuccess"] = "Time off removed.";
         return RedirectToAction(nameof(Index));
     }
 

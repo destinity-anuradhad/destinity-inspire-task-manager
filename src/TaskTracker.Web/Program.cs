@@ -1,8 +1,12 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 using TaskTracker.Data;
 using TaskTracker.Hubs;
 using TaskTracker.Models;
@@ -29,7 +33,8 @@ RequireSecret(builder.Configuration, "ConnectionStrings:DefaultConnection");
 RequireSecret(builder.Configuration, "Email:Password");
 RequireSecret(builder.Configuration, "Recaptcha:SecretKey");
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options =>
+    options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
 builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
@@ -40,9 +45,26 @@ builder.Services.AddResponseCompression(opts => {
     opts.Providers.Add<GzipCompressionProvider>();
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+           .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<IEmailQueue, EmailQueue>();
+builder.Services.AddHostedService<EmailBackgroundService>();
 builder.Services.AddHttpClient();   // used for Google reCAPTCHA verification
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 
 builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IChartService, ChartService>();
@@ -50,20 +72,37 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IQueryService, QueryService>();
 builder.Services.AddScoped<ISprintService, SprintService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IUserSessionValidator, UserSessionValidator>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
+builder.Services.AddScoped<IWorkflowService, WorkflowService>();
+builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
+builder.Services.AddScoped<IRecurringTaskService, RecurringTaskService>();
+builder.Services.AddScoped<ICustomFieldService, CustomFieldService>();
+builder.Services.AddScoped<RecurringTaskProcessor>();
+builder.Services.AddHostedService<RecurringTaskBackgroundService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.LoginPath            = "/Account/Login";
         options.LogoutPath           = "/Account/Logout";
-        options.AccessDeniedPath     = "/Account/Login";
+        options.AccessDeniedPath     = "/Dashboard";
         options.ExpireTimeSpan       = TimeSpan.FromHours(8);
         options.SlidingExpiration    = true;
         options.Cookie.HttpOnly      = true;
         options.Cookie.SecurePolicy  = CookieSecurePolicy.Always;
         options.Cookie.SameSite      = SameSiteMode.Lax;
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var validator = context.HttpContext.RequestServices
+                .GetRequiredService<IUserSessionValidator>();
+            if (await validator.IsValidAsync(context.Principal!)) return;
+
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        };
     });
 
 builder.Services.AddAuthorization(opts =>
@@ -75,7 +114,18 @@ builder.Services.AddAuthorization(opts =>
 
 var app = builder.Build();
 
+// Legacy schema bootstrap is opt-in and development-only. Production schema changes
+// must be reviewed, scripted, backed up, and applied as a separate deployment step.
+var runBootstrap = builder.Configuration.GetValue<bool>("Startup:RunSchemaBootstrap", defaultValue: false);
+if (runBootstrap && !app.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException(
+        "Startup:RunSchemaBootstrap is permitted only in the Development environment.");
+}
+
 try
+{
+if (runBootstrap)
 {
 using (var scope = app.Services.CreateScope())
 {
@@ -136,6 +186,8 @@ using (var scope = app.Services.CreateScope())
                     );
                     CREATE INDEX [IX_SavedQueries_CreatedBy] ON [SavedQueries] ([CreatedBy]);
                 END
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'SavedQueries') AND name = N'TeamId')
+                    ALTER TABLE [SavedQueries] ADD [TeamId] INT NULL;
                 -- SprintCapacities table
                 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='SprintCapacities')
                 BEGIN
@@ -181,7 +233,24 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [AppUsers] ADD [RequestedTeamId] INT NULL;
                 -- Forced password change on first login
                 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AppUsers' AND COLUMN_NAME='MustChangePassword')
-                    ALTER TABLE [AppUsers] ADD [MustChangePassword] BIT NOT NULL DEFAULT 0;";
+                    ALTER TABLE [AppUsers] ADD [MustChangePassword] BIT NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'Tasks') AND name = N'RowVersion')
+                    ALTER TABLE [Tasks] ADD [RowVersion] ROWVERSION NOT NULL;
+                -- ActivityLog system fields (migrations 20260707190000 / 20260707200000)
+                ALTER TABLE [ActivityLog] ALTER COLUMN [TaskId] INT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'TeamId')
+                    ALTER TABLE [ActivityLog] ADD [TeamId] INT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'Category')
+                    ALTER TABLE [ActivityLog] ADD [Category] NVARCHAR(50) NOT NULL DEFAULT 'Task';
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'IpAddress')
+                    ALTER TABLE [ActivityLog] ADD [IpAddress] NVARCHAR(45) NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'UserAgent')
+                    ALTER TABLE [ActivityLog] ADD [UserAgent] NVARCHAR(512) NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'IX_ActivityLog_TeamId')
+                    CREATE INDEX [IX_ActivityLog_TeamId] ON [ActivityLog] ([TeamId]);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('ActivityLog') AND name = 'IX_ActivityLog_Category')
+                    CREATE INDEX [IX_ActivityLog_Category] ON [ActivityLog] ([Category]);
+"; // date conversions handled below in per-column commands
             await cmd2.ExecuteNonQueryAsync();
         }
     }
@@ -236,6 +305,49 @@ using (var scope = app.Services.CreateScope())
         }
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Teams migration skipped (tables may already exist — will retry on next start)"); }
+
+    // Date column conversions: each column in its own command so DECLARE is in a fresh batch
+    // and a DEFAULT constraint on one column doesn't block the others.
+    foreach (var (col, idxName) in new (string col, string? idx)[] {
+        ("TargetDate",     "IX_Tasks_TargetDate"),
+        ("StartDate",      "IX_Tasks_StartDate"),
+        ("EndDate",        null),
+        ("ActualStartDate", null),
+        ("ActualEndDate",  null),
+    })
+    {
+        try
+        {
+            using var cmdDate = conn.CreateCommand();
+            cmdDate.CommandText = $@"
+                IF EXISTS (
+                    SELECT 1 FROM sys.columns c
+                    JOIN sys.types t ON c.user_type_id = t.user_type_id
+                    WHERE c.object_id = OBJECT_ID(N'Tasks') AND c.name = N'{col}'
+                      AND t.name IN ('nvarchar','varchar','nchar','char')
+                )
+                BEGIN
+                    DECLARE @dc NVARCHAR(200);
+                    SELECT @dc = dc.name
+                    FROM sys.default_constraints dc
+                    JOIN sys.columns c2 ON dc.parent_object_id = c2.object_id
+                                       AND dc.parent_column_id = c2.column_id
+                    WHERE c2.object_id = OBJECT_ID(N'Tasks') AND c2.name = N'{col}';
+                    IF @dc IS NOT NULL
+                        EXEC('ALTER TABLE [Tasks] DROP CONSTRAINT [' + @dc + ']');
+                    {(idxName != null ? $"IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'Tasks') AND name=N'{idxName}') DROP INDEX [{idxName}] ON [Tasks];" : "")}
+                    ALTER TABLE [Tasks] ADD [{col}_new] DATETIME2 NULL;
+                    UPDATE [Tasks] SET [{col}_new] = TRY_CONVERT(DATETIME2, [{col}], 23)
+                        WHERE [{col}] IS NOT NULL AND [{col}] != '';
+                    ALTER TABLE [Tasks] DROP COLUMN [{col}];
+                    EXEC sp_rename N'Tasks.{col}_new', N'{col}', N'COLUMN';
+                    {(idxName != null ? $"CREATE INDEX [{idxName}] ON [Tasks] ([{col}]);" : "")}
+                END";
+            await cmdDate.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Date column {Col} conversion failed", col); }
+    }
+
     await conn.CloseAsync();
 
     // Apply any pending EF Core migrations
@@ -262,6 +374,7 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
     }
 }
+} // end if (runBootstrap)
 } catch (Exception ex) { app.Logger.LogCritical(ex, "Startup DB initialisation failed — app will start but DB queries will error"); }
 
 if (!app.Environment.IsDevelopment())
@@ -275,6 +388,7 @@ app.UseResponseCompression();
 app.UseStaticFiles();
 
 app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
