@@ -114,13 +114,14 @@ builder.Services.AddAuthorization(opts =>
 
 var app = builder.Build();
 
-// Legacy schema bootstrap is opt-in and development-only. Production schema changes
-// must be reviewed, scripted, backed up, and applied as a separate deployment step.
+// Legacy schema bootstrap is disabled in every environment. The historical migration
+// chain contains destructive paths, so schema changes must be reviewed, scripted,
+// backed up, and applied as a separate deployment step.
 var runBootstrap = builder.Configuration.GetValue<bool>("Startup:RunSchemaBootstrap", defaultValue: false);
-if (runBootstrap && !app.Environment.IsDevelopment())
+if (runBootstrap)
 {
     throw new InvalidOperationException(
-        "Startup:RunSchemaBootstrap is permitted only in the Development environment.");
+        "Startup:RunSchemaBootstrap is disabled. Use the approved non-destructive database upgrade procedure.");
 }
 
 try
