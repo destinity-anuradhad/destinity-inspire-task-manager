@@ -18,6 +18,7 @@ public interface ITeamService
     Task<(bool Success, string? Error)> UpdateRoleAsync(int teamId, int userId, string teamRole, int callerId, bool isSysAdmin);
     Task<(Team? Team, string TeamRole)> GetSwitchDataAsync(int teamId, int userId, bool isSysAdmin);
     Task<AppUser?> GetUserForAuthAsync(int userId);
+    Task<string?> GetCallerTeamRoleAsync(int teamId, int userId);
 }
 
 public class TeamPickItem

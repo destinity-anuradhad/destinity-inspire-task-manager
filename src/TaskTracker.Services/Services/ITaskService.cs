@@ -13,13 +13,20 @@ public interface ITaskService
     Task<WatcherResult>       GetWatchersAsync(int taskId, int? teamId, string displayName);
     Task<IEnumerable<object>> GetAttachmentsAsync(int taskId);
     Task<AttachmentDownload?> GetDownloadAsync(int id, int? teamId = null);
-    Task<ChildStatsResult>    GetChildStatsAsync(int id, int? teamId);
+    Task<ChildStatsResult?>   GetChildStatsAsync(int id, int? teamId);
+    Task<List<TaskChecklistItem>?> GetChecklistAsync(int taskId, int? teamId);
 
     Task<TaskSaveResult>   SaveAsync(TaskItem task, UserCtx ctx, bool forceClose);
     Task<(bool Success, string? Error)> DeleteAsync(int id, UserCtx ctx);
-    Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose);
+    Task<(bool Success, string? Error)> ClaimTaskAsync(int taskId, UserCtx ctx);
+    Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null);
     Task<TaskSprintResult> AssignSprintAsync(int taskId, int? sprintId, UserCtx ctx);
+    Task<TimeEntryResult> LogTimeAsync(int taskId, decimal hours, DateTime workDate, string? note, decimal? remainingWorkHours, UserCtx ctx);
+    Task<TimeEntryResult> CorrectTimeEntryAsync(long entryId, string? note, UserCtx ctx);
     Task<(bool Success, string? Error)> AddCommentAsync(int taskId, string comment, UserCtx ctx);
+    Task<(bool Success, string? Error)> AddChecklistItemAsync(int taskId, string text, UserCtx ctx);
+    Task<(bool Success, string? Error)> ToggleChecklistItemAsync(int id, bool isCompleted, UserCtx ctx);
+    Task<(bool Success, string? Error)> DeleteChecklistItemAsync(int id, UserCtx ctx);
     Task<(bool Success, string? Error)> AddLinkAsync(int fromTaskId, int toTaskId, string linkType, UserCtx ctx);
     Task<(bool Success, string? Error)> RemoveLinkAsync(int id, UserCtx ctx);
     Task<WatchToggleResult> ToggleWatchAsync(int taskId, string username, int? teamId);
@@ -105,10 +112,11 @@ public class TaskSaveResult
 
 public class TaskUpdateResult
 {
-    public bool    Success      { get; set; }
-    public string? Error        { get; set; }
-    public bool    NeedOwner    { get; set; }
-    public int?    OpenChildren { get; set; }
+    public bool    Success         { get; set; }
+    public string? Error           { get; set; }
+    public bool    NeedOwner       { get; set; }
+    public bool    NeedActualHours { get; set; }
+    public int?    OpenChildren    { get; set; }
 }
 
 public class TaskSprintResult
@@ -157,7 +165,21 @@ public class BulkOpResult
     public string? Error   { get; set; }
 }
 
-public class BulkStatusOpResult : BulkOpResult { public int NoOwner { get; set; } }
+public class BulkStatusOpResult : BulkOpResult
+{
+    public int NoOwner { get; set; }
+    public int InvalidTransition { get; set; }
+    public int NeedActualHours { get; set; }
+    public int OpenChildren { get; set; }
+}
+
+public class TimeEntryResult
+{
+    public bool Success { get; set; }
+    public string? Error { get; set; }
+    public decimal ActualHours { get; set; }
+    public decimal? RemainingWorkHours { get; set; }
+}
 public class BulkSprintOpResult : BulkOpResult { public int Skipped { get; set; } }
 
 public class BacklogResult
@@ -168,10 +190,15 @@ public class BacklogResult
 
 public class BurndownResult
 {
-    public string       SprintName { get; set; } = "";
-    public int          Total      { get; set; }
-    public List<object> Days       { get; set; } = [];
-    public List<object> Ideal      { get; set; } = [];
+    public string       SprintName  { get; set; } = "";
+    public int          Total       { get; set; }
+    public decimal      TotalWeight { get; set; }
+    public List<object> Days        { get; set; } = [];
+    public List<object> Ideal       { get; set; } = [];
+    public List<object> WeightDays  { get; set; } = [];
+    public List<object> WeightIdeal { get; set; } = [];
+    public bool IsHistoricalSnapshot { get; set; }
+    public int CarriedForwardCount { get; set; }
 }
 
 public class ExportFilters

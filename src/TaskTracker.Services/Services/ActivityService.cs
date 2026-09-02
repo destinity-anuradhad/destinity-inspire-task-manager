@@ -45,7 +45,8 @@ public class ActivityService(AppDbContext db) : IActivityService
     public async Task<ActivityLogResult> GetLogsAsync(
         bool isAdmin, int? teamId, int page,
         string? project, string? user,
-        string? dateFrom, string? dateTo, string? category)
+        string? dateFrom, string? dateTo, string? category,
+        int? filterTeamId = null)
     {
         const int pageSize = 50;
         var result = new ActivityLogResult();
@@ -57,6 +58,8 @@ public class ActivityService(AppDbContext db) : IActivityService
                     a.Category == "Task"
                         ? _db.Tasks.Any(t => t.Id == a.TaskId && t.TeamId == teamId)
                         : a.TeamId == teamId);
+            if (isAdmin && filterTeamId.HasValue)
+                query = query.Where(a => a.TeamId == filterTeamId.Value);
 
             if (!string.IsNullOrWhiteSpace(category)) query = query.Where(a => a.Category == category);
             if (!string.IsNullOrWhiteSpace(project))  query = query.Where(a => a.Project   == project);
@@ -76,6 +79,8 @@ public class ActivityService(AppDbContext db) : IActivityService
                     a.Category == "Task"
                         ? _db.Tasks.Any(t => t.Id == a.TaskId && t.TeamId == teamId)
                         : a.TeamId == teamId);
+            if (isAdmin && filterTeamId.HasValue)
+                baseQ = baseQ.Where(a => a.TeamId == filterTeamId.Value);
 
             result.Projects = await baseQ
                 .Where(a => a.Project != null && a.Project != "")

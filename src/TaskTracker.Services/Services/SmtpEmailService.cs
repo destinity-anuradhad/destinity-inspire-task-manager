@@ -12,7 +12,7 @@ public class SmtpEmailService(IOptions<EmailOptions> opts, ILogger<SmtpEmailServ
 {
     private readonly EmailOptions _email = opts.Value;
 
-    public async Task SendAsync(string toEmail, string toName, string subject, string htmlBody)
+    public async Task<EmailDeliveryResult> SendAsync(string toEmail, string toName, string subject, string htmlBody)
     {
         bool    success      = false;
         string? errorMessage = null;
@@ -69,5 +69,7 @@ public class SmtpEmailService(IOptions<EmailOptions> opts, ILogger<SmtpEmailServ
         {
             logger.LogError(ex, "Failed to write email log for: {Subject} → {To}", subject, toEmail);
         }
+
+        return new EmailDeliveryResult(success, errorMessage);
     }
 }

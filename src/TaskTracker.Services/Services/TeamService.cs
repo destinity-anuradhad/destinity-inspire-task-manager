@@ -9,13 +9,6 @@ public class TeamService(AppDbContext db) : ITeamService
 {
     private readonly AppDbContext _db = db;
 
-    private static bool IsDone(TaskItem t) => t.ItemType switch {
-        "Bug" or "Story" or "Feature" => t.Status is "Resolved" or "Closed",
-        "Epic"                          => t.Status == "Closed",
-        _                               => t.Status == "Done"
-    };
-    private static bool IsActiveTask(TaskItem t) => t.Status is "In Progress" or "Active";
-
     public async Task<List<TeamPickItem>> GetUserMembershipsAsync(int userId)
         => await _db.TeamMembers.Where(m => m.UserId == userId)
             .Join(_db.Teams.Where(t => t.IsActive), m => m.TeamId, t => t.Id,
@@ -39,9 +32,9 @@ public class TeamService(AppDbContext db) : ITeamService
 
         var stats = teams.Select(team => {
             var tasks   = allTasks.Where(t => t.TeamId == team.Id).ToList();
-            var done    = tasks.Count(IsDone);
-            var active  = tasks.Count(IsActiveTask);
-            var overdue = tasks.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today);
+            var done    = tasks.Count(TaskStatusRules.IsDone);
+            var active  = tasks.Count(TaskStatusRules.IsActive);
+            var overdue = tasks.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today);
             var mCount  = members.Count(m => m.TeamId == team.Id);
             return new TeamIndexStat {
                 Team = team, Total = tasks.Count, Done = done, Active = active,
@@ -112,14 +105,19 @@ public class TeamService(AppDbContext db) : ITeamService
         return true;
     }
 
+    private static readonly string[] ValidTeamRoles = ["TeamAdmin", "TeamLead", "Member"];
+
     public async Task<(bool Success, string? Error)> AddMemberAsync(int teamId, int userId, string teamRole, int callerId, bool isSysAdmin)
     {
+        if (!ValidTeamRoles.Contains(teamRole)) return (false, "Invalid team role.");
         var myMembership = await _db.TeamMembers.FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == callerId);
         if (!isSysAdmin && myMembership?.TeamRole != "TeamAdmin") return (false, "Forbidden");
         var exists = await _db.TeamMembers.AnyAsync(m => m.TeamId == teamId && m.UserId == userId);
         if (!exists)
         {
             _db.TeamMembers.Add(new TeamMember { TeamId = teamId, UserId = userId, TeamRole = teamRole, JoinedAt = DateTime.Now });
+            var user = await _db.AppUsers.FindAsync(userId);
+            if (user != null) user.SessionVersion++;
             await _db.SaveChangesAsync();
         }
         return (true, null);
@@ -133,7 +131,12 @@ public class TeamService(AppDbContext db) : ITeamService
         if (!isSysAdmin && target?.Role == "Admin")
             return (false, "Only a System Administrator can remove another System Administrator.");
         var m = await _db.TeamMembers.FirstOrDefaultAsync(x => x.TeamId == teamId && x.UserId == userId);
-        if (m != null) { _db.TeamMembers.Remove(m); await _db.SaveChangesAsync(); }
+        if (m != null)
+        {
+            _db.TeamMembers.Remove(m);
+            if (target != null) target.SessionVersion++;
+            await _db.SaveChangesAsync();
+        }
         return (true, null);
     }
 
@@ -143,14 +146,15 @@ public class TeamService(AppDbContext db) : ITeamService
         var team = await _db.Teams.FindAsync(teamId);
         if (team == null) return (false, "Team not found", null);
         var myMembership = await _db.TeamMembers.FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == callerId);
-        if (!isSysAdmin && myMembership?.TeamRole != "TeamAdmin" && myMembership?.TeamRole != "Lead")
+        if (!isSysAdmin && myMembership?.TeamRole != "TeamAdmin" && myMembership?.TeamRole != "TeamLead")
             return (false, "Forbidden", null);
 
+        if (!ValidTeamRoles.Contains(req.TeamRole)) return (false, "Invalid team role.", null);
         var teamRole = req.TeamRole;
         if (!isSysAdmin)
         {
-            if (callerRole == "Lead") teamRole = "Member";
-            else if (teamRole == "TeamAdmin") teamRole = "Lead";
+            if (callerRole == "TeamLead") teamRole = "Member";         // TeamLead can only create Members
+            else if (teamRole == "TeamAdmin") teamRole = "TeamLead";   // TeamAdmin cannot create another TeamAdmin
         }
 
         if (string.IsNullOrWhiteSpace(req.DisplayName) || string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
@@ -169,21 +173,43 @@ public class TeamService(AppDbContext db) : ITeamService
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
         _db.AppUsers.Add(user);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Could not create user: {ex.InnerException?.Message ?? ex.Message}", null);
+        }
         _db.TeamMembers.Add(new TeamMember { TeamId = teamId, UserId = user.Id, TeamRole = teamRole, JoinedAt = DateTime.Now });
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _db.AppUsers.Remove(user);
+            await _db.SaveChangesAsync();
+            return (false, $"User created but could not add to team: {ex.InnerException?.Message ?? ex.Message}", null);
+        }
         return (true, null, user);
     }
 
     public async Task<(bool Success, string? Error)> UpdateRoleAsync(int teamId, int userId, string teamRole, int callerId, bool isSysAdmin)
     {
+        if (!ValidTeamRoles.Contains(teamRole)) return (false, "Invalid team role.");
         var myMembership = await _db.TeamMembers.FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == callerId);
         if (!isSysAdmin && myMembership?.TeamRole != "TeamAdmin") return (false, "Forbidden");
         var target = await _db.AppUsers.FindAsync(userId);
         if (!isSysAdmin && target?.Role == "Admin")
             return (false, "Only a System Administrator can change another System Administrator's role.");
         var m = await _db.TeamMembers.FirstOrDefaultAsync(x => x.TeamId == teamId && x.UserId == userId);
-        if (m != null) { m.TeamRole = teamRole; await _db.SaveChangesAsync(); }
+        if (m != null && m.TeamRole != teamRole)
+        {
+            m.TeamRole = teamRole;
+            if (target != null) target.SessionVersion++;
+            await _db.SaveChangesAsync();
+        }
         return (true, null);
     }
 
@@ -197,4 +223,10 @@ public class TeamService(AppDbContext db) : ITeamService
     }
 
     public async Task<AppUser?> GetUserForAuthAsync(int userId) => await _db.AppUsers.FindAsync(userId);
+
+    public async Task<string?> GetCallerTeamRoleAsync(int teamId, int userId)
+        => await _db.TeamMembers
+            .Where(m => m.TeamId == teamId && m.UserId == userId)
+            .Select(m => m.TeamRole)
+            .FirstOrDefaultAsync();
 }

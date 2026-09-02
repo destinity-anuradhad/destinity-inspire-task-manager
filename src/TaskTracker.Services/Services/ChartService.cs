@@ -42,39 +42,42 @@ public class ChartService(AppDbContext db) : IChartService
             .ToListAsync())
             .ToDictionary(x => x.Key, x => x.Count);
 
-        // Owner CSV splitting cannot be pushed to SQL — load only the Owner column
-        var ownerStrings = await taskQ
-            .Where(t => t.Owner != null && t.Owner != "")
-            .Select(t => t.Owner!)
-            .ToListAsync();
-        var ownerCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var ownerStr in ownerStrings)
-            foreach (var o in ownerStr.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0))
-                ownerCounts[o] = ownerCounts.GetValueOrDefault(o) + 1;
-        var byOwner = ownerCounts.OrderByDescending(kv => kv.Value).Take(15)
-            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        // Owner counts — expand comma-separated Owner string in memory
+        var ownerStrings = await taskQ.Where(t => t.Owner != null && t.Owner != "")
+            .Select(t => t.Owner!).ToListAsync();
+        var byOwner = ownerStrings
+            .SelectMany(o => o.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(n => n.Length > 0)
+            .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count()).Take(15)
+            .ToDictionary(g => g.Key, g => g.Count());
 
         // Velocity — pushed to SQL via GROUP BY on SprintId
         var sprintQ = _db.Sprints.AsNoTracking().AsQueryable();
         if (teamId.HasValue) sprintQ = sprintQ.Where(s => s.TeamId == teamId);
         var sprints = await sprintQ.OrderBy(s => s.StartDate ?? s.CreatedAt).ToListAsync();
 
-        var doneStatuses = new[] { "Done", "Resolved", "Closed" };
         var sprintIds    = sprints.Select(s => s.Id).ToList();
-        var sprintStats  = await taskQ
+        var activeSprintStats  = await taskQ
             .Where(t => t.SprintId.HasValue && sprintIds.Contains(t.SprintId.Value))
             .GroupBy(t => t.SprintId!.Value)
             .Select(g => new {
                 SprintId  = g.Key,
-                Committed = g.Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m,
-                Completed = g.Where(t => doneStatuses.Contains(t.Status))
+                Committed = g.Where(t => t.EstimateUnit == "Points").Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m,
+                Completed = g.Where(t => t.EstimateUnit == "Points" && (t.Status == "Done" || t.Status == "Resolved" || t.Status == "Closed"))
                              .Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m
             })
             .ToDictionaryAsync(x => x.SprintId);
+        var snapshots = await _db.SprintCompletionSnapshots.AsNoTracking()
+            .Where(s => sprintIds.Contains(s.SprintId))
+            .ToDictionaryAsync(s => s.SprintId);
 
         var velocity = sprints.Select(s => {
-            sprintStats.TryGetValue(s.Id, out var st);
-            return new { name = s.Name, committed = st?.Committed ?? 0m, completed = st?.Completed ?? 0m };
+            activeSprintStats.TryGetValue(s.Id, out var active);
+            snapshots.TryGetValue(s.Id, out var snapshot);
+            var committed = s.CompletedAt.HasValue && snapshot != null ? snapshot.CommittedEstimate : active?.Committed ?? 0m;
+            var completed = s.CompletedAt.HasValue && snapshot != null ? snapshot.CompletedEstimate : active?.Completed ?? 0m;
+            return new { name = s.Name, committed, completed };
         }).ToList();
 
         return new ChartData

@@ -11,12 +11,24 @@ public interface IUserService
     Task ClearMustChangePasswordAsync(int uid);
     Task UpdateWorkPreferencesAsync(int uid, decimal? dailyCapacityHours, string workingDays);
     Task UpdateNotificationsAsync(int uid, bool notifyOnAssigned, bool notifyOnComment, bool notifyOnBlocked);
+    Task<List<UserTimeOff>> GetTimeOffAsync(int userId, DateTime? fromDate = null);
+    Task<(bool Success, string? Error)> AddTimeOffAsync(int userId, DateTime startDate, DateTime endDate, string? reason, string createdBy);
+    Task<(bool Success, string? Error)> RemoveTimeOffAsync(int id, int userId);
 
     Task<MasterIndexData> GetMasterDataAsync();
     Task<(bool Success, string? Error)> EditUserAsync(int id, string username, string displayName, string role, string color);
     Task<(bool Success, string? Error)> CreateUserAsync(MasterCreateUserRequest req);
 
+    Task<List<WorkState>> GetWorkStatesAsync();
+    Task<(bool Success, string? Error)> SaveWorkStateAsync(int? id, string name, string color, int? wipLimit, string? itemTypes);
+    Task<(bool Success, string? Error)> DeleteWorkStateAsync(int id);
+    Task ReorderWorkStatesAsync(int[] orderedIds);
+
     Task<AppUser?> GetByUsernameAsync(string username);
+
+    Task<List<AppUser>> GetPendingUsersAsync();
+    Task<(bool Success, string? Error)> ApproveUserAsync(int id);
+    Task<(bool Success, string? Error)> RejectUserAsync(int id);
 
     Task<int> GetNotificationCountAsync(int userId, int? teamId);
     Task<List<Notification>> GetNotificationsAsync(int userId, int? teamId);
@@ -43,9 +55,10 @@ public class ProfileUpdateRequest
 
 public class MasterIndexData
 {
-    public List<AppUser>                     Users       { get; set; } = [];
-    public List<Team>                        ActiveTeams { get; set; } = [];
-    public Dictionary<int, List<UserTeamInfo>> UserTeams { get; set; } = [];
+    public List<AppUser>                       Users       { get; set; } = [];
+    public List<Team>                          ActiveTeams { get; set; } = [];
+    public Dictionary<int, List<UserTeamInfo>> UserTeams   { get; set; } = [];
+    public List<WorkState>                     WorkStates  { get; set; } = [];
 }
 
 public class UserTeamInfo

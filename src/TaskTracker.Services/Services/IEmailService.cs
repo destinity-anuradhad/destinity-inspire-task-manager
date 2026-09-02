@@ -2,5 +2,7 @@ namespace TaskTracker.Services;
 
 public interface IEmailService
 {
-    Task SendAsync(string toEmail, string toName, string subject, string htmlBody);
+    Task<EmailDeliveryResult> SendAsync(string toEmail, string toName, string subject, string htmlBody);
 }
+
+public record EmailDeliveryResult(bool Success, string? Error = null);

@@ -12,6 +12,6 @@ public readonly record struct UserCtx(
 )
 {
     public bool IsTeamAdmin => IsAdmin || TeamRole is "TeamAdmin";
-    public bool IsLead      => TeamRole is "TeamAdmin" or "Lead";
-    public bool IsMember    => !IsAdmin && TeamRole is not ("TeamAdmin" or "Lead");
+    public bool IsTeamLead  => IsTeamAdmin || TeamRole is "TeamLead";
+    public bool IsMember    => !IsAdmin && TeamRole is not ("TeamAdmin" or "TeamLead");
 }

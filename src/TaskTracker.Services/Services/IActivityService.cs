@@ -13,7 +13,8 @@ public interface IActivityService
     Task<ActivityLogResult> GetLogsAsync(
         bool isAdmin, int? teamId, int page,
         string? project, string? user,
-        string? dateFrom, string? dateTo, string? category);
+        string? dateFrom, string? dateTo, string? category,
+        int? filterTeamId = null);
 }
 
 public class ActivityLogResult

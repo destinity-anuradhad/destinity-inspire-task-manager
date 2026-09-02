@@ -10,40 +10,38 @@ public class DashboardService(AppDbContext db) : IDashboardService
 {
     private readonly AppDbContext _db = db;
 
-    private static bool IsDone(TaskItem t) => t.ItemType switch {
-        "Bug" or "Story" or "Feature" => t.Status is "Resolved" or "Closed",
-        "Epic"                          => t.Status == "Closed",
-        _                               => t.Status == "Done"
-    };
-    private static bool IsActive(TaskItem t) => t.Status is "In Progress" or "Active";
-
     public async Task<PersonalDashboardData> GetPersonalAsync(string displayName, int? teamId)
     {
-        var taskQ = _db.Tasks.AsNoTracking().Where(t => !t.IsDeleted);
-        if (teamId.HasValue) taskQ = taskQ.Where(t => t.TeamId == teamId);
-        var all   = await taskQ.ToListAsync();
-        var today = DateTime.Today;
+        var userId = await _db.AppUsers
+            .Where(u => u.DisplayName == displayName)
+            .Select(u => (int?)u.Id)
+            .FirstOrDefaultAsync();
 
-        var mine = all.Where(t => !string.IsNullOrEmpty(t.Owner) &&
-            t.Owner.Split(',').Select(o => o.Trim())
-                   .Any(o => string.Equals(o, displayName, StringComparison.OrdinalIgnoreCase))).ToList();
+        var today = DateTime.Today;
+        List<TaskItem> mine;
+        {
+            var taskQ = _db.Tasks.AsNoTracking()
+                .Where(t => !t.IsDeleted && t.Owner != null && t.Owner.Contains(displayName));
+            if (teamId.HasValue) taskQ = taskQ.Where(t => t.TeamId == teamId);
+            mine = await taskQ.ToListAsync();
+        }
 
         var bestGroup = mine.Where(t => !string.IsNullOrEmpty(t.Property))
             .GroupBy(t => t.Property).OrderByDescending(g => g.Count())
-            .Select(g => new { Key = g.Key, Count = g.Count(), Done = g.Count(IsDone) })
+            .Select(g => new { Key = g.Key, Count = g.Count(), Done = g.Count(TaskStatusRules.IsDone) })
             .FirstOrDefault();
 
         var data = new PersonalDashboardData
         {
             Total        = mine.Count,
-            Done         = mine.Count(IsDone),
-            InProgress   = mine.Count(IsActive),
+            Done         = mine.Count(TaskStatusRules.IsDone),
+            InProgress   = mine.Count(TaskStatusRules.IsActive),
             Open         = mine.Count(t => t.Status is "New" or "To Do"),
-            Overdue      = mine.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
-            Pending      = mine.Where(t => !IsDone(t))
+            Overdue      = mine.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
+            Pending      = mine.Where(t => !TaskStatusRules.IsDone(t))
                               .OrderBy(t => t.TargetDate ?? DateTime.MaxValue)
                               .Take(10).ToList(),
-            WorkingOn    = mine.Where(IsActive).ToList(),
+            WorkingOn    = mine.Where(TaskStatusRules.IsActive).ToList(),
             ByType       = mine.GroupBy(t => t.ItemType ?? "Task").ToDictionary(g => g.Key, g => g.Count()),
             ByPriority   = mine.Where(t => !string.IsNullOrEmpty(t.Priority))
                               .GroupBy(t => t.Priority!).ToDictionary(g => g.Key, g => g.Count()),
@@ -77,15 +75,15 @@ public class DashboardService(AppDbContext db) : IDashboardService
         return teams.Select(t =>
         {
             var teamTasks = tasks.Where(x => x.TeamId == t.Id).ToList();
-            var done      = teamTasks.Count(IsDone);
+            var done      = teamTasks.Count(TaskStatusRules.IsDone);
             return new TeamStat
             {
                 Team        = t,
                 MemberCount = members.Count(m => m.TeamId == t.Id),
                 Total       = teamTasks.Count,
                 Done        = done,
-                Active      = teamTasks.Count(IsActive),
-                Overdue     = teamTasks.Count(x => !IsDone(x) && x.TargetDate.HasValue && x.TargetDate.Value.Date < today),
+                Active      = teamTasks.Count(TaskStatusRules.IsActive),
+                Overdue     = teamTasks.Count(x => !TaskStatusRules.IsDone(x) && x.TargetDate.HasValue && x.TargetDate.Value.Date < today),
                 CompletePct = teamTasks.Count > 0 ? (int)Math.Round((double)done / teamTasks.Count * 100) : 0,
             };
         }).ToList();
@@ -108,8 +106,9 @@ public class DashboardService(AppDbContext db) : IDashboardService
             .GroupBy(t => t.Priority!).ToDictionary(g => g.Key, g => g.Count());
 
         var ownerDict = new Dictionary<string, List<TaskItem>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var t in all.Where(t => !string.IsNullOrEmpty(t.Owner)))
-            foreach (var o in t.Owner!.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0))
+        foreach (var t in all)
+            foreach (var o in (t.Owner ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(n => n.Length > 0))
             {
                 if (!ownerDict.ContainsKey(o)) ownerDict[o] = [];
                 ownerDict[o].Add(t);
@@ -118,9 +117,9 @@ public class DashboardService(AppDbContext db) : IDashboardService
         var ownerStats = ownerDict.Select(kv => new OwnerStat {
             Name       = kv.Key,
             Total      = kv.Value.Count,
-            Done       = kv.Value.Count(IsDone),
-            InProgress = kv.Value.Count(IsActive),
-            Overdue    = kv.Value.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today)
+            Done       = kv.Value.Count(TaskStatusRules.IsDone),
+            InProgress = kv.Value.Count(TaskStatusRules.IsActive),
+            Overdue    = kv.Value.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today)
         }).OrderByDescending(o => o.Total).ToList();
 
         var appUsers      = await _db.AppUsers.ToListAsync();
@@ -136,9 +135,9 @@ public class DashboardService(AppDbContext db) : IDashboardService
         var data = new TeamDashboardData
         {
             Total         = all.Count,
-            Done          = all.Count(IsDone),
-            InProgress    = all.Count(IsActive),
-            Overdue       = all.Count(t => !IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
+            Done          = all.Count(TaskStatusRules.IsDone),
+            InProgress    = all.Count(TaskStatusRules.IsActive),
+            Overdue       = all.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
             StatusLabels  = JsonSerializer.Serialize(statusCounts.Keys.ToArray()),
             StatusValues  = JsonSerializer.Serialize(statusCounts.Values.ToArray()),
             ProjectLabels = JsonSerializer.Serialize(projectCounts.Select(p => p.Key).ToArray()),
