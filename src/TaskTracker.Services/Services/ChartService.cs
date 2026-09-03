@@ -42,12 +42,11 @@ public class ChartService(AppDbContext db) : IChartService
             .ToListAsync())
             .ToDictionary(x => x.Key, x => x.Count);
 
-        // Owner counts — expand comma-separated Owner string in memory
-        var ownerStrings = await taskQ.Where(t => t.Owner != null && t.Owner != "")
-            .Select(t => t.Owner!).ToListAsync();
-        var byOwner = ownerStrings
-            .SelectMany(o => o.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Where(n => n.Length > 0)
+        // Owner counts — attribute each task to its owners via the TaskOwners junction (#7 stage 2).
+        var ownerTaskIds = await taskQ.Select(t => t.Id).ToListAsync();
+        var ownersByTask = await _db.OwnerNamesByTaskAsync(ownerTaskIds);
+        var byOwner = ownersByTask.Values
+            .SelectMany(names => names)
             .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count()).Take(15)
             .ToDictionary(g => g.Key, g => g.Count());

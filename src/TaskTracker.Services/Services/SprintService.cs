@@ -92,7 +92,7 @@ public class SprintService(AppDbContext db) : ISprintService
             .ToListAsync();
 
         // #7 stage 2: per-user attribution comes from the TaskOwners junction, not the Owner string.
-        var ownersByTask = await OwnerNamesByTaskAsync(
+        var ownersByTask = await _db.OwnerNamesByTaskAsync(
             taskOwnerRaw.Select(t => t.Id).Concat(hoursLogUserRaw.Select(l => l.TaskId)));
 
         var userHours = new Dictionary<int, List<SprintUserHoursRow>>();
@@ -265,22 +265,6 @@ public class SprintService(AppDbContext db) : ISprintService
         return (true, null);
     }
 
-    // #7 stage 2: a task's owner display names resolved from the TaskOwners junction (not the Owner
-    // string). Soft-deleted tasks' owners are included (junction rows aren't removed on soft delete),
-    // matching the previous behaviour of reading the string off history rows.
-    private async Task<Dictionary<int, List<string>>> OwnerNamesByTaskAsync(IEnumerable<int> taskIds)
-    {
-        var ids = taskIds.Distinct().ToList();
-        if (ids.Count == 0) return [];
-        return (await _db.TaskOwners
-                .Where(o => ids.Contains(o.TaskId))
-                .Join(_db.AppUsers, o => o.UserId, u => u.Id, (o, u) => new { o.TaskId, u.DisplayName })
-                .ToListAsync())
-            .GroupBy(x => x.TaskId)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.DisplayName)
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToList());
-    }
-
     public async Task<SprintCapacityData?> GetCapacityAsync(int sprintId, int? teamId)
     {
         var sprint = await _db.Sprints.FindAsync(sprintId);
@@ -299,7 +283,7 @@ public class SprintService(AppDbContext db) : ISprintService
             .Join(_db.Tasks.IgnoreQueryFilters(), l => l.TaskId, t => t.Id, (l, t) => new { l.Hours, TaskId = t.Id })
             .ToListAsync();
 
-        var ownerNames = await OwnerNamesByTaskAsync(
+        var ownerNames = await _db.OwnerNamesByTaskAsync(
             sprintTasksRaw.Select(t => t.Id).Concat(hoursLogRaw.Select(l => l.TaskId)));
 
         // Split work evenly between co-owners. Task count remains per assigned owner, but estimates

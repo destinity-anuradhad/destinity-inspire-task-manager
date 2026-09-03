@@ -113,10 +113,11 @@ public class DashboardService(AppDbContext db) : IDashboardService
         var priorityCounts = all.Where(t => !string.IsNullOrEmpty(t.Priority))
             .GroupBy(t => t.Priority!).ToDictionary(g => g.Key, g => g.Count());
 
+        // #7 stage 2: owner attribution comes from the TaskOwners junction, not the Owner string.
+        var ownersByTask = await _db.OwnerNamesByTaskAsync(all.Select(t => t.Id));
         var ownerDict = new Dictionary<string, List<TaskItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in all)
-            foreach (var o in (t.Owner ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(n => n.Length > 0))
+            foreach (var o in ownersByTask.GetValueOrDefault(t.Id, []))
             {
                 if (!ownerDict.ContainsKey(o)) ownerDict[o] = [];
                 ownerDict[o].Add(t);
