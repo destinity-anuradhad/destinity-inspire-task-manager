@@ -19,11 +19,19 @@ public class DashboardService(AppDbContext db) : IDashboardService
 
         var today = DateTime.Today;
         List<TaskItem> mine;
+        if (userId is int uid)
         {
+            // #7 stage 1: "my tasks" is resolved from the authoritative TaskOwners junction rather than
+            // `Owner.Contains(displayName)` — which fixes the substring false positive (e.g. "Sam"
+            // matching "Samantha") and stops the personal dashboard depending on the display string.
             var taskQ = _db.Tasks.AsNoTracking()
-                .Where(t => !t.IsDeleted && t.Owner != null && t.Owner.Contains(displayName));
+                .Where(t => !t.IsDeleted && _db.TaskOwners.Any(o => o.TaskId == t.Id && o.UserId == uid));
             if (teamId.HasValue) taskQ = taskQ.Where(t => t.TeamId == teamId);
             mine = await taskQ.ToListAsync();
+        }
+        else
+        {
+            mine = [];   // unknown display name resolves to no owned work
         }
 
         var bestGroup = mine.Where(t => !string.IsNullOrEmpty(t.Property))
