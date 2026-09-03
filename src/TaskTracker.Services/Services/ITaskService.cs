@@ -34,7 +34,7 @@ public interface ITaskService
     Task ReorderBacklogAsync(int[] ids, int? teamId);
 
     Task<(bool Success, string? Error)> SaveAttachmentRecordAsync(int taskId, string fileName, string storedName, long fileSize, string contentType, string uploadedBy);
-    Task<(bool Success, string? Error)> DeleteAttachmentAsync(int id, string displayName, bool isAdmin);
+    Task<AttachmentDeleteResult> DeleteAttachmentAsync(int id, string displayName, bool isAdmin);
 
     Task<BulkOpResult>       BulkDeleteAsync(int[] ids, UserCtx ctx);
     Task<BulkStatusOpResult> BulkChangeStatusAsync(int[] ids, string status, UserCtx ctx);
@@ -146,9 +146,18 @@ public class WatchToggleResult
 
 public class AttachmentDownload
 {
-    public string FilePath    { get; set; } = "";
+    public int    TaskId      { get; set; }
+    public string StoredName  { get; set; } = "";
     public string ContentType { get; set; } = "";
     public string FileName    { get; set; } = "";
+}
+
+public class AttachmentDeleteResult
+{
+    public bool    Success    { get; set; }
+    public string? Error      { get; set; }
+    public int     TaskId     { get; set; }
+    public string? StoredName { get; set; }
 }
 
 public class ChildStatsResult

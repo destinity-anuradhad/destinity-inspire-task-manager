@@ -584,11 +584,11 @@ public partial class TaskService
             });
 
         var notifiedIds = mentionedIds.Union(watcherTargets.Select(u => u.Id)).ToHashSet();
-        foreach (var ownerName in SplitOwners(task.Owner))
+        // Owner-string removal (#7) stage 1: owners resolved from the TaskOwners junction, not the string.
+        foreach (var owner in await GetOwnerUsersAsync(taskId))
         {
-            if (string.Equals(ownerName, commenter, StringComparison.OrdinalIgnoreCase)) continue;
-            var owner = allUsers.FirstOrDefault(u => string.Equals(u.DisplayName, ownerName, StringComparison.OrdinalIgnoreCase));
-            if (owner == null || notifiedIds.Contains(owner.Id) || !owner.NotifyOnComment) continue;
+            if (string.Equals(owner.DisplayName, commenter, StringComparison.OrdinalIgnoreCase)) continue;
+            if (notifiedIds.Contains(owner.Id) || !owner.NotifyOnComment) continue;
             _db.Notifications.Add(new Notification {
                 UserId = owner.Id, TaskId = taskId,
                 Message = $"{commenter} commented on: {task.Goal}", CreatedAt = DateTime.Now
@@ -606,6 +606,7 @@ public partial class TaskService
         {
             taskId = task.Id, goal = task.Goal, comment = comment.Trim(), author = commenter, teamId = task.TeamId
         }, commenter);
+        await RunAutomationsAsync(task, WebhookEvents.TaskCommentAdded, ctx);
         return (true, null);
     }
 
@@ -749,23 +750,40 @@ public partial class TaskService
                 FileSize = fileSize, ContentType = contentType,
                 UploadedBy = uploadedBy, UploadedAt = DateTime.Now
             });
+            await AuditAttachmentAsync(taskId, uploadedBy, "Attachment Added",
+                $"{fileName} · {fileSize:n0} bytes · {contentType}");
             await _db.SaveChangesAsync();
             return (true, null);
         }
         catch (Exception ex) { return (false, ex.Message); }
     }
 
-    public async Task<(bool Success, string? Error)> DeleteAttachmentAsync(int id, string displayName, bool isAdmin)
+    // DB-only: removes the record (with permission + audit) and returns what the caller needs to
+    // delete the physical blob. File I/O lives with IAttachmentStorage, not the service.
+    public async Task<AttachmentDeleteResult> DeleteAttachmentAsync(int id, string displayName, bool isAdmin)
     {
         var att = await _db.TaskAttachments.FindAsync(id);
-        if (att == null) return (false, "Not found.");
-        if (!isAdmin && att.UploadedBy != displayName) return (false, "Permission denied.");
-        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "attachments",
-            att.TaskId.ToString(), att.StoredName);
-        if (File.Exists(path)) File.Delete(path);
+        if (att == null) return new AttachmentDeleteResult { Error = "Not found." };
+        if (!isAdmin && att.UploadedBy != displayName)
+            return new AttachmentDeleteResult { Error = "Permission denied." };
+
         _db.TaskAttachments.Remove(att);
+        await AuditAttachmentAsync(att.TaskId, displayName, "Attachment Removed", att.FileName);
         await _db.SaveChangesAsync();
-        return (true, null);
+        return new AttachmentDeleteResult {
+            Success = true, TaskId = att.TaskId, StoredName = att.StoredName
+        };
+    }
+
+    private async Task AuditAttachmentAsync(int taskId, string? by, string action, string details)
+    {
+        var teamId = await _db.Tasks.Where(t => t.Id == taskId)
+            .Select(t => (int?)t.TeamId).FirstOrDefaultAsync();
+        _db.ActivityLog.Add(new ActivityLog {
+            TaskId = taskId, TeamId = teamId, TaskGoal = "", Project = "",
+            ChangedBy = by ?? "", Action = action, Category = "Task", Details = details,
+            ChangedAt = DateTime.Now
+        });
     }
 
     public async Task<(bool Success, string? Error)> ClaimTaskAsync(int taskId, UserCtx ctx)

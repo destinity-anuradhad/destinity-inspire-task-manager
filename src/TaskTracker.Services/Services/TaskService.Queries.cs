@@ -355,6 +355,8 @@ public partial class TaskService
         return list.Cast<object>();
     }
 
+    // Authorizes the download (team scope) and returns the record. Physical-file resolution is the
+    // caller's job via IAttachmentStorage, so no web-root path leaks out of the service.
     public async Task<AttachmentDownload?> GetDownloadAsync(int id, int? teamId = null)
     {
         var att = await _db.TaskAttachments.FindAsync(id);
@@ -364,11 +366,9 @@ public partial class TaskService
             var parentTask = await _db.Tasks.FindAsync(att.TaskId);
             if (parentTask == null || parentTask.TeamId != teamId) return null;
         }
-        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "attachments",
-            att.TaskId.ToString(), att.StoredName);
-        if (!File.Exists(path)) return null;
         return new AttachmentDownload {
-            FilePath    = path,
+            TaskId      = att.TaskId,
+            StoredName  = att.StoredName,
             ContentType = att.ContentType ?? "application/octet-stream",
             FileName    = att.FileName
         };

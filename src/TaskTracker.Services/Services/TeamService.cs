@@ -170,6 +170,9 @@ public class TeamService(AppDbContext db) : ITeamService
             DisplayName = req.DisplayName.Trim(),
             Email       = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim().ToLower(),
             Role        = "Member", Status = "Active", CreatedAt = DateTime.Now,
+            // Provisioned by an admin: the user must set their own password on first login, so the
+            // admin-chosen password is never a lasting shared secret.
+            MustChangePassword = true,
         };
         user.PasswordHash = hasher.HashPassword(user, req.Password);
         _db.AppUsers.Add(user);
@@ -192,6 +195,19 @@ public class TeamService(AppDbContext db) : ITeamService
             await _db.SaveChangesAsync();
             return (false, $"User created but could not add to team: {ex.InnerException?.Message ?? ex.Message}", null);
         }
+
+        // Audit the provisioning event against the acting administrator.
+        var callerName = await _db.AppUsers.Where(u => u.Id == callerId)
+            .Select(u => u.DisplayName).FirstOrDefaultAsync();
+        _db.ActivityLog.Add(new ActivityLog {
+            TeamId = teamId, TaskGoal = "", Project = "",
+            ChangedBy = callerName ?? $"User #{callerId}",
+            Action = "User Provisioned", Category = "System",
+            Details = $"Created user '{uname}' ({teamRole}) in team '{team.Name}'",
+            ChangedAt = DateTime.Now,
+        });
+        await _db.SaveChangesAsync();
+
         return (true, null, user);
     }
 

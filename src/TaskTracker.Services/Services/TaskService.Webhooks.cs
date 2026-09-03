@@ -5,8 +5,9 @@ namespace TaskTracker.Services;
 public partial class TaskService
 {
     /// <summary>
-    /// Fans a task lifecycle event out to the team's webhook subscribers. Best-effort: the delivery
-    /// is enqueued to a durable outbox, and any failure here never affects the originating command.
+    /// Fans a task lifecycle event out to the team's integrations: webhook subscribers (durable
+    /// outbox) and the automation rule engine. Best-effort — any failure here never affects the
+    /// originating command.
     /// </summary>
     private async Task PublishTaskWebhookAsync(TaskItem task, string eventType, UserCtx ctx)
     {
@@ -31,5 +32,8 @@ public partial class TaskService
         {
             _log.LogError(ex, "PublishTaskWebhookAsync failed for task {TaskId} ({EventType})", task.Id, eventType);
         }
+
+        // Same event set drives automation rules; kept separate so a webhook failure can't skip it.
+        await RunAutomationsAsync(task, eventType, ctx);
     }
 }

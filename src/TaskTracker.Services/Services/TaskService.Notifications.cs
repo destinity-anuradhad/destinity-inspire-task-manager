@@ -143,18 +143,29 @@ public partial class TaskService
             .Join(_db.AppUsers, w => w.UserId, u => u.Id, (w, u) => u)
             .ToListAsync();
 
+    // Owner-string removal (backlog #7), stage 1: resolve a task's owners from the authoritative
+    // TaskOwners junction (user ids) rather than parsing the denormalized Owner display string. The
+    // string is still written for display; notification readers now source identity from here.
+    private async Task<List<AppUser>> GetOwnerUsersAsync(int taskId) =>
+        await _db.TaskOwners
+            .Where(o => o.TaskId == taskId)
+            .Join(_db.AppUsers, o => o.UserId, u => u.Id, (o, u) => u)
+            .ToListAsync();
+
     private async Task NotifyAssignedAsync(TaskItem task, string? previousOwner, UserCtx ctx)
     {
         try
         {
             var teamName   = await GetTeamNameAsync(task.TeamId);
+            // Current owners come from the junction (source of truth); only the transient "previous"
+            // value is still a name set — it's the pre-edit string, not persisted as ids.
             var prevOwners = SplitOwners(previousOwner).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var newOwners  = SplitOwners(task.Owner).Where(o => !prevOwners.Contains(o)).ToList();
+            var newOwners  = (await GetOwnerUsersAsync(task.Id))
+                .Where(u => !prevOwners.Contains(u.DisplayName)).ToList();
             var pushIds    = new List<int>();
-            foreach (var ownerName in newOwners)
+            foreach (var user in newOwners)
             {
-                var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
-                if (user == null || string.Equals(user.Username, ctx.Username, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(user.Username, ctx.Username, StringComparison.OrdinalIgnoreCase)) continue;
                 if (user.NotifyOnAssigned)
                 {
                     _db.Notifications.Add(new Notification {
@@ -195,13 +206,12 @@ public partial class TaskService
                         CommentQuote(comment, task.Goal ?? "", commenter, "#7c3aed", "#faf5ff"),
                         task.Id, "View Comment", user.DisplayName, "mention", teamName)));
             }
-            foreach (var ownerName in SplitOwners(task.Owner))
+            foreach (var user in await GetOwnerUsersAsync(task.Id))
             {
-                if (string.Equals(ownerName, commenter, StringComparison.OrdinalIgnoreCase)) continue;
-                if (emailed.Contains(ownerName)) continue;
-                var user = allUsers.FirstOrDefault(u => u.DisplayName == ownerName);
-                if (user == null || !user.NotifyOnComment || string.IsNullOrWhiteSpace(user.Email)) continue;
-                emailed.Add(ownerName);
+                if (string.Equals(user.DisplayName, commenter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (emailed.Contains(user.DisplayName)) continue;
+                if (!user.NotifyOnComment || string.IsNullOrWhiteSpace(user.Email)) continue;
+                emailed.Add(user.DisplayName);
                 await _emailQueue.EnqueueAsync(new EmailQueueItem(
                     user.Email, user.DisplayName,
                     $"[Task Manager] New comment on: {task.Goal}",
@@ -285,10 +295,9 @@ public partial class TaskService
             if (blocked == null) return;
             var blockedTeamName = await GetTeamNameAsync(blocked.TeamId);
             bool saved = false;
-            foreach (var ownerName in SplitOwners(blocked.Owner))
+            foreach (var user in await GetOwnerUsersAsync(blocked.Id))
             {
-                var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == ownerName);
-                if (user == null || !user.NotifyOnBlocked) continue;
+                if (!user.NotifyOnBlocked) continue;
                 _db.Notifications.Add(new Notification {
                     UserId = user.Id, TaskId = blocked.Id,
                     Message = $"Your task \"{blocked.Goal}\" is blocked by #{blocker?.Id}",
