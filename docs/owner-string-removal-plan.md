@@ -63,8 +63,12 @@ name-keyed aggregations/config, which reading the code confirms are **Stage 2**,
 ## Verification gates (each stage)
 
 - Full unit + integration suite green.
-- A reconciliation query: for every task, the set of owner user-ids derived from the new path equals
-  the set derived from the legacy string (zero-diff), run before each stage's cutover.
+- **Reconciliation gate — built (2026-09-03).** `OwnerReconciliationService` compares, per task, the
+  owner user-id set from `TaskOwners` against the ids the legacy string resolves to, and flags any
+  disagreement or any name that resolves to zero/multiple users. A System Admin runs it at
+  **`GET /Diagnostics/OwnerReconciliation`** (read-only); `isClean = true` (zero mismatches, zero
+  unresolvable names) is the go/no-go for each Stage-2 cutover and the column drop. Covered by
+  `OwnerReconciliationTests`.
 - Notification/capacity/report fixtures unchanged.
 
 ## Acceptance (backlog #7)
