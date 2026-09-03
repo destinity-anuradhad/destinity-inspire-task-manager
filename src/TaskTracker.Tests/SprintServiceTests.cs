@@ -70,13 +70,19 @@ public class SprintServiceTests
         db.TeamMembers.AddRange(
             new TeamMember { TeamId = 1, UserId = priya.Id, TeamRole = "Member" },
             new TeamMember { TeamId = 1, UserId = kasun.Id, TeamRole = "Member" });
-        db.Tasks.Add(new TaskItem {
+        var shared = new TaskItem {
             Goal = "Shared work", Owner = "Priya, Kasun", EstimateUnit = "Hours", Weight = 10,
             SprintId = sprint.Id, TeamId = 1, Status = "New", RowVersion = []
-        });
+        };
+        db.Tasks.Add(shared);
         db.UserTimeOff.Add(new UserTimeOff {
             UserId = priya.Id, StartDate = new DateTime(2026, 9, 9), EndDate = new DateTime(2026, 9, 9), CreatedBy = "Admin"
         });
+        await db.SaveChangesAsync();
+        // Ownership is now sourced from the TaskOwners junction (#7 stage 2).
+        db.TaskOwners.AddRange(
+            new TaskOwner { TaskId = shared.Id, UserId = priya.Id },
+            new TaskOwner { TaskId = shared.Id, UserId = kasun.Id });
         await db.SaveChangesAsync();
 
         var result = await new SprintService(db).GetCapacityAsync(sprint.Id, 1);

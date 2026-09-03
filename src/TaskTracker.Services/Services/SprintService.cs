@@ -62,7 +62,7 @@ public class SprintService(AppDbContext db) : ISprintService
 
         var taskOwnerRaw = await _db.Tasks
             .Where(t => t.SprintId != null && sprintIds.Contains(t.SprintId!.Value) && !t.IsDeleted)
-            .Select(t => new { t.SprintId, t.Owner, t.Weight, t.EstimateUnit })
+            .Select(t => new { t.SprintId, t.Id, t.Weight, t.EstimateUnit })
             .ToListAsync();
 
         var estimateHours = taskOwnerRaw
@@ -82,7 +82,7 @@ public class SprintService(AppDbContext db) : ISprintService
         var hoursLogUserRaw = await _db.SprintHoursLogs
             .Where(l => sprintIds.Contains(l.SprintId))
             .Join(_db.Tasks.IgnoreQueryFilters(), l => l.TaskId, t => t.Id,
-                  (l, t) => new { l.SprintId, t.Owner, l.Hours })
+                  (l, t) => new { l.SprintId, TaskId = t.Id, l.Hours })
             .ToListAsync();
 
         var teamIds         = sprints.Where(s => s.TeamId.HasValue).Select(s => s.TeamId!.Value).Distinct().ToList();
@@ -91,9 +91,9 @@ public class SprintService(AppDbContext db) : ISprintService
             .Join(_db.AppUsers, m => m.UserId, u => u.Id, (m, u) => new { m.TeamId, u.DisplayName })
             .ToListAsync();
 
-        static IEnumerable<string> SplitNames(string? s) =>
-            (s ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                     .Where(n => n.Length > 0);
+        // #7 stage 2: per-user attribution comes from the TaskOwners junction, not the Owner string.
+        var ownersByTask = await OwnerNamesByTaskAsync(
+            taskOwnerRaw.Select(t => t.Id).Concat(hoursLogUserRaw.Select(l => l.TaskId)));
 
         var userHours = new Dictionary<int, List<SprintUserHoursRow>>();
         foreach (var sid in sprintIds)
@@ -102,12 +102,12 @@ public class SprintService(AppDbContext db) : ISprintService
 
             var estMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
             foreach (var t in taskOwnerRaw.Where(t => t.SprintId == sid && t.EstimateUnit == "Hours"))
-                foreach (var name in SplitNames(t.Owner))
+                foreach (var name in ownersByTask.GetValueOrDefault(t.Id, []))
                 { estMap.TryGetValue(name, out var c); estMap[name] = c + (t.Weight ?? 0); }
 
             var actMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
             foreach (var l in hoursLogUserRaw.Where(l => l.SprintId == sid))
-                foreach (var name in SplitNames(l.Owner))
+                foreach (var name in ownersByTask.GetValueOrDefault(l.TaskId, []))
                 { actMap.TryGetValue(name, out var c); actMap[name] = c + l.Hours; }
 
             var capMap = sprintCapRaw.Where(c => c.SprintId == sid)
@@ -265,43 +265,59 @@ public class SprintService(AppDbContext db) : ISprintService
         return (true, null);
     }
 
+    // #7 stage 2: a task's owner display names resolved from the TaskOwners junction (not the Owner
+    // string). Soft-deleted tasks' owners are included (junction rows aren't removed on soft delete),
+    // matching the previous behaviour of reading the string off history rows.
+    private async Task<Dictionary<int, List<string>>> OwnerNamesByTaskAsync(IEnumerable<int> taskIds)
+    {
+        var ids = taskIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+        return (await _db.TaskOwners
+                .Where(o => ids.Contains(o.TaskId))
+                .Join(_db.AppUsers, o => o.UserId, u => u.Id, (o, u) => new { o.TaskId, u.DisplayName })
+                .ToListAsync())
+            .GroupBy(x => x.TaskId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.DisplayName)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+    }
+
     public async Task<SprintCapacityData?> GetCapacityAsync(int sprintId, int? teamId)
     {
         var sprint = await _db.Sprints.FindAsync(sprintId);
         if (sprint == null) return null;
         if (teamId.HasValue && sprint.TeamId != teamId) return null;
 
-        // Load all sprint tasks with owners — start from Tasks so the sprint filter
-        // Owner is stored as a comma-separated display-name string directly on the Task row.
+        // Load sprint tasks; owners come from the TaskOwners junction (#7 stage 2), not the string.
         var sprintTasksRaw = await _db.Tasks
             .Where(t => t.SprintId == sprintId && !t.IsDeleted)
-            .Select(t => new { t.Owner, t.Id, t.Weight, t.EstimateUnit, t.ItemType, t.Status })
+            .Select(t => new { t.Id, t.Weight, t.EstimateUnit, t.ItemType, t.Status })
             .ToListAsync();
 
-        // Split work evenly between co-owners. Task count remains per assigned
-        // owner, but estimates and actual hours must not be double-counted.
+        // Per-sprint actual hours — join hours log to its task (deleted tasks included for history).
+        var hoursLogRaw = await _db.SprintHoursLogs
+            .Where(l => l.SprintId == sprintId)
+            .Join(_db.Tasks.IgnoreQueryFilters(), l => l.TaskId, t => t.Id, (l, t) => new { l.Hours, TaskId = t.Id })
+            .ToListAsync();
+
+        var ownerNames = await OwnerNamesByTaskAsync(
+            sprintTasksRaw.Select(t => t.Id).Concat(hoursLogRaw.Select(l => l.TaskId)));
+
+        // Split work evenly between co-owners. Task count remains per assigned owner, but estimates
+        // and actual hours must not be double-counted.
         var sprintTasks = sprintTasksRaw
             .SelectMany(t => {
-                var owners = (t.Owner ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var owners = ownerNames.GetValueOrDefault(t.Id, []);
                 return owners.Select(name => new {
-                    DisplayName = name, t.Id, Estimate = (t.Weight ?? 0) / owners.Length,
+                    DisplayName = name, t.Id, Estimate = (t.Weight ?? 0) / owners.Count,
                     t.EstimateUnit, t.ItemType, t.Status
                 });
             })
             .ToList();
 
-        // Per-sprint actual hours — join hours log to task, then expand owner string
-        var hoursLogRaw = await _db.SprintHoursLogs
-            .Where(l => l.SprintId == sprintId)
-            .Join(_db.Tasks.IgnoreQueryFilters(), l => l.TaskId, t => t.Id, (l, t) => new { l.Hours, t.Owner })
-            .ToListAsync();
-
         var hoursLog = hoursLogRaw
             .SelectMany(l => {
-                var owners = (l.Owner ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-                return owners.Select(name => new { DisplayName = name, Hours = l.Hours / owners.Length });
+                var owners = ownerNames.GetValueOrDefault(l.TaskId, []);
+                return owners.Select(name => new { DisplayName = name, Hours = l.Hours / owners.Count });
             })
             .ToList();
 
