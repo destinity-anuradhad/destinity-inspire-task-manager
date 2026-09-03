@@ -32,15 +32,23 @@ the authoritative id is strictly more correct. Each gets a parity test.
   - [x] **Personal dashboard "my tasks"** — the owned set is resolved from the junction, fixing the
     `Owner.Contains(displayName)` substring bug (e.g. "Sam" matching "Samantha"). Proven by
     `DashboardOwnerStage1Tests`. *(done 2026-09-03)*
-  - [ ] **Capacity / over-allocation** — identity filter (`t.Owner == owner`, `SprintCapacity.OwnerName`);
-    group by owner **user id** across the task + sprint math. *(higher risk — do carefully, own slice)*
-  - [ ] **CSV export / import** — map/emit owners by validated user identity.
+**Stage 1 identity readers are complete** with the two above — the remaining `Owner` readers are all
+name-keyed aggregations/config, which reading the code confirms are **Stage 2**, not Stage 1.
 
-**Deferred to Stage 2 (not Stage 1):** *display aggregations* that merely list or group by owner **name**
-— the timeline owner-facet (`TaskService.Queries`), team owner-stats and charts (`DashboardService`,
-`ChartService`). Migrating these now would silently **drop any not-yet-reconciled legacy owner name**
-from a filter/report — exactly what the Stage-2 reconciliation gate is there to catch. They move once
-the string is derived from the junction and reconciliation is zero-diff.
+**Moved to Stage 2 after code review (2026-09-03):**
+- **Capacity / over-allocation** — first triaged as a stage-1 identity reader, but the sprint capacity
+  system (`SprintService.GetCapacityAsync`/`GetIndexDataAsync`, the over-capacity warning in
+  `TaskService.Writes`) is **name-keyed throughout**: it groups `task.Owner` names, keys
+  `SprintCapacity` by `OwnerName` (its `UserId` column exists but is unused by every reader), matches
+  team members by `DisplayName`, and layers co-owner estimate-splitting + effective-capacity-from-leave.
+  Migrating only the warning to ids would make it disagree with the view. **Prerequisite:**
+  verify/backfill `SprintCapacity.UserId`, then migrate the view + warning + `SaveCapacityAsync`
+  together, behind the reconciliation gate.
+- **Timeline owner-facet** (`TaskService.Queries`), **team owner-stats + charts**
+  (`DashboardService`/`ChartService`), **owner search/sort/filter**, **CSV export/import** — all
+  list/group/search by owner **name**. Migrating now would silently **drop any not-yet-reconciled
+  legacy owner name** from a filter/report — exactly what the reconciliation gate is there to catch.
+  They move once the string is derived from the junction and reconciliation is zero-diff.
 
 **Stage 2 — derive the display string, stop hand-writing it.**
 - Compute the `Owner` display string from `TaskOwners` (join to `AppUser.DisplayName`) at read time
