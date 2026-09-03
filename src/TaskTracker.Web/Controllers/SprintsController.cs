@@ -2,15 +2,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Models;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
 [Authorize]
 public class SprintsController(ISprintService sprints, IConfiguration config) : AppControllerBase
 {
-    private bool IsTeamLead()       => CurrentTeamRole() is "TeamAdmin" or "TeamLead";
-    private bool CanManageSprints() => IsAdmin() || IsTeamLead();
-    private bool CanDeleteSprints() => IsAdmin() || CurrentTeamRole() == "TeamAdmin";
     private bool LegacySprintMutationsEnabled() =>
         config.GetValue<bool>("Features:AllowLegacySprintMutations");
     private IActionResult SprintMutationsDisabled() =>
@@ -29,9 +27,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return !id.HasValue;
     }
 
+    [Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> Index()
     {
-        if (!CanManageSprints()) return Forbid();
         if (NoTeam(out _)) return RedirectToAction("AutoSelect", "Teams");
         var data = await sprints.GetIndexDataAsync(TeamId());
         ViewBag.TaskCounts        = data.TaskCounts;
@@ -47,10 +45,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return View(data.Sprints);
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> Save(Sprint sprint)
     {
-        if (!CanManageSprints()) return Forbid();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         var createdBy = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
@@ -58,20 +55,18 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return ok ? Ok(new { message = "Saved", id = sprintId }) : BadRequest(new { message = error });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> SetActive(int id)
     {
-        if (!CanManageSprints()) return Forbid();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         await sprints.SetActiveAsync(id, TeamId());
         return Ok();
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> Deactivate()
     {
-        if (!CanManageSprints()) return Forbid();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         await sprints.DeactivateAsync(TeamId());
@@ -87,10 +82,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return Json(new { total = result.Total, incomplete = result.Incomplete, done = result.Done });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> Complete(int id, string moveTo = "backlog")
     {
-        if (!CanManageSprints()) return Forbid();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         var completedBy = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
@@ -100,10 +94,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return Json(new { success = true, moved, movedTo });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamAdmin)]
     public async Task<IActionResult> Delete(int id)
     {
-        if (!CanDeleteSprints()) return Forbid();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         var (ok, error) = await sprints.DeleteAsync(id, TeamId());
@@ -139,10 +132,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
     public async Task<IActionResult> SaveCapacity([FromBody] SprintCapacityRequest req)
     {
-        if (!CanManageSprints()) return Forbid();
         if (req == null) return BadRequest();
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();

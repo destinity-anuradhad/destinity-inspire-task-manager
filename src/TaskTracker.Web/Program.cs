@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using TaskTracker.Web.Middleware;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -112,6 +114,24 @@ builder.Services.AddScoped<IIdempotencyStore, IdempotencyStore>();
 builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
 builder.Services.AddScoped<IImportService, ImportService>();
+builder.Services.AddScoped<IAutomationService, AutomationService>();
+builder.Services.AddHostedService<AutomationBackgroundService>();
+builder.Services.AddScoped<ISlaService, SlaService>();
+
+// Attachments live OUTSIDE the web root so the static-file pipeline can never serve them; every read
+// goes through the authorized download action. Legacy wwwroot files stay readable for back-compat.
+var attachmentRoot = builder.Configuration["Attachments:StoragePath"];
+if (string.IsNullOrWhiteSpace(attachmentRoot))
+    attachmentRoot = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "attachments");
+var legacyAttachmentRoot = Path.Combine(
+    builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"),
+    "uploads", "attachments");
+builder.Services.Configure<AttachmentStorageOptions>(o =>
+{
+    o.RootPath = attachmentRoot;
+    o.LegacyWebRootPath = legacyAttachmentRoot;
+});
+builder.Services.AddScoped<IAttachmentStorage, AttachmentStorage>();
 builder.Services.AddScoped<RecurringTaskProcessor>();
 builder.Services.AddHostedService<RecurringTaskBackgroundService>();
 
@@ -159,12 +179,19 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     })
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyDefaults.Scheme, _ => { });
 
+builder.Services.AddSingleton<IAuthorizationHandler, MinimumTeamRoleHandler>();
 builder.Services.AddAuthorization(opts =>
 {
     opts.FallbackPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .Build();
+    Policies.AddAll(opts);   // named role/team policies (SystemAdmin / TeamAdmin / TeamLead)
 });
+
+// Liveness/readiness probes. "database" is tagged "ready" so readiness fails when the DB is
+// unreachable while liveness still reports the process is up.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 
 var app = builder.Build();
 
@@ -432,6 +459,10 @@ using (var scope = app.Services.CreateScope())
 } // end if (runBootstrap)
 } catch (Exception ex) { app.Logger.LogCritical(ex, "Startup DB initialisation failed — app will start but DB queries will error"); }
 
+// Trace every request end-to-end and stamp security headers on every response, before anything else runs.
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>(builder.Configuration["SecurityHeaders:ContentSecurityPolicy"]);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -440,6 +471,18 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseResponseCompression();
+
+// Attachments are never served statically — any direct hit on the legacy upload path is refused so
+// access can only happen through the authorized download action.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/uploads/attachments"))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next();
+});
 app.UseStaticFiles();
 
 app.UseRouting();
@@ -465,6 +508,10 @@ app.Use(async (ctx, next) =>
     }
     await next();
 });
+
+// Health probes must bypass the authenticated fallback policy.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous();
 
 app.MapControllerRoute(
     name: "default",

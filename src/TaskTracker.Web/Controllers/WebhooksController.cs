@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
@@ -8,16 +9,12 @@ namespace TaskTracker.Controllers;
 /// Interactive management for outbound webhook subscriptions and their delivery history. System
 /// administrators manage every subscription; team administrators manage those scoped to their team.
 /// </summary>
-[Authorize]
+[Authorize(Policy = Policies.TeamAdmin)]
 public class WebhooksController(IWebhookService webhooks, IActivityService activity) : AppControllerBase
 {
-    private bool CanManage() => IsSysAdmin() || CurrentTeamRole() == "TeamAdmin";
-
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        if (!CanManage()) return Forbid();
-
         var subscriptions = await webhooks.ListAsync(ActiveTeamId(), IsSysAdmin());
         ViewBag.Deliveries      = await webhooks.GetRecentDeliveriesAsync(ActiveTeamId(), IsSysAdmin(), 50);
         ViewBag.AvailableEvents = WebhookEvents.All;
@@ -30,8 +27,6 @@ public class WebhooksController(IWebhookService webhooks, IActivityService activ
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(string name, string url, string[]? events)
     {
-        if (!CanManage()) return Forbid();
-
         var teamId = ActiveTeamId();
         if (teamId is null)
         {
@@ -64,7 +59,6 @@ public class WebhooksController(IWebhookService webhooks, IActivityService activ
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> ToggleActive(int id, bool active)
     {
-        if (!CanManage()) return Forbid();
         var ok = await webhooks.SetActiveAsync(id, active, ActiveTeamId(), IsSysAdmin());
         TempData[ok ? "Success" : "Error"] = ok ? (active ? "Webhook enabled." : "Webhook paused.") : "Webhook not found.";
         return RedirectToAction(nameof(Index));
@@ -73,7 +67,6 @@ public class WebhooksController(IWebhookService webhooks, IActivityService activ
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(int id)
     {
-        if (!CanManage()) return Forbid();
         var ok = await webhooks.DeleteAsync(id, ActiveTeamId(), IsSysAdmin());
         if (ok)
             await activity.LogAsync(CurrentDisplayName(), "Webhook Deleted", "System", $"Subscription #{id} deleted",
@@ -85,7 +78,6 @@ public class WebhooksController(IWebhookService webhooks, IActivityService activ
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Replay(long deliveryId)
     {
-        if (!CanManage()) return Forbid();
         var ok = await webhooks.ReplayAsync(deliveryId, ActiveTeamId(), IsSysAdmin());
         TempData[ok ? "Success" : "Error"] = ok ? "Delivery re-queued." : "Delivery could not be re-queued.";
         return RedirectToAction(nameof(Index));

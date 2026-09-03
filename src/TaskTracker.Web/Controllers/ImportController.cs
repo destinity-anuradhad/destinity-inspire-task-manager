@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
@@ -9,17 +10,14 @@ namespace TaskTracker.Controllers;
 /// creates the valid rows through the governed task command. System administrators and team
 /// administrators only.
 /// </summary>
-[Authorize]
+[Authorize(Policy = Policies.TeamAdmin)]
 public class ImportController(IImportService import, IActivityService activity) : AppControllerBase
 {
     private const long MaxFileBytes = 5 * 1024 * 1024;
 
-    private bool CanManage() => IsSysAdmin() || CurrentTeamRole() == "TeamAdmin";
-
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        if (!CanManage()) return Forbid();
         ViewBag.Jobs = await import.ListJobsAsync(ActiveTeamId(), IsSysAdmin());
         ViewData["ActiveNav"] = "Import";
         return View();
@@ -28,8 +26,6 @@ public class ImportController(IImportService import, IActivityService activity) 
     [HttpPost, ValidateAntiForgeryToken, RequestSizeLimit(MaxFileBytes)]
     public async Task<IActionResult> Upload(IFormFile? file)
     {
-        if (!CanManage()) return Forbid();
-
         var teamId = ActiveTeamId();
         if (teamId is null)
         {
@@ -63,7 +59,6 @@ public class ImportController(IImportService import, IActivityService activity) 
     [HttpGet]
     public async Task<IActionResult> Preview(int id)
     {
-        if (!CanManage()) return Forbid();
         var result = await import.GetJobAsync(id, ActiveTeamId() ?? 0, IsSysAdmin());
         if (result == null) return NotFound();
         ViewData["ActiveNav"] = "Import";
@@ -73,8 +68,6 @@ public class ImportController(IImportService import, IActivityService activity) 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Apply(int id)
     {
-        if (!CanManage()) return Forbid();
-
         var result = await import.ApplyAsync(id, BuildUserCtx(), IsSysAdmin());
         if (result == null)
         {

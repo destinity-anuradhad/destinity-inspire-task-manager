@@ -44,8 +44,14 @@
 </head>
 <body class="min-h-screen flex flex-col">
 
+    <!-- Keyboard users can jump straight past the nav to the page content. -->
+    <a href="#main-content"
+       class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-white focus:text-[#094f70] focus:rounded-lg focus:shadow focus:ring-2 focus:ring-[#094f70]">
+        Skip to main content
+    </a>
+
     <!-- ── Top Navigation ─────────────────────────────────────────── -->
-    <nav class="nav-brand shadow-md sticky top-0 z-40">
+    <nav class="nav-brand shadow-md sticky top-0 z-40" aria-label="Primary">
         <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
 
@@ -251,6 +257,22 @@
                                 </svg>
                                 Import
                             </a>
+                            <a href="/Automations"
+                               class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors @(activeNav == "Automations" ? "font-semibold text-[#094f70]" : "")">
+                                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                                Automations
+                            </a>
+                            <a href="/Sla"
+                               class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors @(activeNav == "Sla" ? "font-semibold text-[#094f70]" : "")">
+                                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                SLA
+                            </a>
                         </div>
                     </div>
                     }
@@ -379,7 +401,7 @@
     </nav>
 
     <!-- ── Main Content ──────────────────────────────────────────── -->
-    <main class="flex-1 max-w-screen-2xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+    <main id="main-content" class="flex-1 max-w-screen-2xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         @RenderBody()
     </main>
 

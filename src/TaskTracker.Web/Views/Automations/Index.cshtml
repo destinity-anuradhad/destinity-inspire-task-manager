@@ -1,0 +1,256 @@
+@using TaskTracker.Services
+@model IReadOnlyList<AutomationRuleSummary>
+@{
+    ViewData["Title"] = "Automation";
+    var isSysAdmin = ViewBag.IsSysAdmin as bool? ?? false;
+    var triggers   = ViewBag.Triggers  as IReadOnlyList<string> ?? new List<string>();
+    var fields     = ViewBag.Fields    as IReadOnlyList<string> ?? new List<string>();
+    var operators  = ViewBag.Operators as IReadOnlyList<string> ?? new List<string>();
+    var actions    = ViewBag.Actions   as IReadOnlyList<string> ?? new List<string>();
+    var runs       = ViewBag.RecentRuns as IReadOnlyList<AutomationRunSummary> ?? new List<AutomationRunSummary>();
+
+    string Cond(AutomationRuleSummary r) =>
+        r.ConditionField is null or "Any" || r.ConditionOperator is null or "any"
+            ? "any task"
+            : $"{r.ConditionField} {AutomationTriggers.Label(r.ConditionOperator!)} \"{r.ConditionValue}\"";
+}
+
+<div class="max-w-5xl mx-auto mt-10 px-4 pb-16">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-xl font-bold text-gray-900">Automation</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Run actions automatically when tasks change@(isSysAdmin ? " (all teams)" : $" for {ViewBag.ActiveTeam}").
+            </p>
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div role="alert" class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div role="status" class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+    @if (TempData["Preview"] != null)
+    {
+        <div role="status" class="mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">@TempData["Preview"]</div>
+    }
+
+    <!-- Create a rule -->
+    <form method="post" action="/Automations/Create" class="bg-white border border-gray-200 rounded-2xl p-6 mb-8 space-y-5">
+        @Html.AntiForgeryToken()
+        <p class="text-sm font-semibold text-gray-800">Create a rule</p>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input type="text" name="name" required maxlength="200" placeholder="e.g. Notify owner when a bug is critical"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">When <span class="text-gray-400">(trigger)</span></label>
+                <select name="triggerType" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    @foreach (var t in triggers)
+                    {
+                        <option value="@t">@AutomationTriggers.Label(t)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Then <span class="text-gray-400">(action)</span></label>
+                <select name="actionType" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    @foreach (var a in actions)
+                    {
+                        <option value="@a">@AutomationTriggers.Label(a)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Only if <span class="text-gray-400">(condition — leave field as “(any task)” for unconditional)</span></label>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <select name="conditionField" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    @foreach (var f in fields)
+                    {
+                        <option value="@f">@AutomationTriggers.Label(f)</option>
+                    }
+                </select>
+                <select name="conditionOperator" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    @foreach (var o in operators.Where(o => o != "any"))
+                    {
+                        <option value="@o">@AutomationTriggers.Label(o)</option>
+                    }
+                </select>
+                <input type="text" name="conditionValue" maxlength="200" placeholder="value, e.g. Critical"
+                       class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
+
+        <div class="flex items-end justify-between gap-4">
+            <div class="flex-1">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Action value <span class="text-gray-400">(required for “Set priority” / “Add label”; message text for notify/comment — {goal}, {status} allowed)</span></label>
+                <input type="text" name="actionConfig" maxlength="500" placeholder="e.g. High  ·  or a message like: {goal} needs attention"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold whitespace-nowrap">Create rule</button>
+        </div>
+    </form>
+
+    <!-- Existing rules -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-8">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <p class="text-sm font-semibold text-gray-800">Rules</p>
+        </div>
+        @if (Model.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No automation rules yet.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Rule</th>
+                            <th class="px-4 py-3 font-medium">When</th>
+                            <th class="px-4 py-3 font-medium">Condition</th>
+                            <th class="px-4 py-3 font-medium">Then</th>
+                            <th class="px-4 py-3 font-medium">Runs</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                            <th class="px-4 py-3 font-medium"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in Model)
+                        {
+                            <tr class="border-b border-gray-50 @(r.IsEnabled ? "" : "opacity-60")">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-gray-900">@r.Name</div>
+                                    <div class="text-xs text-gray-400">by @(r.CreatedBy ?? "—") · @r.CreatedAt.ToString("yyyy-MM-dd")</div>
+                                </td>
+                                <td class="px-4 py-3 text-gray-600">@AutomationTriggers.Label(r.TriggerType)</td>
+                                <td class="px-4 py-3 text-gray-600">@Cond(r)</td>
+                                <td class="px-4 py-3 text-gray-600">
+                                    @AutomationTriggers.Label(r.ActionType)
+                                    @if (!string.IsNullOrEmpty(r.ActionConfig))
+                                    {
+                                        <span class="text-gray-400">· @r.ActionConfig</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-xs text-gray-500">
+                                    @r.RunCount
+                                    @if (r.LastRunAt != null)
+                                    {
+                                        <div class="text-gray-400">@r.LastRunAt.Value.ToString("yyyy-MM-dd HH:mm")</div>
+                                    }
+                                </td>
+                                <td class="px-4 py-3">
+                                    @if (r.IsEnabled)
+                                    {
+                                        <span class="inline-block bg-green-50 text-green-600 rounded-full px-2 py-0.5 text-xs font-medium">Enabled</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-block bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 text-xs font-medium">Disabled</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <form method="post" action="/Automations/Toggle" class="inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.Id" />
+                                        <input type="hidden" name="enabled" value="@((!r.IsEnabled).ToString().ToLower())" />
+                                        <button type="submit" class="text-xs text-blue-600 hover:underline font-medium mr-3">@(r.IsEnabled ? "Disable" : "Enable")</button>
+                                    </form>
+                                    <form method="post" action="/Automations/Delete" class="inline"
+                                          onsubmit="return confirm('Delete this automation rule?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.Id" />
+                                        <button type="submit" class="text-xs text-red-600 hover:underline font-medium">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Test a rule (dry run) -->
+    @if (Model.Count > 0)
+    {
+        <form method="post" action="/Automations/Preview" class="bg-white border border-gray-200 rounded-2xl p-6 mb-8">
+            @Html.AntiForgeryToken()
+            <p class="text-sm font-semibold text-gray-800 mb-1">Test a rule</p>
+            <p class="text-xs text-gray-500 mb-4">See whether a rule would fire against a real task, and what it would do — nothing is changed.</p>
+            <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Rule</label>
+                    <select name="ruleId" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        @foreach (var r in Model)
+                        {
+                            <option value="@r.Id">@r.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="w-40">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Task #</label>
+                    <input type="number" name="taskId" min="1" required placeholder="e.g. 1042"
+                           class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <button type="submit" class="px-5 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-semibold whitespace-nowrap">Preview</button>
+            </div>
+        </form>
+    }
+
+    <!-- Recent activity -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <p class="text-sm font-semibold text-gray-800">Recent activity</p>
+        </div>
+        @if (runs.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No automation has run yet.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">When</th>
+                            <th class="px-4 py-3 font-medium">Rule</th>
+                            <th class="px-4 py-3 font-medium">Task</th>
+                            <th class="px-4 py-3 font-medium">Event</th>
+                            <th class="px-4 py-3 font-medium">Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in runs)
+                        {
+                            <tr class="border-b border-gray-50">
+                                <td class="px-6 py-3 text-xs text-gray-500">@run.OccurredAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="px-4 py-3 text-gray-700">@run.RuleName</td>
+                                <td class="px-4 py-3 text-gray-500">#@run.TaskId</td>
+                                <td class="px-4 py-3 text-gray-500">@AutomationTriggers.Label(run.EventType)</td>
+                                <td class="px-4 py-3">
+                                    <span class="@(run.Status == "Failed" ? "text-red-600" : "text-gray-600")">
+                                        @(run.Status == "Failed" ? "Failed" : "Executed")
+                                    </span>
+                                    @if (!string.IsNullOrEmpty(run.Detail))
+                                    {
+                                        <span class="text-gray-400">· @run.Detail</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

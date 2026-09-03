@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = Policies.SystemAdmin)]
 public class EmailOutboxController(IEmailQueue emailQueue) : AppControllerBase
 {
     [HttpGet]

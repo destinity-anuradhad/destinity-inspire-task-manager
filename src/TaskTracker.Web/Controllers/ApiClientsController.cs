@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
@@ -9,16 +10,12 @@ namespace TaskTracker.Controllers;
 /// key; team administrators manage the keys scoped to their active team. Keys act as the creating
 /// user, scoped to the active team, limited to the granted scopes.
 /// </summary>
-[Authorize]
+[Authorize(Policy = Policies.TeamAdmin)]
 public class ApiClientsController(IApiClientService apiClients, IActivityService activity) : AppControllerBase
 {
-    private bool CanManage() => IsSysAdmin() || CurrentTeamRole() == "TeamAdmin";
-
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        if (!CanManage()) return Forbid();
-
         var clients = await apiClients.ListAsync(ActiveTeamId(), IsSysAdmin());
         ViewBag.IsSysAdmin    = IsSysAdmin();
         ViewBag.ActiveTeam    = ActiveTeamName();
@@ -30,8 +27,6 @@ public class ApiClientsController(IApiClientService apiClients, IActivityService
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(string name, string[]? scopes, int expiresInDays)
     {
-        if (!CanManage()) return Forbid();
-
         if (string.IsNullOrWhiteSpace(name))
         {
             TempData["Error"] = "A name for the key is required.";
@@ -72,8 +67,6 @@ public class ApiClientsController(IApiClientService apiClients, IActivityService
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Revoke(int id)
     {
-        if (!CanManage()) return Forbid();
-
         var revoked = await apiClients.RevokeAsync(id, ActiveTeamId(), IsSysAdmin());
         if (!revoked)
         {

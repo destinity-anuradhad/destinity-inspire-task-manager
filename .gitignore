@@ -4,6 +4,8 @@ src/TaskTracker.Web/appsettings.Development.json
 # Local agent metadata and runtime-uploaded user content
 .claude/
 src/TaskTracker.Web/wwwroot/uploads/
+# Attachments now live outside the web root (default App_Data/attachments)
+src/TaskTracker.Web/App_Data/
 
 # .NET build output
 bin/
@@ -50,7 +52,7 @@ public/
 index.html
 vite.config.js
 eslint.config.js
-README.md
+
 
 # Web project npm (keep package.json tracked; ignore generated/installed files)
 src/TaskTracker.Web/node_modules/
@@ -60,3 +62,6 @@ src/TaskTracker.Web/wwwroot/css/app.css
 # Scratch / dead weight directories (data research, playwright test rig)
 data/
 test/
+tools/*
+!tools/phase0/
+!tools/phase0/*.sql

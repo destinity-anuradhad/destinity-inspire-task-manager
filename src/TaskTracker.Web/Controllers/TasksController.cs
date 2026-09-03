@@ -8,7 +8,7 @@ using TaskTracker.Services;
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class TasksController(ITaskService tasks, ITeamService teams, IProjectService projects, ITaskTemplateService templates, IConfiguration config) : AppControllerBase
+public class TasksController(ITaskService tasks, ITeamService teams, IProjectService projects, ITaskTemplateService templates, IAttachmentStorage attachmentStorage, IConfiguration config) : AppControllerBase
 {
     private bool LegacyFullTaskEditEnabled() =>
         config.GetValue<bool>("Features:AllowLegacyFullTaskEdit");
@@ -478,27 +478,43 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
         if (file.Length > 10 * 1024 * 1024)
             return Json(new { success = false, error = "File exceeds 10 MB limit." });
 
-        var allowed = new[] { ".pdf",".doc",".docx",".xls",".xlsx",".png",".jpg",".jpeg",".gif",".webp",".zip",".txt",".csv",".md" };
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!allowed.Contains(ext))
+        if (!FileSignatureValidator.IsAllowedExtension(ext))
             return Json(new { success = false, error = "File type not allowed." });
 
-        var dir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "attachments", taskId.ToString());
-        Directory.CreateDirectory(dir);
+        // Verify the file's real content matches its extension — a renamed executable/script is rejected
+        // here even though its extension is on the allow-list.
+        await using var upload = file.OpenReadStream();
+        var header = new byte[FileSignatureValidator.HeaderLength];
+        var read = await ReadFullyAsync(upload, header);
+        if (!FileSignatureValidator.ContentMatches(ext, header.AsSpan(0, read)))
+            return Json(new { success = false, error = "File content does not match its type." });
 
         var storedName = Guid.NewGuid().ToString("N") + ext;
-        var path       = Path.Combine(dir, storedName);
-        await using (var stream = new FileStream(path, FileMode.Create))
-            await file.CopyToAsync(stream);
+        await using (var toStore = file.OpenReadStream())   // fresh stream from the start of the upload
+            await attachmentStorage.SaveAsync(taskId, storedName, toStore);
 
         var displayName = User.FindFirst("DisplayName")?.Value ?? "";
-        var (ok, error) = await tasks.SaveAttachmentRecordAsync(taskId, file.FileName, storedName, file.Length, file.ContentType, displayName);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        var (ok, error) = await tasks.SaveAttachmentRecordAsync(taskId, file.FileName, storedName, file.Length, contentType, displayName);
         if (!ok)
         {
-            System.IO.File.Delete(path);
+            attachmentStorage.Delete(taskId, storedName);
             return Json(new { success = false, error });
         }
         return Json(new { success = true });
+    }
+
+    private static async Task<int> ReadFullyAsync(Stream stream, byte[] buffer)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var n = await stream.ReadAsync(buffer.AsMemory(total));
+            if (n == 0) break;
+            total += n;
+        }
+        return total;
     }
 
     [HttpGet]
@@ -506,22 +522,22 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
     {
         var att = await tasks.GetDownloadAsync(id, ActiveTeamId());
         if (att == null) return NotFound();
-        if (!System.IO.File.Exists(att.FilePath)) return NotFound();
-        return PhysicalFile(att.FilePath, att.ContentType, att.FileName);
+
+        var path = attachmentStorage.ResolveExistingPath(att.TaskId, att.StoredName);
+        if (path == null) return NotFound();
+        // Named file → Content-Disposition: attachment, so nothing renders inline in the browser.
+        return PhysicalFile(path, att.ContentType, att.FileName);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteAttachment(int id)
     {
-        var att = await tasks.GetDownloadAsync(id, ActiveTeamId());
-        if (att == null) return Json(new { success = false, error = "Not found." });
-
         var displayName = User.FindFirst("DisplayName")?.Value ?? "";
-        var (ok, error) = await tasks.DeleteAttachmentAsync(id, displayName, IsAdmin());
-        if (!ok) return Json(new { success = false, error });
+        var result = await tasks.DeleteAttachmentAsync(id, displayName, IsAdmin());
+        if (!result.Success) return Json(new { success = false, error = result.Error });
 
-        if (System.IO.File.Exists(att.FilePath))
-            System.IO.File.Delete(att.FilePath);
+        if (!string.IsNullOrEmpty(result.StoredName))
+            attachmentStorage.Delete(result.TaskId, result.StoredName);
 
         return Json(new { success = true });
     }
