@@ -155,19 +155,8 @@ public partial class TaskService
                     await PublishTaskWebhookAsync(existing, WebhookEvents.TaskStatusChanged, ctx);
                 }
 
-                if (existing.SprintId.HasValue && existing.SprintId != oldSprintId
-                    && !string.IsNullOrWhiteSpace(existing.Owner))
-                {
-                    var used = await _db.Tasks
-                        .Where(t => t.SprintId == existing.SprintId && !t.IsDeleted && t.Owner == existing.Owner
-                            && t.EstimateUnit == "Hours")
-                        .SumAsync(t => t.Weight ?? 0);
-                    var cap = await _db.SprintCapacities
-                        .Where(c => c.SprintId == existing.SprintId.Value && c.OwnerName == existing.Owner)
-                        .Select(c => (decimal?)c.CapacityHours).FirstOrDefaultAsync();
-                    if (cap.HasValue && cap.Value > 0 && used > cap.Value)
-                        capacityWarning = $"{existing.Owner} is over capacity ({used:0.##}/{cap.Value:0.##}h)";
-                }
+                if (existing.SprintId.HasValue && existing.SprintId != oldSprintId)
+                    capacityWarning = await SprintCapacityWarningAsync(existing.SprintId.Value, existing.Id);
 
                 task = existing;
             }
@@ -453,20 +442,34 @@ public partial class TaskService
         var newName = sprint?.Name ?? (sprintId.HasValue ? $"Sprint {sprintId}" : "Backlog");
         await LogAsync(ctx, "Sprint Changed", $"'{oldName}' → '{newName}'", taskId, task.Goal, task.Project);
 
-        string? capacityWarning = null;
-        if (sprintId.HasValue && !string.IsNullOrWhiteSpace(task.Owner))
+        string? capacityWarning = sprintId.HasValue
+            ? await SprintCapacityWarningAsync(sprintId.Value, task.Id)
+            : null;
+        return new TaskSprintResult { Success = true, SprintId = task.SprintId, CapacityWarning = capacityWarning };
+    }
+
+    // Over-capacity warning (#7 stage 2): attributes hour-allocation to each of the task's owners via
+    // the TaskOwners junction and compares against that owner's SprintCapacity keyed by user id — not
+    // by matching the whole Owner display string. Returns the first owner found over capacity, or null.
+    private async Task<string?> SprintCapacityWarningAsync(int sprintId, int taskId)
+    {
+        var ownerUserIds = await _db.TaskOwners.Where(o => o.TaskId == taskId).Select(o => o.UserId).ToListAsync();
+        foreach (var uid in ownerUserIds)
         {
             var used = await _db.Tasks
-                .Where(t => t.SprintId == sprintId && !t.IsDeleted && t.Owner == task.Owner
-                    && t.EstimateUnit == "Hours")
+                .Where(t => t.SprintId == sprintId && !t.IsDeleted && t.EstimateUnit == "Hours"
+                    && _db.TaskOwners.Any(o => o.TaskId == t.Id && o.UserId == uid))
                 .SumAsync(t => t.Weight ?? 0);
             var cap = await _db.SprintCapacities
-                .Where(c => c.SprintId == sprintId.Value && c.OwnerName == task.Owner)
+                .Where(c => c.SprintId == sprintId && c.UserId == uid)
                 .Select(c => (decimal?)c.CapacityHours).FirstOrDefaultAsync();
             if (cap.HasValue && cap.Value > 0 && used > cap.Value)
-                capacityWarning = $"{task.Owner} is over capacity ({used:0.##}/{cap.Value:0.##}h)";
+            {
+                var name = await _db.AppUsers.Where(u => u.Id == uid).Select(u => u.DisplayName).FirstOrDefaultAsync();
+                return $"{name} is over capacity ({used:0.##}/{cap.Value:0.##}h)";
+            }
         }
-        return new TaskSprintResult { Success = true, SprintId = task.SprintId, CapacityWarning = capacityWarning };
+        return null;
     }
 
     public async Task<TimeEntryResult> LogTimeAsync(
