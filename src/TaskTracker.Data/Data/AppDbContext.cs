@@ -48,6 +48,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ImportJob> ImportJobs { get; set; }
     public DbSet<ImportRow> ImportRows { get; set; }
     public DbSet<ApiIdempotencyRecord> ApiIdempotencyRecords { get; set; }
+    public DbSet<AutomationRule> AutomationRules { get; set; }
+    public DbSet<AutomationRuleRun> AutomationRuleRuns { get; set; }
+    public DbSet<SlaPolicy> SlaPolicies { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -208,6 +211,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ImportRow>().HasIndex(r => r.ExternalKey);
 
         modelBuilder.Entity<ApiIdempotencyRecord>().HasIndex(r => new { r.ApiClientId, r.IdempotencyKey }).IsUnique();
+
+        // Automation rules are looked up per (team, trigger) on every task write, so index that path.
+        modelBuilder.Entity<AutomationRule>().HasIndex(r => new { r.TeamId, r.TriggerType, r.IsEnabled });
+        modelBuilder.Entity<AutomationRuleRun>().HasIndex(r => r.RuleId);
+        modelBuilder.Entity<AutomationRuleRun>().HasIndex(r => r.TaskId);
+
+        modelBuilder.Entity<SlaPolicy>().HasIndex(p => new { p.TeamId, p.IsEnabled });
 
         // Teams
         modelBuilder.Entity<Team>().HasIndex(t => t.Name);
