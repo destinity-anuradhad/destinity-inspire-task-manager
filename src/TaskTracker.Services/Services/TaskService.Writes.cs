@@ -43,7 +43,7 @@ public partial class TaskService
                 if (task.ItemType is "Epic" or "Feature") task.SprintId = null;
                 var parentError = await ValidateParentAssignmentAsync(0, task.ParentId, task.ItemType, task.TeamId);
                 if (parentError != null) return new TaskSaveResult { Error = parentError };
-                await ResolveTaskOwnerUserIdsAsync(task.Owner);
+                await ResolveTaskOwnersAsync(task.Owner);   // fail early if an owner name is invalid
                 _db.Tasks.Add(task);
                 await _db.SaveChangesAsync();
                 RecordSprintMembershipEvent(task, null, task.SprintId, "Assigned", ctx.DisplayName);

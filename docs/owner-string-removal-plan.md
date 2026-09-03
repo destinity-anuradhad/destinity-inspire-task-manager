@@ -51,9 +51,16 @@ name-keyed aggregations/config, which reading the code confirms are **Stage 2**,
   They move once the string is derived from the junction and reconciliation is zero-diff.
 
 **Stage 2 — derive the display string, stop hand-writing it.**
-- Compute the `Owner` display string from `TaskOwners` (join to `AppUser.DisplayName`) at read time
-  (or via a maintained projection), so writes no longer set it directly.
-- Keep the column temporarily, now write-derived, to avoid breaking any missed reader.
+- [x] **Write-side derivation done (2026-09-03).** `SyncTaskOwnersAsync` now sets `Owner` from the
+  resolved owners (canonical display names, caller order, de-duplicated) on *every* write path
+  (`SaveAsync`, `QuickSetOwner`, `ClaimTask`, `BulkChangeOwner`) — the junction is authoritative and the
+  string is a lock-step cache, so the two can no longer drift (**reconciliation-clean by construction**
+  for all new writes; only pre-change rows could be dirty). Proven by `OwnerStringDerivationStage2Tests`.
+  *(Note: case normalization additionally happens on SQL Server's case-insensitive collation; the
+  InMemory test provider is case-sensitive, so tests assert spacing/dedup/order, which hold on both.)*
+- [ ] Migrate the read-side aggregations that need **identity** (capacity/over-allocation) to the
+  junction; keep pure display readers on the (now-canonical) string until the column is dropped.
+- Column stays, now fully write-derived, so no reader breaks.
 
 **Stage 3 — drop the column.**
 - Once no code reads `TaskItem.Owner` (verified by removing the property and compiling green + full

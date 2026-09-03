@@ -57,7 +57,10 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
 
     private static bool CanAssign(UserCtx ctx) => ctx.IsTeamLead;  // SysAdmin, TeamAdmin, TeamLead only
 
-    private async Task<List<int>> ResolveTaskOwnerUserIdsAsync(string? ownerNames)
+    // Resolves owner display names to users, preserving input order and requiring each name to match
+    // exactly one active application user. The single point where an owner string becomes authoritative
+    // ids — everything downstream uses these, not the raw string.
+    private async Task<List<(int Id, string DisplayName)>> ResolveTaskOwnersAsync(string? ownerNames)
     {
         var requestedNames = SplitOwners(ownerNames)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -70,23 +73,24 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
                 .Select(u => new { u.Id, u.DisplayName })
                 .ToListAsync();
 
-        foreach (var requestedName in requestedNames)
+        var resolved = new List<(int, string)>();
+        foreach (var requestedName in requestedNames)   // preserve the caller's owner order
         {
-            var matchCount = matches.Count(u => string.Equals(
-                u.DisplayName, requestedName, StringComparison.OrdinalIgnoreCase));
-            if (matchCount != 1)
-            {
+            var found = matches
+                .Where(u => string.Equals(u.DisplayName, requestedName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (found.Count != 1)
                 throw new InvalidOperationException(
                     $"Owner '{requestedName}' must match exactly one active application user.");
-            }
+            resolved.Add((found[0].Id, found[0].DisplayName));
         }
-
-        return matches.Select(u => u.Id).Distinct().ToList();
+        return resolved;
     }
 
     private async Task SyncTaskOwnersAsync(int taskId, string? ownerNames)
     {
-        var requestedUserIds = await ResolveTaskOwnerUserIdsAsync(ownerNames);
+        var resolved = await ResolveTaskOwnersAsync(ownerNames);
+        var requestedUserIds = resolved.Select(r => r.Id).ToList();
 
         var existing = await _db.TaskOwners
             .Where(o => o.TaskId == taskId)
@@ -97,6 +101,14 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
         _db.TaskOwners.AddRange(requestedUserIds
             .Where(userId => !existingUserIds.Contains(userId))
             .Select(userId => new TaskOwner { TaskId = taskId, UserId = userId }));
+
+        // #7 stage 2: the Owner display string is now *derived* from the resolved owners — canonical
+        // display names, in the caller's order, de-duplicated. The junction is authoritative and the
+        // string is a cache kept in lock-step, so the two can never drift (reconciliation-clean by
+        // construction).
+        var task = await _db.Tasks.FindAsync(taskId);
+        if (task != null)
+            task.Owner = resolved.Count == 0 ? null : string.Join(", ", resolved.Select(r => r.DisplayName));
     }
 
     private IQueryable<TaskItem> TeamTasks(int? teamId)
