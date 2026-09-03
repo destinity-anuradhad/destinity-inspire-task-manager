@@ -81,6 +81,24 @@ internal sealed class NullWebhookService : IWebhookService
     public Task MarkFailedAsync(long id, int? statusCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
 }
 
+// ── Automation stub ───────────────────────────────────────────────────────────
+
+internal sealed class NullAutomationService : IAutomationService
+{
+    public Task<IReadOnlyList<AutomationRuleSummary>> ListAsync(int? teamId, bool includeGlobal, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AutomationRuleSummary>>([]);
+    public Task<TaskTracker.Models.AutomationRule> CreateAsync(AutomationRuleInput input, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<bool> SetEnabledAsync(int id, bool enabled, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<bool> DeleteAsync(int id, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<IReadOnlyList<AutomationRunSummary>> GetRecentRunsAsync(int? teamId, bool includeGlobal, int maxCount = 100, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AutomationRunSummary>>([]);
+    public Task RunForEventAsync(TaskTracker.Models.TaskItem task, string eventType, UserCtx ctx, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<int> RunScheduledAsync(CancellationToken ct = default) => Task.FromResult(0);
+    public Task<AutomationPreviewResult> PreviewAsync(int ruleId, int taskId, int? teamId, bool isSysAdmin, CancellationToken ct = default)
+        => Task.FromResult(new AutomationPreviewResult(false, false, false, null, null, ""));
+}
+
 // ── Factory helpers ───────────────────────────────────────────────────────────
 
 internal static class ServiceFactory
@@ -90,7 +108,19 @@ internal static class ServiceFactory
         var config = new ConfigurationBuilder().Build();
         var cache  = new MemoryCache(new MemoryCacheOptions());
         return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
-            NullLogger<TaskService>.Instance, cache, new NullWebhookService());
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), new NullAutomationService());
+    }
+
+    public static AutomationService CreateAutomationService(TaskTracker.Data.AppDbContext db)
+        => new AutomationService(db, NullLogger<AutomationService>.Instance);
+
+    // Wires a real automation engine into the task write path so end-to-end firing can be asserted.
+    public static TaskService CreateTaskService(TaskTracker.Data.AppDbContext db, IAutomationService automations)
+    {
+        var config = new ConfigurationBuilder().Build();
+        var cache  = new MemoryCache(new MemoryCacheOptions());
+        return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), automations);
     }
 
     public static ActivityService CreateActivityService(TaskTracker.Data.AppDbContext db)
