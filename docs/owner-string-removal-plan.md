@@ -58,9 +58,17 @@ name-keyed aggregations/config, which reading the code confirms are **Stage 2**,
   for all new writes; only pre-change rows could be dirty). Proven by `OwnerStringDerivationStage2Tests`.
   *(Note: case normalization additionally happens on SQL Server's case-insensitive collation; the
   InMemory test provider is case-sensitive, so tests assert spacing/dedup/order, which hold on both.)*
-- [ ] Migrate the read-side aggregations that need **identity** (capacity/over-allocation) to the
-  junction; keep pure display readers on the (now-canonical) string until the column is dropped.
-- Column stays, now fully write-derived, so no reader breaks.
+- [x] **All identity + in-memory aggregation readers migrated (2026-09-03).** Over-capacity warning
+  (`TaskService.Writes`), both sprint capacity views (`SprintService.GetCapacityAsync`/`GetIndexDataAsync`),
+  team owner-stats (`DashboardService`), and owner charts (`ChartService`) now attribute via the
+  `TaskOwners` junction through the shared `TaskOwnerLookup.OwnerNamesByTaskAsync`. Covered by
+  `CapacityWarningStage2Tests`, `CapacityViewStage2Tests`, `DashboardTeamStatsStage2Tests`.
+- [ ] **SQL query-layer (blocks the column drop) — needs production-scale perf validation.** Owner
+  search (`Owner LIKE`), **sort-by-owner** (`ORDER BY Owner`), the paginated list projection, CSV
+  export, and the timeline owner-facet still read the (now-canonical) string in SQL. Rewriting these as
+  junction subqueries changes query plans on every task-list load, so it must be benchmarked at
+  production volume before cutover — not on the 58-row dev DB.
+- Column stays, now fully write-derived, so no reader breaks in the meantime.
 
 **Stage 3 — drop the column.**
 - Once no code reads `TaskItem.Owner` (verified by removing the property and compiling green + full
