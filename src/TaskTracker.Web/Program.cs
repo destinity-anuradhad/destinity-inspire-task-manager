@@ -118,6 +118,7 @@ builder.Services.AddScoped<IAutomationService, AutomationService>();
 builder.Services.AddHostedService<AutomationBackgroundService>();
 builder.Services.AddScoped<ISlaService, SlaService>();
 builder.Services.AddScoped<OwnerReconciliationService>();   // #7 read-only reconciliation gate
+builder.Services.AddScoped<IAuditExportService, AuditExportService>();
 
 // Attachments live OUTSIDE the web root so the static-file pipeline can never serve them; every read
 // goes through the authorized download action. Legacy wwwroot files stay readable for back-compat.

@@ -112,7 +112,40 @@
             }
             <p>@totalCount @(hasFilter ? "matching" : "total") entries@teamLabel</p>
         </div>
+        <div class="page-hd-right flex items-center gap-2">
+            @{
+                var exportQs = new System.Text.StringBuilder("?");
+                if (fCategory != "") exportQs.Append($"category={Uri.EscapeDataString(fCategory)}&");
+                if (fUser     != "") exportQs.Append($"user={Uri.EscapeDataString(fUser)}&");
+                if (fDateFrom != "") exportQs.Append($"dateFrom={Uri.EscapeDataString(fDateFrom)}&");
+                if (fDateTo   != "") exportQs.Append($"dateTo={Uri.EscapeDataString(fDateTo)}&");
+                if (fTeam.HasValue)  exportQs.Append($"team={fTeam.Value}&");
+            }
+            <a href="/Activity/Export@(exportQs.ToString().TrimEnd('&','?'))"
+               class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">
+                Export CSV
+            </a>
+            <form method="post" action="/Activity/Purge" class="flex items-center gap-2"
+                  onsubmit="return confirm('Permanently delete audit entries older than the retention window? This cannot be undone.');">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="confirm" value="true" />
+                <label class="text-xs text-gray-500">Retain</label>
+                <input type="number" name="retainDays" min="1" value="365"
+                       class="w-20 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span class="text-xs text-gray-500">days</span>
+                <button type="submit" class="px-3 py-2 text-sm text-red-600 hover:underline font-medium">Purge older</button>
+            </form>
+        </div>
     </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div role="alert" class="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div role="status" class="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
 
     @* Filter bar *@
     <form method="get" class="bg-white border border-gray-200 rounded-xl p-4">
