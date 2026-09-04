@@ -228,29 +228,12 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
         return TaskStatusRules.IsDone(task.ItemType, task.Status);
     }
 
-    private static readonly HashSet<string> SupportedLinkTypes = new(StringComparer.OrdinalIgnoreCase) {
-        "Related", "Blocks", "Blocked By", "Duplicate", "Predecessor", "Successor"
-    };
+    // Link-type semantics live in the shared TaskLinkRules (single source of truth); these thin
+    // members keep the existing call sites unchanged.
+    private static readonly IReadOnlySet<string> SupportedLinkTypes = TaskLinkRules.SupportedLinkTypes;
 
     private static bool TryGetBlockingDirection(TaskLink link, out int blockerId, out int blockedId)
-    {
-        switch (link.LinkType)
-        {
-            case "Blocks":
-            case "Predecessor":
-                blockerId = link.FromTaskId;
-                blockedId = link.ToTaskId;
-                return true;
-            case "Blocked By":
-            case "Successor":
-                blockerId = link.ToTaskId;
-                blockedId = link.FromTaskId;
-                return true;
-            default:
-                blockerId = blockedId = 0;
-                return false;
-        }
-    }
+        => TaskLinkRules.TryGetBlockingDirection(link, out blockerId, out blockedId);
 
     private async Task<bool> HasOpenBlockingDependenciesAsync(TaskItem task)
     {
