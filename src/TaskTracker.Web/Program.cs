@@ -465,7 +465,9 @@ using (var scope = app.Services.CreateScope())
 
 // Trace every request end-to-end and stamp security headers on every response, before anything else runs.
 app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseMiddleware<SecurityHeadersMiddleware>(builder.Configuration["SecurityHeaders:ContentSecurityPolicy"]);
+// Pass a non-null string: UseMiddleware can't resolve the constructor from a null arg, and the key is
+// unset by default. Empty is treated the same as "use the default CSP" inside the middleware.
+app.UseMiddleware<SecurityHeadersMiddleware>(builder.Configuration["SecurityHeaders:ContentSecurityPolicy"] ?? "");
 
 if (!app.Environment.IsDevelopment())
 {
