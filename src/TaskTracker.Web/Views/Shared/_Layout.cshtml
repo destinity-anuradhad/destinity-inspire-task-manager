@@ -292,6 +292,17 @@
                         </svg>
                         Charts
                     </a>
+                    @if (isTeamLead)
+                    {
+                    <a href="/Forecast"
+                       class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all @(activeNav == "Forecast" ? "nav-link-active" : "nav-link-idle")">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                        </svg>
+                        Forecast
+                    </a>
+                    }
                     @if (User.IsInRole("Admin"))
                     {
                     <a href="/Activity"
