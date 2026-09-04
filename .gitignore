@@ -65,3 +65,5 @@ test/
 tools/*
 !tools/phase0/
 !tools/phase0/*.sql
+!tools/loadtest/
+!tools/loadtest/*
