@@ -266,19 +266,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ClientItem>()
             .Property(c => c.Name).HasMaxLength(200);
 
-        // Tasks → Modules / Clients FKs (SetNull on delete)
-        modelBuilder.Entity<TaskItem>()
-            .HasOne<ModuleItem>()
-            .WithMany()
-            .HasForeignKey(t => t.ModuleId)
-            .IsRequired(false)
-            .OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<TaskItem>()
-            .HasOne<ClientItem>()
-            .WithMany()
-            .HasForeignKey(t => t.ClientId)
-            .IsRequired(false)
-            .OnDelete(DeleteBehavior.SetNull);
+        // Tasks.ModuleId / Tasks.ClientId reference the EXTERNAL HIM database (its Projects /
+        // Clients tables), NOT the local Modules / Clients tables — so there is deliberately no
+        // local foreign key. A FK here rejected every HIM-sourced module/client on save
+        // (FK_Tasks_Modules_ModuleId / FK_Tasks_Clients_ClientId). The display names are cached
+        // in Project / Property; we keep plain indexes on the IDs for filtering.
+        modelBuilder.Entity<TaskItem>().HasIndex(t => t.ModuleId);
+        modelBuilder.Entity<TaskItem>().HasIndex(t => t.ClientId);
 
         // SprintCapacity.UserId FK → AppUsers
         modelBuilder.Entity<SprintCapacity>()

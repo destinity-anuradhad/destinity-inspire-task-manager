@@ -55,7 +55,7 @@
 <div class="space-y-6">
 
     <!-- Greeting header -->
-    <div class="page-hd" style="display:flex;align-items:center;justify-content:space-between">
+    <div class="page-hd page-hd-show" style="display:flex;align-items:center;justify-content:space-between">
         <div class="page-hd-left">
             <h1>@greeting, @firstName!</h1>
             <p>@dateStr · Here's your personal task overview</p>
@@ -63,8 +63,8 @@
         @if (User.IsInRole("Admin"))
         {
         <a href="/Dashboard/Team"
-           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
-           style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3)">
+           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0 hover:opacity-90"
+           style="background:#094f70;color:#fff">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>

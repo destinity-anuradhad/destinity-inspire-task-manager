@@ -2239,16 +2239,6 @@ namespace TaskTracker.Migrations
 
             modelBuilder.Entity("TaskTracker.Models.TaskItem", b =>
                 {
-                    b.HasOne("TaskTracker.Models.ClientItem", null)
-                        .WithMany()
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("TaskTracker.Models.ModuleItem", null)
-                        .WithMany()
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("TaskTracker.Models.TaskItem", null)
                         .WithMany()
                         .HasForeignKey("ParentId")

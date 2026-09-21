@@ -24,7 +24,8 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
 
     public async Task<IActionResult> Index(
         string search = "", string project = "", string property = "",
-        string? owner = null, string status = "", string priority = "",
+        string[]? owner = null, string[]? status = null, string[]? priority = null,
+        string? ownerFilterSet = null, string sprint = "",
         string dateFrom = "", string dateTo = "",
         int page = 1, int pageSize = 20,
         string sort = "", string sortDir = "desc",
@@ -32,10 +33,25 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
         string? tlfrom = null, string? tlto = null, string? tlmode = null)
     {
         var now = DateTime.Now;
+        // Multi-select filters arrive as repeated params (form) or a comma-joined value (links); both
+        // reduce to a comma-separated string the query splits. Empty = all.
+        static string Csv(string[]? vals) =>
+            vals is { Length: > 0 } ? string.Join(",", vals.Where(v => !string.IsNullOrWhiteSpace(v))) : "";
+
+        // Assignee defaults to the logged-in user ("my tasks") on a fresh view. "__all__" (from links)
+        // or an explicit clear (ownerFilterSet marker with nothing chosen) means everyone; otherwise the
+        // chosen assignees. Applies across every view type via Model.Owner.
+        string effectiveOwner;
+        if (owner != null && owner.Contains("__all__")) effectiveOwner = "";
+        else if (owner is { Length: > 0 })              effectiveOwner = Csv(owner);
+        else if (ownerFilterSet == "1")                 effectiveOwner = "";   // form submitted, none picked
+        else                                            effectiveOwner = CurrentDisplayName();
+
         var filters = new TaskListFilters
         {
             Search   = search,  Project  = project,  Property = property,
-            Owner    = owner,   Status   = status,   Priority = priority,
+            Owner    = effectiveOwner, Status = Csv(status), Priority = Csv(priority),
+            Sprint   = sprint,
             DateFrom = dateFrom, DateTo  = dateTo,
             Page     = page,    PageSize = pageSize,
             Sort     = sort,    SortDir  = sortDir,  View = view,
@@ -81,6 +97,15 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
             return Json(new { success = false, conflict = r.Conflict, error = r.Error });
         }
         return Json(new { success = true, capacityWarning = r.CapacityWarning, taskId = r.TaskId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Split(int id, decimal hoursWorked, decimal remaining, string moveTo = "backlog")
+    {
+        if (!LegacyFullTaskEditEnabled())
+            return MutationTemporarilyDisabled("Full task editing");
+        var (ok, error, sliceId) = await tasks.SplitTaskAsync(id, hoursWorked, remaining, moveTo, BuildUserCtx());
+        return ok ? Json(new { success = true, sliceId }) : Json(new { success = false, error });
     }
 
     [HttpGet]

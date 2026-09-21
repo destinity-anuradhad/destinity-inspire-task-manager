@@ -14,6 +14,8 @@ public class TaskListViewModel
     public string Owner     { get; set; } = "";
     public string Status    { get; set; } = "";
     public string Priority  { get; set; } = "";
+    public string Sprint    { get; set; } = "";   // "" = all, sprint id, or "__none__" = backlog
+
     public string DateFrom  { get; set; } = "";
     public string DateTo    { get; set; } = "";
 
@@ -36,6 +38,11 @@ public class TaskListViewModel
 
     // Status counts (computed before status filter)
     public Dictionary<string, int> StatusCounts { get; set; } = [];
+
+    // Sum of estimate (Weight) and actual hours across the ENTIRE filtered set (all pages),
+    // so the table header total reflects the current filters, not just the visible page.
+    public decimal TotalEstimateHours { get; set; }
+    public decimal TotalActualHours   { get; set; }
 
     // Comment counts for displayed tasks (table view)
     public Dictionary<int, int> CommentCounts { get; set; } = [];

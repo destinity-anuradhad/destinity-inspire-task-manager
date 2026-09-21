@@ -12,6 +12,9 @@ public static class TaskLinkRules
     public static readonly IReadOnlySet<string> SupportedLinkTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "Related", "Blocks", "Blocked By", "Duplicate", "Predecessor", "Successor",
+        // "Split" ties a completed slice left in one sprint to the continuation carried into the next.
+        // Non-blocking (absent from TryGetBlockingDirection), so it never gates completion.
+        "Split",
     };
 
     /// <summary>

@@ -31,6 +31,7 @@ public interface ITaskService
     Task<(bool Success, string? Error)> RemoveLinkAsync(int id, UserCtx ctx);
     Task<WatchToggleResult> ToggleWatchAsync(int taskId, string username, int? teamId);
     Task<(bool Success, string? Error)> QuickSetOwnerAsync(int id, string owner, UserCtx ctx);
+    Task<(bool Success, string? Error, int? SliceId)> SplitTaskAsync(int taskId, decimal hoursWorked, decimal remaining, string moveTo, UserCtx ctx);
     Task ReorderBacklogAsync(int[] ids, int? teamId);
 
     Task<(bool Success, string? Error)> SaveAttachmentRecordAsync(int taskId, string fileName, string storedName, long fileSize, string contentType, string uploadedBy);
@@ -69,6 +70,7 @@ public class TaskListFilters
     public string? Owner    { get; set; }
     public string  Status   { get; set; } = "";
     public string  Priority { get; set; } = "";
+    public string  Sprint   { get; set; } = "";   // "" = all, sprint id, or "__none__" = backlog
     public string  DateFrom { get; set; } = "";
     public string  DateTo   { get; set; } = "";
     public int     Page     { get; set; } = 1;

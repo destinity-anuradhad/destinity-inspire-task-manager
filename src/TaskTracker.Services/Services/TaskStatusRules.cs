@@ -23,7 +23,7 @@ public static class TaskStatusRules
 
     // Any status past New/To-Do — triggers parent auto-advance to Active
     public static bool IsStarted(string? status) =>
-        status is "Active" or "In Progress" or "Development Done" or "Resolved" or "Done" or "Closed";
+        status is "Active" or "In Progress" or "Development Done" or "In QA" or "Resolved" or "Done" or "Closed";
 
     // Absolute final status for the item type — stamps ActualEndDate on transition
     public static bool IsTerminal(string? itemType, string? status) =>
@@ -39,53 +39,49 @@ public static class TaskStatusRules
         };
 
     // ── Transition rules ──────────────────────────────────────────────────────
-    // Members are restricted to these forward/backward paths.
-    // TeamLead and above bypass all transition guards.
-
-    private static readonly Dictionary<string, HashSet<string>> _taskTransitions = new() {
-        ["To Do"]            = ["In Progress", "Blocked"],
-        ["In Progress"]      = ["Development Done", "Blocked", "To Do"],
-        ["Development Done"] = ["Done", "In Progress", "Blocked"],
-        ["Done"]             = ["In Progress", "To Do"],
-        ["Blocked"]          = ["To Do", "In Progress", "Development Done"],
+    // FORWARD-ONLY flow: from any status you may advance to ANY later status in the item
+    // type's order (skipping intermediate stages is allowed — e.g. "To Do" → "Done") or to
+    // "Blocked". BACKWARD moves are rejected for every role. Blocked is a side-state: you can
+    // block from anywhere and resume from Blocked to any status.
+    private static readonly Dictionary<string, string[]> _flowOrder = new(StringComparer.OrdinalIgnoreCase) {
+        ["Task"]    = ["To Do", "In Progress", "Development Done", "In QA", "Done"],
+        ["Bug"]     = ["New", "Active", "Resolved", "Closed"],
+        ["Story"]   = ["New", "Active", "Resolved", "Closed"],
+        ["Feature"] = ["New", "Active", "Resolved", "Closed"],
+        ["Epic"]    = ["New", "Active", "Closed"],   // no Blocked side-state
     };
+    private const string BlockedStatus = "Blocked";
 
-    private static readonly Dictionary<string, HashSet<string>> _bugTransitions = new() {
-        ["New"]      = ["Active", "Resolved", "Blocked"],
-        ["Active"]   = ["Resolved", "Blocked", "New"],
-        ["Resolved"] = ["Closed", "Active", "New"],
-        ["Closed"]   = ["Active", "New"],
-        ["Blocked"]  = ["New", "Active", "Resolved"],
-    };
+    private static string[] FlowFor(string? itemType) =>
+        itemType != null && _flowOrder.TryGetValue(itemType, out var f) ? f : _flowOrder["Task"];
 
-    private static readonly Dictionary<string, HashSet<string>> _storyTransitions = new() {
-        ["New"]      = ["Active", "Blocked"],
-        ["Active"]   = ["Resolved", "Blocked", "New"],
-        ["Resolved"] = ["Closed", "Active", "New"],
-        ["Closed"]   = ["Active", "New"],
-        ["Blocked"]  = ["New", "Active", "Resolved"],
-    };
-
-    private static readonly Dictionary<string, HashSet<string>> _epicTransitions = new() {
-        ["New"]    = ["Active"],
-        ["Active"] = ["Closed", "New"],
-        ["Closed"] = ["Active", "New"],
-    };
+    // Every type except Epic carries the Blocked side-state.
+    private static bool HasBlocked(string? itemType) =>
+        !string.Equals(itemType, "Epic", StringComparison.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> _emptySet = [];
 
     public static IReadOnlySet<string> AllowedTransitions(string? itemType, string? fromStatus)
     {
         if (string.IsNullOrEmpty(fromStatus)) return _emptySet;
-        var map = itemType switch {
-            "Task"    => _taskTransitions,
-            "Bug"     => _bugTransitions,
-            "Story"   => _storyTransitions,
-            "Feature" => _storyTransitions,
-            "Epic"    => _epicTransitions,
-            _         => _storyTransitions,
-        };
-        return map.TryGetValue(fromStatus, out var set) ? set : _emptySet;
+        var flow = FlowFor(itemType);
+        var set  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // From Blocked: resume to any status in the flow.
+        if (string.Equals(fromStatus, BlockedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var s in flow) set.Add(s);
+            return set;
+        }
+
+        var idx = Array.FindIndex(flow, s => string.Equals(s, fromStatus, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+            for (var i = idx + 1; i < flow.Length; i++) set.Add(flow[i]);   // forward only — never backward
+        else
+            foreach (var s in flow) set.Add(s);   // unknown/legacy status — offer the whole flow, don't trap
+
+        if (HasBlocked(itemType)) set.Add(BlockedStatus);
+        return set;
     }
 
     public static bool IsTransitionAllowed(string? itemType, string? fromStatus, string? toStatus) =>

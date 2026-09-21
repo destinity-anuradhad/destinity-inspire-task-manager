@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Admin Manual — Task Tracker</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 860px; margin: 0 auto; background: #fff; padding: 48px 56px; min-height: 100vh; }
+  .cover { border-bottom: 3px solid #0e7490; padding-bottom: 32px; margin-bottom: 40px; }
+  .role-badge { display: inline-block; background: #0e7490; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; margin-bottom: 12px; }
+  .cover h1 { font-size: 28px; font-weight: 700; color: #0e7490; }
+  .cover p { color: #64748b; margin-top: 4px; font-size: 14px; }
+  h2 { font-size: 18px; font-weight: 700; color: #0e7490; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+  h3 { font-size: 15px; font-weight: 600; color: #1e293b; margin: 20px 0 8px; }
+  p { margin-bottom: 10px; }
+  ul, ol { padding-left: 22px; margin-bottom: 10px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+  th { background: #f0fdff; color: #164e63; font-weight: 600; text-align: left; padding: 8px 12px; border: 1px solid #e2e8f0; }
+  td { padding: 7px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  blockquote { border-left: 3px solid #0e7490; background: #ecfeff; padding: 10px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: 14px; color: #164e63; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 13px; font-family: "Consolas", monospace; color: #0e7490; }
+  strong { font-weight: 600; }
+  .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px; margin-bottom: 36px; }
+  .toc h3 { margin-top: 0; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+  .toc ol { margin: 0; }
+  .toc li { font-size: 14px; margin-bottom: 2px; }
+  .toc a { color: #0e7490; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  @media print { body { background: #fff; } .page { padding: 20px; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="role-badge">Team Admin</div>
+    <h1>Task Tracker — User Manual</h1>
+    <p>Team Destinity Inspire &nbsp;|&nbsp; Scienter Technologies PTE LTD</p>
+  </div>
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#role">Your Role</a></li>
+      <li><a href="#login">Logging In</a></li>
+      <li><a href="#switch">Switching Teams</a></li>
+      <li><a href="#nav">Navigation</a></li>
+      <li><a href="#manage">Team Management</a></li>
+      <li><a href="#sprints">Sprints</a></li>
+      <li><a href="#tasks">Tasks</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#charts">Charts</a></li>
+      <li><a href="#activity">Activity Log</a></li>
+      <li><a href="#profile">Profile &amp; Notifications</a></li>
+      <li><a href="#quickref">Quick Reference</a></li>
+    </ol>
+  </div>
+
+  <h2 id="role">1. Your Role</h2>
+  <p>As a <strong>Team Admin</strong>, you manage your team's members, sprints, and settings. You have full control over your team's tasks and can create new users directly into your team. You do not have access to other teams or system-wide user management.</p>
+
+  <h2 id="login">2. Logging In</h2>
+  <ol>
+    <li>Open the app in your browser.</li>
+    <li>Enter your <strong>username</strong> and <strong>password</strong>.</li>
+    <li>Complete the reCAPTCHA check.</li>
+    <li>Click <strong>Login</strong>.</li>
+  </ol>
+  <p>If you are a member of only one team, you are taken directly to the dashboard. If you belong to multiple teams, you will be prompted to select a team first.</p>
+
+  <h2 id="switch">3. Switching Teams</h2>
+  <p>If you are a member of more than one team, click the team name in the top navigation bar. A dropdown shows your available teams. Click any team to switch — you stay on the same page but the data switches to that team.</p>
+
+  <h2 id="nav">4. Navigation</h2>
+  <table>
+    <tr><th>Item</th><th>Purpose</th></tr>
+    <tr><td><strong>Dashboard</strong></td><td>Your personal stats and team performance</td></tr>
+    <tr><td><strong>Tasks</strong></td><td>Your team's full task list</td></tr>
+    <tr><td><strong>Sprints</strong></td><td>Sprint planning and management</td></tr>
+    <tr><td><strong>Charts</strong></td><td>Visual analytics for your team</td></tr>
+    <tr><td><strong>Activity</strong></td><td>Team activity log</td></tr>
+    <tr><td><strong>Recycle Bin</strong></td><td>View (but not restore) deleted tasks</td></tr>
+  </table>
+
+  <h2 id="manage">5. Team Management (<code>/Teams/Manage</code>)</h2>
+  <p>Click your team name in the top nav → select your team → click "Team Settings" if shown. Alternatively navigate to <code>/Teams/Manage/{id}</code>.</p>
+
+  <h3>Editing Team Details</h3>
+  <ul>
+    <li><strong>Name</strong> — update the team's display name.</li>
+    <li><strong>Description</strong> — short description of the team's purpose.</li>
+    <li><strong>Color</strong> — team brand colour used in badges and charts.</li>
+  </ul>
+  <p>Click <strong>Save Changes</strong>.</p>
+
+  <h3>Adding an Existing User</h3>
+  <ol>
+    <li>Select their name from the <strong>Add Member</strong> dropdown.</li>
+    <li>Choose a <strong>Team Role</strong> (Member, Team Lead, Team Admin).</li>
+    <li>Click <strong>Add</strong>.</li>
+  </ol>
+
+  <h3>Creating a New User</h3>
+  <ol>
+    <li>Click <strong>Show / Hide</strong> next to "Create New User".</li>
+    <li>Fill in:
+      <ul>
+        <li><strong>Full Name</strong></li>
+        <li><strong>Username</strong> — unique login name (lowercase)</li>
+        <li><strong>Email</strong> — optional, needed for email notifications</li>
+        <li><strong>Password</strong> — minimum 8 characters</li>
+        <li><strong>Team Role</strong> — Member or Team Lead (Team Admins cannot create other Team Admins)</li>
+      </ul>
+    </li>
+    <li>Click <strong>Create &amp; Add</strong>.</li>
+  </ol>
+
+  <h3>Changing Member Roles</h3>
+  <p>Use the role dropdown next to any member's name. You can assign <strong>Member</strong>, <strong>Team Lead</strong>, or <strong>Team Admin</strong>.</p>
+
+  <h3>Removing Members</h3>
+  <p>Click the <strong>×</strong> button next to a member to remove them from the team. The user account is not deleted.</p>
+
+  <h2 id="sprints">6. Sprints (<code>/Sprints</code>)</h2>
+
+  <h3>Creating a Sprint</h3>
+  <ol>
+    <li>Go to <strong>Sprints</strong> in the navigation.</li>
+    <li>Click <strong>New Sprint</strong>.</li>
+    <li>Enter <strong>Sprint Name</strong>, <strong>Start Date</strong>, <strong>End Date</strong>, and optional <strong>Goal</strong>.</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Managing Sprints</h3>
+  <ul>
+    <li><strong>Set Active</strong> — marks the sprint as current. Only one sprint can be active at a time.</li>
+    <li><strong>Complete Sprint</strong> — closes the sprint. Incomplete tasks return to the backlog.</li>
+    <li><strong>Delete Sprint</strong> — permanently removes the sprint. Tasks are not deleted.</li>
+    <li><strong>Capacity Planning</strong> — set each team member's daily available hours.</li>
+  </ul>
+
+  <h2 id="tasks">7. Tasks</h2>
+
+  <h3>Views</h3>
+  <table>
+    <tr><th>View</th><th>Use it for</th></tr>
+    <tr><td><strong>Table</strong></td><td>Full list, sortable by any column</td></tr>
+    <tr><td><strong>Board</strong></td><td>Status columns</td></tr>
+    <tr><td><strong>Kanban</strong></td><td>Swimlane workflow board</td></tr>
+    <tr><td><strong>Calendar</strong></td><td>Tasks by target date</td></tr>
+    <tr><td><strong>Backlog</strong></td><td>Sprint planning — assign tasks to sprints</td></tr>
+    <tr><td><strong>Team</strong></td><td>See what each team member is working on</td></tr>
+  </table>
+
+  <h3>Creating a Task</h3>
+  <ol>
+    <li>Click <strong>New Task</strong>.</li>
+    <li>Required: <strong>Goal</strong> and <strong>Project</strong>.</li>
+    <li>Fill in: Client, Owner, Priority, Status, Sprint, Target Date, Item Type, Parent Task, Weight, Labels, Notes, Acceptance Criteria.</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Recycle Bin</h3>
+  <p>As a Team Admin you can <strong>view</strong> deleted tasks. Contact a SysAdmin to restore or permanently delete tasks.</p>
+
+  <h3>Bulk Operations</h3>
+  <p>Select multiple tasks via checkboxes: Change Status, Change Owner, Assign Sprint, Change Priority, Delete.</p>
+
+  <h2 id="dashboard">8. Dashboard</h2>
+  <h3>My Dashboard</h3>
+  <p>Personal task counts (Total, Done, In Progress, Open, Overdue), completion percentage, recent activity, and best-performing project.</p>
+  <h3>Team Dashboard</h3>
+  <p>Click <strong>Team Performance</strong> to see: status distribution, project breakdown, owner workload, recent team activity.</p>
+
+  <h2 id="charts">9. Charts</h2>
+  <ul>
+    <li>Velocity — completed story points per sprint</li>
+    <li>Status distribution</li>
+    <li>Priority breakdown (P0–P3)</li>
+    <li>Owner workload</li>
+    <li>Project and property distribution</li>
+  </ul>
+
+  <h2 id="activity">10. Activity Log</h2>
+  <p>Every change made within your team: who created, edited, or commented on which task, and when.</p>
+
+  <h2 id="profile">11. Profile &amp; Notifications</h2>
+  <p>Access via the avatar/name in the top-right corner.</p>
+  <ul>
+    <li><strong>Update email</strong> — required to receive email notifications.</li>
+    <li><strong>Change password</strong> — minimum 8 characters.</li>
+    <li><strong>Notification preferences</strong> — assigned tasks, comments, blocked tasks.</li>
+  </ul>
+  <p>The <strong>notification bell</strong> (🔔) shows unread alerts.</p>
+
+  <h2 id="quickref">12. Quick Reference — Team Admin Exclusive Actions</h2>
+  <table>
+    <tr><th>Action</th><th>Location</th></tr>
+    <tr><td>Edit team name / colour</td><td>Teams → Manage → left panel</td></tr>
+    <tr><td>Add existing user to team</td><td>Teams → Manage → Add Member</td></tr>
+    <tr><td>Create new user for team</td><td>Teams → Manage → Create New User</td></tr>
+    <tr><td>Change member roles</td><td>Teams → Manage → member role dropdown</td></tr>
+    <tr><td>Remove member from team</td><td>Teams → Manage → × button</td></tr>
+    <tr><td>Create / complete / delete sprints</td><td>Sprints</td></tr>
+    <tr><td>View recycle bin</td><td>Recycle Bin (restore via SysAdmin)</td></tr>
+  </table>
+
+</div>
+</body>
+</html>

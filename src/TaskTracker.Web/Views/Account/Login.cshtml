@@ -408,24 +408,44 @@
                     </div>
                 </div>
 
-                @if (ViewBag.RecaptchaEnabled == true && !string.IsNullOrEmpty((string)ViewBag.RecaptchaSiteKey))
+                @{ var captchaOn = ViewBag.RecaptchaEnabled == true && !string.IsNullOrEmpty((string)ViewBag.RecaptchaSiteKey); }
+                @if (captchaOn)
                 {
                     <div class="mt-5 flex justify-center">
-                        <div class="g-recaptcha" data-sitekey="@ViewBag.RecaptchaSiteKey"></div>
+                        <div class="g-recaptcha" data-sitekey="@ViewBag.RecaptchaSiteKey"
+                             data-callback="onRecaptchaOk" data-expired-callback="onRecaptchaExpired"></div>
                     </div>
                 }
 
-                <button type="submit"
-                        class="w-full mt-6 text-white font-semibold py-3 rounded-xl text-sm
-                               shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
+                <button type="submit" id="loginSubmit"
+                        class="w-full mt-6 text-white font-semibold py-3 rounded-xl text-sm shadow-md hover:shadow-lg active:scale-[0.98] transition-all@(captchaOn ? " opacity-50 cursor-not-allowed" : "")"
                         style="background-color:#094f70"
-                        onmouseover="this.style.backgroundColor='#063d57'"
-                        onmouseout="this.style.backgroundColor='#094f70'">
+                        disabled="@(captchaOn ? "disabled" : null)"
+                        onmouseover="if(!this.disabled)this.style.backgroundColor='#063d57'"
+                        onmouseout="if(!this.disabled)this.style.backgroundColor='#094f70'">
                     Sign In
                 </button>
+                @if (captchaOn)
+                {
+                    <p id="captchaHint" class="text-center text-xs text-gray-400 mt-2">Complete the “I’m not a robot” check to continue.</p>
+                    <script>
+                        // reCAPTCHA gates the submit button: enable only once the check is solved.
+                        function onRecaptchaOk() {
+                            var b = document.getElementById('loginSubmit');
+                            if (b) { b.disabled = false; b.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                            var h = document.getElementById('captchaHint'); if (h) h.classList.add('hidden');
+                        }
+                        function onRecaptchaExpired() {
+                            var b = document.getElementById('loginSubmit');
+                            if (b) { b.disabled = true; b.classList.add('opacity-50', 'cursor-not-allowed'); }
+                            var h = document.getElementById('captchaHint'); if (h) h.classList.remove('hidden');
+                        }
+                    </script>
+                }
             </form>
 
             <p class="text-center text-xs text-gray-400 mt-10">&copy; 2026 Team Destinity Inspire</p>
+            <p class="text-center text-[11px] text-gray-300 mt-1">v1.5.2</p>
         </div>
     </div>
 

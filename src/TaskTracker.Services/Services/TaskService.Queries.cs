@@ -26,6 +26,7 @@ public partial class TaskService
         var vm = new TaskListViewModel {
             Search   = f.Search,    Project  = f.Project,   Property = f.Property,
             Owner    = f.Owner ?? "", Status = f.Status,    Priority = f.Priority,
+            Sprint   = f.Sprint,
             DateFrom = f.DateFrom,  DateTo   = f.DateTo,
             Page     = f.Page,      PageSize = f.PageSize,
             Sort     = f.Sort,      SortDir  = f.SortDir,
@@ -55,13 +56,29 @@ public partial class TaskService
             query = query.Where(t => t.Property == vm.Property);
 
         if (!string.IsNullOrEmpty(vm.Owner))
-            query = query.Where(t => t.Owner != null && t.Owner.Contains(vm.Owner));
+        {
+            // Comma-separated multi-select: match any of the chosen assignees.
+            var owners = vm.Owner.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (owners.Length > 0)
+                query = query.Where(t => t.Owner != null && owners.Any(o => t.Owner.Contains(o)));
+        }
 
-        // Date filters pushed to SQL (TargetDate is now DateTime?)
+        // Sprint filter: "__none__" = backlog (no sprint), otherwise a specific sprint id.
+        // Applied before the status counts so the status sidebar reflects the chosen sprint scope.
+        if (!string.IsNullOrEmpty(vm.Sprint))
+        {
+            if (vm.Sprint == "__none__")
+                query = query.Where(t => t.SprintId == null);
+            else if (int.TryParse(vm.Sprint, out var sprintId))
+                query = query.Where(t => t.SprintId == sprintId);
+        }
+
+        // Date filters on the task's Due Date (EndDate) — the date set on the task form and used for
+        // overdue/timeline everywhere else. (The legacy TargetDate column is not set by the form.)
         if (DateTime.TryParse(vm.DateFrom, out var dfrom))
-            query = query.Where(t => t.TargetDate >= dfrom.Date);
+            query = query.Where(t => t.EndDate >= dfrom.Date);
         if (DateTime.TryParse(vm.DateTo, out var dto))
-            query = query.Where(t => t.TargetDate <= dto.Date);
+            query = query.Where(t => t.EndDate <= dto.Date);
 
         // Status counts before the status filter so the sidebar shows counts for all statuses
         vm.StatusCounts = (await query
@@ -71,12 +88,20 @@ public partial class TaskService
             .ToDictionary(x => x.Status ?? "", x => x.Count);
 
         if (!string.IsNullOrEmpty(vm.Status))
-            query = vm.Status == "__none__"
-                ? query.Where(t => t.Status == "")
-                : query.Where(t => t.Status == vm.Status);
+        {
+            // Comma-separated multi-select; "__none__" matches tasks with no status.
+            var statuses = vm.Status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s == "__none__" ? "" : s).ToArray();
+            if (statuses.Length > 0)
+                query = query.Where(t => statuses.Contains(t.Status ?? ""));
+        }
 
         if (!string.IsNullOrEmpty(vm.Priority))
-            query = query.Where(t => t.Priority == vm.Priority);
+        {
+            var priorities = vm.Priority.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (priorities.Length > 0)
+                query = query.Where(t => priorities.Contains(t.Priority));
+        }
 
         query = (vm.Sort, vm.SortDir) switch {
             ("goal",       "asc")  => query.OrderBy(t => t.Goal),
@@ -103,6 +128,18 @@ public partial class TaskService
         };
 
         vm.TotalCount = await query.CountAsync();
+
+        // Estimate/actual hour totals across the WHOLE filtered set (all pages) — one round trip.
+        // Drives the table header summary so it reflects the active filters, not just the page.
+        var hourTotals = await query
+            .GroupBy(_ => 1)
+            .Select(g => new {
+                Est = g.Sum(t => (decimal?)t.Weight)      ?? 0m,
+                Act = g.Sum(t => (decimal?)t.ActualHours) ?? 0m
+            })
+            .FirstOrDefaultAsync();
+        vm.TotalEstimateHours = hourTotals?.Est ?? 0m;
+        vm.TotalActualHours   = hourTotals?.Act ?? 0m;
 
         // Kanban and calendar need the full set; table/list paginates in SQL
         vm.Tasks = vm.ViewMode is "kanban" or "calendar"
@@ -166,7 +203,12 @@ public partial class TaskService
             e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2);
             var sprintQ = _db.Sprints.AsNoTracking().AsQueryable();
             if (teamId.HasValue) sprintQ = sprintQ.Where(s => s.TeamId == teamId);
-            return await sprintQ.OrderBy(s => s.Name).ToListAsync();
+            // Newest sprint first in the filter dropdown: active on top, then by start date / creation.
+            return await sprintQ
+                .OrderByDescending(s => s.IsActive)
+                .ThenByDescending(s => s.StartDate)
+                .ThenByDescending(s => s.CreatedAt)
+                .ToListAsync();
         }) ?? [];
 
         TaskTeamViewData? teamViewData = null;
@@ -213,7 +255,15 @@ public partial class TaskService
             resolvedMode = "week";
         }
 
-        var appUsers    = await _db.AppUsers.OrderBy(u => u.DisplayName).ToListAsync();
+        // Scope the timeline's people rows to the active team's members (not every AppUser).
+        var appUsersQ = _db.AppUsers.AsNoTracking().OrderBy(u => u.DisplayName).AsQueryable();
+        if (teamId.HasValue)
+        {
+            var tvMemberIds = await _db.TeamMembers.AsNoTracking()
+                .Where(m => m.TeamId == teamId).Select(m => m.UserId).ToListAsync();
+            appUsersQ = appUsersQ.Where(u => tvMemberIds.Contains(u.Id));
+        }
+        var appUsers    = await appUsersQ.ToListAsync();
         var regOwners   = appUsers.Select(u => u.DisplayName).Where(n => !string.IsNullOrEmpty(n)).ToList();
         var extraOwners = allForTl
             .Where(t => !string.IsNullOrEmpty(t.Owner))
@@ -473,8 +523,12 @@ public partial class TaskService
             .Distinct().OrderBy(l => l).ToList();
     }
 
-    private static string? AddFastTimeout(string? cs) =>
-        string.IsNullOrWhiteSpace(cs) ? cs : cs.TrimEnd(';') + ";Connect Timeout=4";
+    // Bounds how long a HIM lookup waits to connect so the task form doesn't hang if HIM is
+    // unreachable. 4s proved too tight: the same connection opens in ~0.3s from a standalone
+    // process but ~4.5s inside the running app (async/thread-pool overhead), so it was timing
+    // out even when HIM was healthy. 20s absorbs that overhead while still failing fast enough.
+    private static string? AddConnectTimeout(string? cs) =>
+        string.IsNullOrWhiteSpace(cs) ? cs : cs.TrimEnd(';') + ";Connect Timeout=20";
 
     public async Task<IEnumerable<object>> GetModulesAsync(string? himCs)
     {
@@ -482,7 +536,7 @@ public partial class TaskService
         var list = new List<object>();
         try
         {
-            await using var con = new SqlConnection(AddFastTimeout(himCs));
+            await using var con = new SqlConnection(AddConnectTimeout(himCs));
             await con.OpenAsync();
             await using var cmd = new SqlCommand(
                 "SELECT Id, Code, Name FROM Projects WHERE IsActive = 1 ORDER BY Name", con);
@@ -500,7 +554,7 @@ public partial class TaskService
         var list = new List<object>();
         try
         {
-            await using var con = new SqlConnection(AddFastTimeout(himCs));
+            await using var con = new SqlConnection(AddConnectTimeout(himCs));
             await con.OpenAsync();
             var sql = moduleId > 0
                 ? @"SELECT DISTINCT cd.Id,cd.Name,cd.ContactPerson,cd.ContactNo01,cd.Email01,1 AS FromCompany
@@ -679,16 +733,30 @@ public partial class TaskService
         if (!string.IsNullOrEmpty(f.Project))
             query = f.Project == "__none__" ? query.Where(t => t.Project == "") : query.Where(t => t.Project == f.Project);
         if (!string.IsNullOrEmpty(f.Property)) query = query.Where(t => t.Property == f.Property);
-        if (!string.IsNullOrEmpty(f.Owner))    query = query.Where(t => (t.Owner ?? "").Contains(f.Owner));
+        // Multi-select (comma-separated) filters — mirror the table query so the timeline stays consistent.
+        if (!string.IsNullOrEmpty(f.Owner))
+        {
+            var owners = f.Owner.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (owners.Length > 0) query = query.Where(t => t.Owner != null && owners.Any(o => t.Owner.Contains(o)));
+        }
         if (!string.IsNullOrEmpty(f.Status))
-            query = f.Status == "__none__" ? query.Where(t => t.Status == "") : query.Where(t => t.Status == f.Status);
-        if (!string.IsNullOrEmpty(f.Priority)) query = query.Where(t => t.Priority == f.Priority);
+        {
+            var statuses = f.Status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s == "__none__" ? "" : s).ToArray();
+            if (statuses.Length > 0) query = query.Where(t => statuses.Contains(t.Status ?? ""));
+        }
+        if (!string.IsNullOrEmpty(f.Priority))
+        {
+            var priorities = f.Priority.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (priorities.Length > 0) query = query.Where(t => priorities.Contains(t.Priority));
+        }
 
         var tasks = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
+        // Due Date range (EndDate) — same field the task form sets.
         if (DateTime.TryParse(f.DateFrom, out var dfrom))
-            tasks = tasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date >= dfrom.Date).ToList();
+            tasks = tasks.Where(t => t.EndDate.HasValue && t.EndDate.Value.Date >= dfrom.Date).ToList();
         if (DateTime.TryParse(f.DateTo, out var dto))
-            tasks = tasks.Where(t => t.TargetDate.HasValue && t.TargetDate.Value.Date <= dto.Date).ToList();
+            tasks = tasks.Where(t => t.EndDate.HasValue && t.EndDate.Value.Date <= dto.Date).ToList();
 
         var sb = new StringBuilder();
         sb.AppendLine("Id,Goal,Project,Client,Priority,Owner,Status,TargetDate,ExpectedStartDate,ExpectedEndDate,ActualStartDate,ActualEndDate,Weight,RelatedFiles,Notes,CreatedAt");

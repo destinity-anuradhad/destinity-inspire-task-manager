@@ -16,14 +16,14 @@
 <div class="space-y-6">
 
     <!-- Header -->
-    <div class="page-hd" style="display:flex;align-items:center;justify-content:space-between">
+    <div class="page-hd page-hd-show" style="display:flex;align-items:center;justify-content:space-between">
         <div class="page-hd-left">
             <h1>Team Performance</h1>
-            <p>Scienter PMS · Destinity Inspire · Overall team progress</p>
+            <p>Scienter Technologies PTE LTD · Destinity Inspire · Overall team progress</p>
         </div>
         <a href="/Dashboard"
-           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0"
-           style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.3)">
+           class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors flex-shrink-0 hover:opacity-90"
+           style="background:#094f70;color:#fff">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
             </svg>
@@ -230,11 +230,11 @@
                             <div class="flex items-center gap-3">
                                 @if (ownerImageMap.TryGetValue(stat.Name, out var _img))
                                 {
-                                    <img src="@_img" alt="@stat.Name" class="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                                    <img src="@_img" alt="@stat.Name" class="w-8 h-8 rounded-full object-cover flex-shrink-0" />
                                 }
                                 else
                                 {
-                                    <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
                                          style="background:@(ownerColorMap.GetValueOrDefault(stat.Name, "#3b82f6"))">
                                         @(stat.Name.Length > 0 ? stat.Name[0].ToString().ToUpper() : "?")
                                     </div>

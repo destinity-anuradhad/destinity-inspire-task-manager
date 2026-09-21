@@ -33,7 +33,6 @@ public class ControllerAuthorizationTests
         => Assert.Equal(expectedPolicy, ClassPolicy(controller));
 
     [Theory]
-    [InlineData("Index",        Policies.TeamLead)]
     [InlineData("Save",         Policies.TeamLead)]
     [InlineData("SetActive",    Policies.TeamLead)]
     [InlineData("Deactivate",   Policies.TeamLead)]
@@ -46,7 +45,10 @@ public class ControllerAuthorizationTests
     [Fact]
     public void SprintReads_StayOpenToMembers()
     {
-        // These two are intentionally reachable by any team member — no elevated policy.
+        // The sprint board (Index) and these read endpoints are intentionally reachable by any
+        // team member — no elevated policy. Members get a view-only board; every mutation above
+        // stays gated by the TeamLead / TeamAdmin policies.
+        Assert.Null(MethodPolicy(typeof(SprintsController), "Index"));
         Assert.Null(MethodPolicy(typeof(SprintsController), "GetIncomplete"));
         Assert.Null(MethodPolicy(typeof(SprintsController), "GetCapacity"));
     }

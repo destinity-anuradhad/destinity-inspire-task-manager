@@ -9,7 +9,7 @@ public interface ISprintService
     Task SetActiveAsync(int id, int? teamId);
     Task DeactivateAsync(int? teamId);
     Task<SprintIncompleteResult?> GetIncompleteAsync(int sprintId, int? teamId);
-    Task<(bool Found, bool Success, int Moved, string MovedTo, string? Error)> CompleteAsync(int id, string moveTo, int? teamId, string completedBy);
+    Task<(bool Found, bool Success, int Moved, string MovedTo, string? Error)> CompleteAsync(int id, string moveTo, List<SprintCarryItem>? carryItems, int? teamId, string completedBy);
     Task<(bool Success, string? Error)> DeleteAsync(int id, int? teamId);
     Task<SprintCapacityData?> GetCapacityAsync(int sprintId, int? teamId);
     Task<bool> SaveCapacityAsync(SprintCapacityRequest req, int? teamId);
@@ -43,6 +43,30 @@ public class SprintIncompleteResult
     public int Total      { get; set; }
     public int Incomplete { get; set; }
     public int Done       { get; set; }
+    public List<SprintIncompleteTask> Tasks { get; set; } = [];
+}
+
+/// <summary>One unfinished task shown in the sprint-close dialog, with its estimate/actual/remaining hours.</summary>
+public class SprintIncompleteTask
+{
+    public int     Id        { get; set; }
+    public string  Goal      { get; set; } = "";
+    public string  ItemType  { get; set; } = "Task";
+    public string  Priority  { get; set; } = "";
+    public string  Owner     { get; set; } = "";
+    public decimal Estimate  { get; set; }   // Weight (original estimate hours) — never mutated
+    public decimal Actual    { get; set; }   // ActualHours logged so far
+    public decimal Remaining { get; set; }   // RemainingWorkHours, or estimate − actual if unset
+}
+
+/// <summary>Per-task carry-forward instruction submitted when a sprint is completed.</summary>
+public class SprintCarryItem
+{
+    public int      TaskId     { get; set; }
+    public string   MoveTo     { get; set; } = "backlog";   // "backlog" or a target sprint id
+    public decimal  HoursSpent { get; set; }                // extra hours worked this sprint, logged at close
+    public decimal? Remaining  { get; set; }                // re-estimated remaining work to carry forward
+    public string   Mode       { get; set; } = "move";      // "move" = whole task moves; "split" = leave a done slice, carry the remainder
 }
 
 public class SprintCapacityData

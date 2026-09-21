@@ -29,6 +29,11 @@
     var myImgPath     = User.FindFirst("ProfileImagePath")?.Value ?? "";
     var governedProjects = ViewBag.GovernedProjects as List<ProjectItem> ?? [];
     var taskTemplates = ViewBag.TaskTemplates as List<TaskTemplate> ?? [];
+    // Sprint id → name, so server-rendered views (table, kanban, timeline) can label a task's sprint.
+    var sprintNames = (ViewBag.AllSprints as List<Sprint>)?
+        .Where(s => s.Id != 0)
+        .ToDictionary(s => s.Id, s => s.Name) ?? new Dictionary<int, string>();
+    Func<int?, string?> SprintNameFor = id => id.HasValue && sprintNames.TryGetValue(id.Value, out var n) ? n : null;
 }
 
 @functions {
@@ -88,12 +93,22 @@
 }
 
 @{
+    // Empty Model.Owner means "everyone"; Url.Action drops empty query values, so carry the explicit
+    // "__all__" sentinel in links that go back to Index (the controller maps it back to "all").
+    var ownerParam = string.IsNullOrEmpty(Model.Owner) ? "__all__" : Model.Owner;
+
+    // Multi-select filters are stored as comma-separated values; split into sets for the option markup.
+    var splitOpts = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
+    var ownerSel  = (Model.Owner    ?? "").Split(',', splitOpts).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var statusSel = (Model.Status   ?? "").Split(',', splitOpts).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var prioSel   = (Model.Priority ?? "").Split(',', splitOpts).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     string SortUrl(string col)
     {
         var dir = Model.Sort == col && Model.SortDir == "asc" ? "desc" : "asc";
         return Url.Action("Index", new {
             search=Model.Search, project=Model.Project, property=Model.Property,
-            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            owner=ownerParam, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint,
             dateFrom=Model.DateFrom, dateTo=Model.DateTo,
             page=1, pageSize=Model.PageSize, sort=col, sortDir=dir,
             view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth
@@ -103,14 +118,17 @@
 
     string ViewUrl(string v) => Url.Action("Index", new {
         search=Model.Search, project=Model.Project, property=Model.Property,
-        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        owner=ownerParam, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint,
         dateFrom=Model.DateFrom, dateTo=Model.DateTo,
         pageSize=Model.PageSize, view=v, calYear=Model.CalYear, calMonth=Model.CalMonth
     }) ?? "#";
 
+    // Resets every filter but keeps the current view (owner falls back to "my tasks" default).
+    string resetUrl = Url.Action("Index", new { view=Model.ViewMode }) ?? "/Tasks";
+
     string exportUrl = Url.Action("Export", new {
         search=Model.Search, project=Model.Project, property=Model.Property,
-        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        owner=Model.Owner, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint,
         dateFrom=Model.DateFrom, dateTo=Model.DateTo
     }) ?? "#";
 }
@@ -192,6 +210,14 @@
         <input type="hidden" name="sortDir"  value="@Model.SortDir" />
         <input type="hidden" name="calYear"  value="@Model.CalYear" />
         <input type="hidden" name="calMonth" value="@Model.CalMonth" />
+        <div class="min-w-52">
+            <label for="filter-search" class="block text-xs font-medium text-gray-500 mb-1">Search</label>
+            <div class="relative">
+                <svg class="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+                <input id="filter-search" type="text" name="search" value="@Model.Search" placeholder="Title, client, module, label…"
+                       class="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
         <div class="min-w-36">
             <label for="filter-project" class="block text-xs font-medium text-gray-500 mb-1">Module</label>
             <select id="filter-project" name="project" data-searchable
@@ -207,50 +233,72 @@
                 <option value="">— Loading… —</option>
             </select>
         </div>
+        @* Marker so the controller can tell "form submitted with no assignee (everyone)" from a fresh view (my tasks). *@
+        <input type="hidden" name="ownerFilterSet" value="1" />
         <div class="min-w-36">
             <label for="filter-owner" class="block text-xs font-medium text-gray-500 mb-1">Assignee</label>
-            <select id="filter-owner" name="owner" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                <option value="">All assignees</option>
+            <select id="filter-owner" name="owner" multiple data-searchable data-placeholder="All assignees"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 @foreach (var o in Model.Owners)
                 {
-                    var sel = o.Name == Model.Owner ? "selected" : null;
-                    <option value="@o.Name" selected="@sel">@o.Name</option>
+                    <option value="@o.Name" selected="@(ownerSel.Contains(o.Name) ? "selected" : null)">@o.Name</option>
                 }
             </select>
         </div>
         <div class="min-w-32">
             <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">All Status</option>
+            <select name="status" multiple data-searchable data-placeholder="All Status"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 @foreach (var ws in Model.WorkStates)
                 {
-                    <option value="@ws.Name" selected="@(Model.Status == ws.Name ? "selected" : null)">@ws.Name</option>
+                    <option value="@ws.Name" selected="@(statusSel.Contains(ws.Name) ? "selected" : null)">@ws.Name</option>
                 }
             </select>
         </div>
         <div class="min-w-28">
             <label class="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-            <select name="priority" asp-items="@(new SelectList(TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities.Select(p=>new SelectListItem(p,p)),"Value","Text",Model.Priority))"
+            <select name="priority" multiple data-searchable data-placeholder="All Priority"
                     class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">All Priority</option>
+                @foreach (var p in TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities)
+                {
+                    <option value="@p" selected="@(prioSel.Contains(p) ? "selected" : null)">@p</option>
+                }
+            </select>
+        </div>
+        <div class="min-w-40">
+            <label for="filter-sprint" class="block text-xs font-medium text-gray-500 mb-1">Sprint</label>
+            <select id="filter-sprint" name="sprint" data-searchable
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="" selected="@(string.IsNullOrEmpty(Model.Sprint) ? "selected" : null)">All sprints</option>
+                <option value="__none__" selected="@(Model.Sprint == "__none__" ? "selected" : null)">Backlog (no sprint)</option>
+                @foreach (var sp in (ViewBag.AllSprints as List<Sprint> ?? new List<Sprint>()))
+                {
+                    <option value="@sp.Id" selected="@(Model.Sprint == sp.Id.ToString() ? "selected" : null)">@sp.Name@(sp.IsActive ? " (active)" : "")</option>
+                }
             </select>
         </div>
         <div class="min-w-36">
-            <label class="block text-xs font-medium text-gray-500 mb-1">Target Date From</label>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Due Date From</label>
             <input type="date" name="dateFrom" value="@Model.DateFrom"
                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <div class="min-w-36">
-            <label class="block text-xs font-medium text-gray-500 mb-1">Target Date To</label>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Due Date To</label>
             <input type="date" name="dateTo" value="@Model.DateTo"
                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <input type="hidden" name="pageSize" value="@Model.PageSize" />
         <div class="flex gap-2">
             <button type="submit" class="btn-primary text-sm font-medium px-4 py-1.5 rounded-lg">Filter</button>
-            <a href="@Url.Action("Index", new { owner=myDisplayName, search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+            <a href="@resetUrl"
+               class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+               title="Clear all filters">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Reset
+            </a>
+            <a href="@Url.Action("Index", new { owner=myDisplayName, search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
                class="@(Model.Owner == myDisplayName ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">My Tasks</a>
-            <a href="@Url.Action("Index", new { owner="", search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+            <a href="@Url.Action("Index", new { owner="__all__", search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
                class="@(string.IsNullOrEmpty(Model.Owner) ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">All Tasks</a>
             <button type="button" onclick="saveCurrentQuery()"
                     class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -417,7 +465,7 @@
         string curDisplay = User.FindFirst("DisplayName")?.Value ?? "";
         string PageUrl(int p) => Url.Action("Index", new {
             search=Model.Search, project=Model.Project, property=Model.Property,
-            owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+            owner=ownerParam, status=Model.Status, priority=Model.Priority, sprint=Model.Sprint,
             dateFrom=Model.DateFrom, dateTo=Model.DateTo,
             page=p, pageSize=Model.PageSize, sort=Model.Sort, sortDir=Model.SortDir
         }) ?? "#";
@@ -425,6 +473,22 @@
         int ep2 = Math.Min(Model.TotalPages, Model.Page + 2);
 
         <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <!-- Table title bar: filtered-set totals (all pages, updates with filters) -->
+            <div class="flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 border-b border-gray-100 bg-gray-50/70">
+                <h2 class="text-sm font-semibold text-gray-700">
+                    Tasks <span class="text-gray-400 font-normal">· @Model.TotalCount</span>
+                </h2>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 font-medium"
+                          title="Total estimate hours across all filtered tasks">
+                        Est: @Model.TotalEstimateHours.ToString("0.##")h
+                    </span>
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"
+                          title="Total actual hours logged across all filtered tasks">
+                        Actual: @Model.TotalActualHours.ToString("0.##")h
+                    </span>
+                </div>
+            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm border-collapse">
                     <thead>
@@ -442,6 +506,7 @@
                             <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
                                 <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-300 group">Project <span class="text-xs opacity-60">@SortIcon("project")</span></a>
                             </th>
+                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">Sprint</th>
                             <th class="text-left px-3 py-2.5 font-semibold tracking-wide">
                                 <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-300 group">Title <span class="text-xs opacity-60">@SortIcon("goal")</span></a>
                             </th>
@@ -467,7 +532,7 @@
                         @if (!Model.Tasks.Any())
                         {
                             <tr>
-                                <td colspan="12" class="text-center py-20 text-gray-400">
+                                <td colspan="13" class="text-center py-20 text-gray-400">
                                     <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                     </svg>
@@ -496,7 +561,8 @@
 
                                 <td class="px-3 py-2" onclick="event.stopPropagation()">
                                     <input type="checkbox" class="bl-row-check w-4 h-4 rounded accent-blue-600 cursor-pointer"
-                                           data-id="@task.Id" onchange="bulkCheckChange(event)">
+                                           data-id="@task.Id" data-item-type="@(task.ItemType ?? "Task")" data-status="@task.Status"
+                                           onchange="bulkCheckChange(event)">
                                 </td>
 
                                 <td class="px-3 py-2 whitespace-nowrap">
@@ -515,6 +581,17 @@
 
                                 <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Property">@task.Property</td>
                                 <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Project">@task.Project</td>
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    @{ var tSprint = SprintNameFor(task.SprintId); }
+                                    @if (!string.IsNullOrEmpty(tSprint))
+                                    {
+                                        <span class="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 max-w-[120px] truncate" title="Sprint: @tSprint">⚡ @tSprint</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-[10px] text-gray-300">—</span>
+                                    }
+                                </td>
 
                                 <td class="px-3 py-2">
                                     <span class="text-sm text-gray-900 line-clamp-1">@task.Goal</span>
@@ -657,7 +734,7 @@
                 Move to Bin
             </button>
             <select id="bulk-status-sel" onchange="bulkChangeStatus(this.value)"
-                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                    class="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400">
                 <option value="" disabled selected>Set Status…</option>
                 @foreach (var ws in Model.WorkStates)
                 {
@@ -665,7 +742,7 @@
                 }
             </select>
             <select id="bulk-owner-sel" onchange="bulkChangeOwner(this.value)"
-                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                    class="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400">
                 <option value="" disabled selected>Set Assignee…</option>
                 @foreach (var ow in Model.Owners)
                 {
@@ -675,7 +752,7 @@
             @if (allSprints.Any())
             {
                 <select id="bulk-sprint-sel" onchange="bulkAssignSprint(this.value === '' ? null : parseInt(this.value))"
-                        class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                        class="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400">
                     <option value="" disabled selected>Set Sprint…</option>
                     <option value="">Backlog</option>
                     @foreach (var sp in allSprints)
@@ -685,7 +762,7 @@
                 </select>
             }
             <select id="bulk-priority-sel" onchange="bulkChangePriority(this.value)"
-                    class="px-2 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white text-xs font-medium cursor-pointer focus:outline-none">
+                    class="px-2 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400">
                 <option value="" disabled selected>Set Priority…</option>
                 <option value="Critical">Critical</option>
                 <option value="High">High</option>
@@ -784,6 +861,8 @@
                                         <div class="flex flex-wrap gap-1 mb-2 pointer-events-none">
                                             @if (!string.IsNullOrEmpty(kt.Project))  { <span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">@kt.Project</span> }
                                             @if (!string.IsNullOrEmpty(kt.Property)) { <span class="text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">@kt.Property</span> }
+                                            @{ var ktSprint = SprintNameFor(kt.SprintId); }
+                                            @if (!string.IsNullOrEmpty(ktSprint)) { <span class="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">⚡ @ktSprint</span> }
                                         </div>
                                         <div class="flex items-center justify-between text-xs pointer-events-none">
                                             <div class="flex flex-wrap gap-1">
@@ -845,6 +924,8 @@
                                         <div class="flex flex-wrap gap-1 mb-2 pointer-events-none">
                                             @if (!string.IsNullOrEmpty(kt.Project))  { <span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">@kt.Project</span> }
                                             @if (!string.IsNullOrEmpty(kt.Property)) { <span class="text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">@kt.Property</span> }
+                                            @{ var ktSprint = SprintNameFor(kt.SprintId); }
+                                            @if (!string.IsNullOrEmpty(ktSprint)) { <span class="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">⚡ @ktSprint</span> }
                                         </div>
                                         <div class="flex items-center justify-between text-xs pointer-events-none">
                                             <div class="flex flex-wrap gap-1">
@@ -974,6 +1055,9 @@
                         };
                         var tlOw  = SplitOwners(tlT.Owner).FirstOrDefault() ?? "";
                         var tlOwC = ownerColorMap.GetValueOrDefault(tlOw, "#64748b");
+                        // Module (Project) · Client (Property) · Sprint — shown as a sub-line + folded into tooltips
+                        var tlSprint = SprintNameFor(tlT.SprintId);
+                        var tlMeta = string.Join(" · ", new[] { tlT.Project, tlT.Property, string.IsNullOrEmpty(tlSprint) ? null : "⚡ " + tlSprint }.Where(s => !string.IsNullOrEmpty(s)));
 
                         <div class="flex border-b border-gray-50 hover:bg-blue-50/20" style="height:40px">
                             <div class="shrink-0 border-r border-gray-100 flex items-center gap-2 px-3" style="width:260px">
@@ -981,10 +1065,17 @@
                                 {
                                     <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 @PriorityBadge(tlT.Priority)">@tlT.Priority</span>
                                 }
-                                <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
-                                        class="text-xs font-medium text-gray-800 hover:text-blue-600 text-left truncate flex-1 leading-tight">
-                                    @tlT.Goal
-                                </button>
+                                <div class="flex-1 min-w-0">
+                                    <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                            class="block w-full text-xs font-medium text-gray-800 hover:text-blue-600 text-left truncate leading-tight"
+                                            title="@(tlT.Goal)@(string.IsNullOrEmpty(tlMeta) ? "" : " — " + tlMeta)">
+                                        @tlT.Goal
+                                    </button>
+                                    @if (!string.IsNullOrEmpty(tlMeta))
+                                    {
+                                        <div class="text-[10px] text-gray-400 truncate leading-tight" title="@tlMeta">@tlMeta</div>
+                                    }
+                                </div>
                                 @if (!string.IsNullOrEmpty(tlOw))
                                 {
                                     @Html.Raw(AvatarEl(tlOw, ownerColorMap, ownerImageMap))
@@ -996,7 +1087,9 @@
                                     var tdX = (today.Day - 1) * colW + colW / 2;
                                     <div class="absolute top-0 bottom-0 w-px bg-blue-400/50 pointer-events-none" style="left:@(tdX)px"></div>
                                 }
-                                @{ var tlBarTitle = tlT.Goal + (tlT.EndDate.HasValue ? " · due " + tlT.EndDate.Value.ToString("yyyy-MM-dd") : ""); }
+                                @{ var tlBarTitle = tlT.Goal
+                                       + (string.IsNullOrEmpty(tlMeta) ? "" : " — " + tlMeta)
+                                       + (tlT.EndDate.HasValue ? " · due " + tlT.EndDate.Value.ToString("yyyy-MM-dd") : ""); }
                                 <button type="button" data-task="@tlJ" onclick="openCanvas(JSON.parse(this.dataset.task))"
                                         class="absolute h-6 rounded text-white text-[10px] font-medium truncate px-1.5 flex items-center shadow-sm hover:opacity-80 transition-opacity"
                                         style="left:@(barPx)px;width:@(barW)px;background:@barClr"
@@ -1067,7 +1160,7 @@
         .tl2-bar-pills{display:flex;gap:4px;margin-top:4px;overflow:hidden}
         .tl2-pill{display:inline-flex;align-items:center;padding:0 7px;height:16px;border-radius:99px;font-size:9.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;flex-shrink:0}
 
-        .tl2-av{width:28px;height:28px;border-radius:8px;background:#094f70;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .tl2-av{width:28px;height:28px;border-radius:50%;background:#094f70;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;object-fit:cover}
         .tl2-nm{font-size:12px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .tl2-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#d1d5db;font-style:italic}
         .tl2-now-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:6;pointer-events:none}
@@ -1091,7 +1184,7 @@
                 <input type="date" id="tl2-to" value="@(tlModeStr != "today" ? tlToStr : "")" />
                 <button class="tl2-btn tl2-btn-apply" onclick="tl2Apply()">Apply</button>
                 @{
-                    var weekUrl = Url.Action("Index", new { view="team", search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status=Model.Status, priority=Model.Priority, pageSize=Model.PageSize }) ?? "/Tasks?view=team";
+                    var weekUrl = Url.Action("Index", new { view="team", search=Model.Search, project=Model.Project, property=Model.Property, owner=ownerParam, status=Model.Status, priority=Model.Priority, pageSize=Model.PageSize }) ?? "/Tasks?view=team";
                     string dateBadge;
                     if (tlModeStr == "today") { dateBadge = DateTime.Today.ToString("dddd, d MMMM yyyy"); }
                     else if (DateTime.TryParse(tlFromStr, out var tfd2) && DateTime.TryParse(tlToStr, out var ttd2)) {
@@ -1134,12 +1227,18 @@
         (function () {
             var TL2_TASKS         = @Html.Raw(ViewBag.TlTasks          as string ?? "[]");
             var TL2_OWNERS        = @Html.Raw(ViewBag.TlOwners         as string ?? "[]");
+            // Default to just the logged-in user's row(s); "All assignees" (Model.Owner empty) shows everyone.
+            // Model.Owner is a comma-separated multi-select, so match any of the chosen assignees.
+            var TL2_ME_SET = (@Html.Raw(JsonSerializer.Serialize(Model.Owner ?? "")) || '')
+                .split(',').map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean);
+            if (TL2_ME_SET.length) TL2_OWNERS = TL2_OWNERS.filter(function(o){ return TL2_ME_SET.indexOf((o||'').toLowerCase()) !== -1; });
             var TL2_PROJ_COLORS   = @Html.Raw(ViewBag.TlProjectColors  as string ?? "{}");
             var TL2_PROP_COLORS   = @Html.Raw(ViewBag.TlPropertyColors as string ?? "{}");
+            var TL2_SPRINTS       = @Html.Raw(JsonSerializer.Serialize(sprintNames));
             var TL2_FROM = '@(tlFromStr)';
             var TL2_TO   = '@(tlToStr)';
             var TL2_MODE = '@(tlModeStr)';
-            var SC = {'New':'#8b5cf6','To Do':'#64748b','Active':'#0ea5e9','In Progress':'#094f70','Resolved':'#f59e0b','Done':'#22c55e','Closed':'#94a3b8'};
+            var SC = {'New':'#8b5cf6','To Do':'#64748b','Active':'#0ea5e9','In Progress':'#094f70','Development Done':'#6366f1','In QA':'#a855f7','Resolved':'#f59e0b','Done':'#22c55e','Closed':'#94a3b8'};
             var DONE = {'Done':1,'Resolved':1,'Closed':1};
             function hex2rgba(hex,a){var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return 'rgba('+r+','+g+','+b+','+a+')';}
             function pd(s){if(!s)return null;var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;return new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10));}
@@ -1158,7 +1257,7 @@
                     var row=rows[r];
                     var owImg = (typeof CV_IMAGES !== 'undefined') && CV_IMAGES && CV_IMAGES[row.owner];
                     var avEl = owImg
-                        ? '<img src="'+owImg.replace(/"/g,'&quot;')+'" class="tl2-av" style="object-fit:cover;border-radius:8px;" />'
+                        ? '<img src="'+owImg.replace(/"/g,'&quot;')+'" class="tl2-av" style="object-fit:cover;border-radius:50%;" />'
                         : (function(){ var ini=(row.owner.split(/\s+/).map(function(w){return w.charAt(0)||'';}).join('').substring(0,2).toUpperCase())||'?'; return '<div class="tl2-av">'+ini+'<\/div>'; })();
                     html+='<div class="tl2-row" style="height:'+row.rowH+'px">';
                     html+='<div class="tl2-name-cell">'+avEl+'<span class="tl2-nm">'+row.owner+'<\/span><\/div>';
@@ -1170,7 +1269,8 @@
                         var sclr=SC[bar.task.status]||'#094f70';
                         var top=4+bar._lane*62;
                         var w=Math.max(bar.rt-bar.lf,0.012)*100;
-                        var tip=bar.task.goal+(bar.tchip?' | '+bar.tchip:'')+(bar.task.property?' | '+bar.task.property:'')+(bar.task.project?' | '+bar.task.project:'');
+                        var _spN=(bar.task.sprintId&&TL2_SPRINTS[bar.task.sprintId])?TL2_SPRINTS[bar.task.sprintId]:'';
+                        var tip=bar.task.goal+(bar.tchip?' | '+bar.tchip:'')+(bar.task.property?' | '+bar.task.property:'')+(bar.task.project?' | '+bar.task.project:'')+(_spN?' | ⚡ '+_spN:'');
                         var taskJson2=JSON.stringify(bar.task).replace(/"/g,'&quot;');
                         html+='<div class="tl2-bar" style="left:'+(bar.lf*100)+'%;width:'+w+'%;top:'+top+'px;height:56px;" title="'+tip.replace(/"/g,'&quot;')+'" data-task="'+taskJson2+'" onclick="openCanvas(JSON.parse(this.dataset.task))">';
                         html+='<div class="tl2-bar-strip" style="background:'+sclr+'"><\/div>';
@@ -1179,6 +1279,7 @@
                         if(bar.tchip)ph+='<span class="tl2-pill" style="background:'+hex2rgba(sclr,0.13)+';color:'+sclr+';max-width:160px">'+bar.tchip+'<\/span>';
                         if(bar.task.property){var pc=TL2_PROP_COLORS[bar.task.property]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(pc,0.12)+';color:'+pc+'">'+bar.task.property+'<\/span>';}
                         if(bar.task.project){var jc=TL2_PROJ_COLORS[bar.task.project]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(jc,0.12)+';color:'+jc+'">'+bar.task.project+'<\/span>';}
+                        if(_spN){ph+='<span class="tl2-pill" style="background:'+hex2rgba('#f59e0b',0.14)+';color:#b45309">⚡ '+_spN+'<\/span>';}
                         if(ph)html+='<div class="tl2-bar-pills">'+ph+'<\/div>';
                         html+='<\/div>';
                     }
@@ -1254,10 +1355,9 @@
             <!-- Header row: sprint tabs + type filter + Plan Sprint button -->
             <div class="flex items-center justify-between flex-wrap gap-2">
                 <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs font-medium text-gray-500 mr-1">Sprint:</span>
-                    <div id="bl-sprint-tabs" class="flex gap-1 flex-wrap">
-                        <div class="h-7 w-40 bg-gray-100 animate-pulse rounded-full"></div>
-                    </div>
+                    <span class="text-sm font-semibold text-gray-700">Backlog</span>
+                    <span id="bl-count" class="text-xs bg-gray-100 text-gray-500 font-semibold px-2 py-0.5 rounded-full"></span>
+                    <span class="hidden sm:inline text-[11px] text-gray-400">unassigned work only · sprint items live on the Sprint Board</span>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="text-xs font-medium text-gray-500 mr-1">Type:</span>
@@ -1272,6 +1372,13 @@
                         <button class="bl-type-btn text-xs px-3 py-1 rounded-full font-medium transition-all @cls"
                                 data-type="@type" onclick="_blSetType('@type')">@label</button>
                     }
+                    <button id="bl-done-toggle" onclick="_blToggleDone()" title="Show or hide completed work"
+                            class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span id="bl-done-toggle-label">Show completed</span>
+                    </button>
                     <button id="bl-plan-btn" onclick="_blTogglePlan()"
                             class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1321,6 +1428,19 @@
         let _blSprints     = [];
         let _blSprint      = 'all';
         let _blType        = '';
+        let _blShowDone    = false;   // standard backlog hides completed work by default
+
+        // Mirrors TaskStatusRules.IsDone — a task's completion state per item type.
+        function _blIsDone(t) {
+            switch (t.itemType) {
+                case 'Task':    return t.status === 'Done';
+                case 'Bug':
+                case 'Story':
+                case 'Feature': return t.status === 'Resolved' || t.status === 'Closed';
+                case 'Epic':    return t.status === 'Closed';
+                default:        return t.status === 'Done' || t.status === 'Resolved' || t.status === 'Closed';
+            }
+        }
         let _blExpanded    = new Set();
         let _blPlanOpen    = false;
         let _blPlanSprintId = null;
@@ -1355,31 +1475,28 @@
         }
 
         function _blFilterTasks() {
-            if (_blSprint === 'all') {
-                _blTasks = [..._blAllTasks];
-            } else if (_blSprint === 'backlog') {
-                _blTasks = _blAllTasks.filter(t => !t.sprintId);
-            } else {
-                const sid = parseInt(_blSprint);
-                _blTasks = _blAllTasks.filter(t => t.sprintId === sid);
-            }
+            // Backlog shows ONLY tasks not assigned to any sprint. Anything already in a sprint
+            // lives on the Sprint Board, never here.
+            _blTasks = _blAllTasks.filter(t => !t.sprintId);
         }
 
-        // ── Sprint tabs ───────────────────────────────────────────────────────
+        // ── Backlog count (unassigned items, respecting the "show completed" toggle) ──────────
         function _blRenderSprintTabs() {
-            const el = document.getElementById('bl-sprint-tabs');
-            const s  = _blSprint;
-            const btn = (val, label) =>
-                `<button onclick="_blSetSprint('${val}')"
-                         class="text-xs px-3 py-1 rounded-full font-medium transition-all ${s===val?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}">${label}</button>`;
-            el.innerHTML = btn('all','All') + btn('backlog','Backlog') +
-                _blSprints.map(sp => btn(String(sp.id), (sp.isActive?'⚡ ':'')+_esc(sp.name))).join('');
+            const el = document.getElementById('bl-count');
+            if (!el) return;
+            const visible = t => _blShowDone || !_blIsDone(t);
+            el.textContent = _blAllTasks.filter(t => !t.sprintId && visible(t)).length;
         }
 
-        function _blSetSprint(val) {
-            _blSprint = val;
-            _blFilterTasks();
-            _blRenderSprintTabs();
+        function _blToggleDone() {
+            _blShowDone = !_blShowDone;
+            const btn = document.getElementById('bl-done-toggle');
+            document.getElementById('bl-done-toggle-label').textContent = _blShowDone ? 'Hide completed' : 'Show completed';
+            btn.classList.toggle('bg-blue-50', _blShowDone);
+            btn.classList.toggle('text-blue-600', _blShowDone);
+            btn.classList.toggle('border-blue-200', _blShowDone);
+            btn.classList.toggle('text-gray-500', !_blShowDone);
+            _blRenderSprintTabs();   // refresh the per-tab counts
             _blRender();
         }
 
@@ -1394,9 +1511,48 @@
             _blRender();
         }
 
+        // Default the backlog to the logged-in user's items; '' (All assignees) shows everyone.
+        // Model.Owner is a comma-separated multi-select — match a task if it has ANY chosen assignee.
+        const _blOwnerSet = (@Html.Raw(JsonSerializer.Serialize(Model.Owner ?? "")) || '')
+            .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        function _blOwnerMatch(o){
+            if (!_blOwnerSet.length) return true;
+            const parts = (o || '').split(',').map(x => x.trim().toLowerCase());
+            return _blOwnerSet.some(w => parts.includes(w));
+        }
+
         // ── Tree render ───────────────────────────────────────────────────────
         function _blRender() {
             let tasks = _blType ? _blTasks.filter(t => t.itemType === _blType) : _blTasks;
+
+            // Standard backlog: hide completed work unless "Show completed" is on. Keep the ancestor
+            // chain of any not-done item so the Epic→Feature→Story→Task tree stays connected (a done
+            // Epic still shows if it has unfinished descendants; a fully-done subtree is hidden).
+            if (!_blShowDone) {
+                const byId = {}; _blAllTasks.forEach(t => byId[t.id] = t);
+                const keep = new Set();
+                tasks.forEach(t => {
+                    if (!_blIsDone(t)) {
+                        let cur = t;
+                        while (cur) { keep.add(cur.id); cur = cur.parentId ? byId[cur.parentId] : null; }
+                    }
+                });
+                tasks = tasks.filter(t => keep.has(t.id));
+            }
+
+            // Owner filter: keep items assigned to the person(s) plus their ancestor chain (so the
+            // Epic→Feature→Story→Task tree stays connected rather than orphaning children).
+            if (_blOwnerSet.length) {
+                const byId = {}; _blAllTasks.forEach(t => byId[t.id] = t);
+                const keep = new Set();
+                tasks.forEach(t => {
+                    if (_blOwnerMatch(t.owner)) {
+                        let cur = t;
+                        while (cur) { keep.add(cur.id); cur = cur.parentId ? byId[cur.parentId] : null; }
+                    }
+                });
+                tasks = tasks.filter(t => keep.has(t.id));
+            }
 
             const map = {};
             tasks.forEach(t => map[t.id] = { ...t, children: [] });
@@ -1419,7 +1575,7 @@
 
             const container = document.getElementById('backlog-tree');
             if (!roots.length) {
-                container.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">No items in this view<br><span class="text-xs text-gray-300">Try a different sprint or type filter</span></div>';
+                container.innerHTML = `<div class="text-center py-16 text-gray-400 text-sm">No ${_blShowDone ? '' : 'open '}items in this view<br><span class="text-xs text-gray-300">${_blShowDone ? 'Try a different sprint or type filter' : 'Everything here may be complete — click “Show completed” to see done work'}</span></div>`;
                 return;
             }
             container.innerHTML = roots.map(n => _blNode(n, 0)).join('');
@@ -1503,6 +1659,8 @@
                 </span>
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${tc.cls}">${tc.lbl}</span>
                 <button class="flex-1 text-sm text-left text-gray-800 hover:text-blue-600 truncate" onclick='openCanvas(JSON.parse(this.dataset.task))' data-task="${taskJson}">${_esc(node.goal||'—')}</button>
+                ${node.project  ? `<span class="hidden lg:inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0 max-w-[110px] truncate cursor-pointer hover:bg-blue-100" title="Module: ${_esc(node.project)}" data-val="${_esc(node.project)}" onclick="event.stopPropagation();quickFilterModule(this.dataset.val,event)">${_esc(node.project)}</span>` : ''}
+                ${node.property ? `<span class="hidden lg:inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 shrink-0 max-w-[110px] truncate cursor-pointer hover:bg-purple-100" title="Client: ${_esc(node.property)}" data-val="${_esc(node.property)}" onclick="event.stopPropagation();quickFilterClient(this.dataset.val,event)">${_esc(node.property)}</span>` : ''}
                 ${node.status?`<span class="hidden md:inline text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">${_esc(node.status)}</span>`:''}
                 ${sprintEl}
                 <div class="flex items-center gap-0.5 shrink-0">${ownerEl}</div>
@@ -1856,57 +2014,17 @@
                     <span class="text-xs font-medium text-gray-500">Person:</span>
                     <select id="bd-person-filter" onchange="_bdFilterPerson(this.value)"
                             class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="">All</option>
+                        <option value="" selected="@(ownerSel.Count != 1 ? "selected" : null)">All</option>
                         @foreach (var o in Model.Owners)
                         {
-                            <option value="@o.Name">@o.Name</option>
+                            <option value="@o.Name" selected="@(ownerSel.Count == 1 && ownerSel.Contains(o.Name) ? "selected" : null)">@o.Name</option>
                         }
                     </select>
                 </div>
             </div>
 
-            <!-- Board columns -->
-            <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="min-height:420px">
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-todo" data-col="todo">
-                    <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-gray-50 border border-gray-200 border-b-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">To Do</span>
-                            <span id="bd-count-todo" class="text-xs bg-gray-200 text-gray-600 font-semibold px-2 py-0.5 rounded-full"></span>
-                            <span id="bd-hours-todo" class="text-[10px] text-gray-400"></span>
-                        </div>
-                        <button onclick="_bdAddTask('todo')" title="Add task"
-                                class="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors text-lg leading-none">+</button>
-                    </div>
-                    <div id="bd-cards-todo" class="bd-dropzone flex-1 space-y-2 p-2 border border-gray-200 border-t-0 rounded-b-xl bg-gray-50/60 overflow-y-auto"
-                         ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'todo')" ondragleave="_bdDragLeave(event)"></div>
-                </div>
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-wip" data-col="wip">
-                    <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-blue-50 border border-blue-200 border-b-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">In Progress</span>
-                            <span id="bd-count-wip" class="text-xs bg-blue-200 text-blue-700 font-semibold px-2 py-0.5 rounded-full"></span>
-                            <span id="bd-hours-wip" class="text-[10px] text-blue-500"></span>
-                        </div>
-                        <button onclick="_bdAddTask('wip')" title="Add task"
-                                class="w-6 h-6 flex items-center justify-center rounded-md text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition-colors text-lg leading-none">+</button>
-                    </div>
-                    <div id="bd-cards-wip" class="bd-dropzone flex-1 space-y-2 p-2 border border-blue-200 border-t-0 rounded-b-xl bg-blue-50/40 overflow-y-auto"
-                         ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'wip')" ondragleave="_bdDragLeave(event)"></div>
-                </div>
-                <div class="flex-1 min-w-[260px] flex flex-col" id="bd-col-done" data-col="done">
-                    <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-green-50 border border-green-200 border-b-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-xs font-semibold text-green-700 uppercase tracking-wide">Done</span>
-                            <span id="bd-count-done" class="text-xs bg-green-200 text-green-700 font-semibold px-2 py-0.5 rounded-full"></span>
-                            <span id="bd-hours-done" class="text-[10px] text-green-600"></span>
-                        </div>
-                        <button onclick="_bdAddTask('done')" title="Add task"
-                                class="w-6 h-6 flex items-center justify-center rounded-md text-green-400 hover:bg-green-200 hover:text-green-700 transition-colors text-lg leading-none">+</button>
-                    </div>
-                    <div id="bd-cards-done" class="bd-dropzone flex-1 space-y-2 p-2 border border-green-200 border-t-0 rounded-b-xl bg-green-50/40 overflow-y-auto"
-                         ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'done')" ondragleave="_bdDragLeave(event)"></div>
-                </div>
-            </div>
+            <!-- Board columns — built dynamically from WorkStates (same set as the Kanban view) -->
+            <div id="bd-columns" class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style="height:calc(100vh - 300px);min-height:420px"></div>
         </div>
 
         <script>
@@ -1916,23 +2034,28 @@
         let _bdType    = '';
         let _bdDragging = null;    // task id being dragged
 
-        const BOARD_COLS = [
-            { key: 'todo', statuses: ['New','To Do'] },
-            { key: 'wip',  statuses: ['Active','In Progress'] },
-            { key: 'done', statuses: ['Resolved','Done','Closed'] },
-        ];
-        const BOARD_DROP = {
-            todo: { Task:'To Do', Bug:'New', Story:'New', Feature:'New', Epic:'New', '':'To Do' },
-            wip:  { Task:'In Progress', Bug:'Active', Story:'Active', Feature:'Active', Epic:'Active', '':'In Progress' },
-            done: { Task:'Done', Bug:'Resolved', Story:'Resolved', Feature:'Closed', Epic:'Closed', '':'Done' },
-        };
+        // Columns mirror the Kanban view: one column per WorkState (DB-driven, with the same
+        // AllStatuses fallback the Kanban uses when WorkStates is empty). Each column is exactly
+        // ONE status — dropping a card sets the task to that status, and the shared flow rule
+        // (_isFlowMoveAllowed) rejects moves that aren't valid for the item type.
+        let BOARD_COLS = [];   // [{ key, name, color }]
+        function _bdSlug(s) { return 'c' + String(s).replace(/[^a-zA-Z0-9]/g, '_'); }
+        function _bdInitCols() {
+            if (BOARD_COLS.length) return;
+            const src = (typeof _wsData !== 'undefined' && _wsData && _wsData.length)
+                ? _wsData
+                : ['New','To Do','Active','In Progress','Resolved','Done','Closed'].map(n => ({ name: n, color: '#94a3b8' }));
+            BOARD_COLS = src.map(ws => ({ key: _bdSlug(ws.name), name: ws.name, color: ws.color || '#94a3b8' }));
+        }
+        // Statuses treated as terminal ("done") for the sprint progress bar / overdue styling.
+        const BD_DONE = ['Done','Resolved','Closed'];
         const BD_TYPE_ICON = { Epic:'🟦', Feature:'🟩', Story:'📋', Task:'✅', Bug:'🐛' };
         const BD_PRI_CLS   = { P0:'bg-red-100 text-red-700', P1:'bg-orange-100 text-orange-700', P2:'bg-yellow-100 text-yellow-700', P3:'bg-gray-100 text-gray-600' };
 
         function _bdColFor(status) {
-            for (const c of BOARD_COLS)
-                if (c.statuses.includes(status)) return c.key;
-            return 'todo';
+            _bdInitCols();
+            const c = BOARD_COLS.find(c => c.name === status);
+            return c ? c.key : (BOARD_COLS[0] ? BOARD_COLS[0].key : '');
         }
 
         // ── Load ──────────────────────────────────────────────────────────────
@@ -1978,31 +2101,47 @@
             document.getElementById('bd-sprint-dates').textContent = dates;
             document.getElementById('bd-sprint-goal').textContent  = activeSprint.goal || '';
             const total = _bdTasks.length;
-            const done  = _bdTasks.filter(t => BOARD_COLS[2].statuses.includes(t.status)).length;
+            const done  = _bdTasks.filter(t => BD_DONE.includes(t.status)).length;
             document.getElementById('bd-progress-label').textContent = `${done} / ${total} done`;
             document.getElementById('bd-progress-bar').style.width   = total ? Math.round(done/total*100)+'%' : '0%';
         }
 
         function _bdRenderBoard() { _bdRender(); } // alias for external caller
         function _bdRender() {
+            _bdInitCols();
+            const wrap = document.getElementById('bd-columns');
+            if (!wrap) return;
             let visible = _bdType ? _bdTasks.filter(t => t.itemType === _bdType) : _bdTasks;
-            if (_bdPersonFilter) visible = visible.filter(t => (t.owner||'').split(',').map(o=>o.trim()).includes(_bdPersonFilter));
+            if (_bdOwnerFilter.length) {
+                const wanted = _bdOwnerFilter.map(o => o.toLowerCase());
+                visible = visible.filter(t => {
+                    const parts = (t.owner || '').split(',').map(o => o.trim().toLowerCase());
+                    return wanted.some(w => parts.includes(w));
+                });
+            }
             const _fmtH = v => { const n = Math.round(+(v) || 0); return `${n}h`; };
-            BOARD_COLS.forEach(col => {
-                const cards   = visible.filter(t => _bdColFor(t.status) === col.key);
-                const el      = document.getElementById('bd-cards-' + col.key);
-                const count   = document.getElementById('bd-count-' + col.key);
-                const hoursEl = document.getElementById('bd-hours-' + col.key);
-                count.textContent = cards.length || '';
-                const estH = cards.reduce((s, t) => s + (+(t.weight)      || 0), 0);
-                const actH = cards.reduce((s, t) => s + (+(t.actualHours) || 0), 0);
-                if (hoursEl) hoursEl.textContent = cards.length ? `est: ${_fmtH(estH)}  act: ${_fmtH(actH)}` : '';
-                if (!cards.length) {
-                    el.innerHTML = `<div class="flex flex-col items-center justify-center py-10 text-gray-300 text-xs gap-1"><svg class="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>No items</div>`;
-                } else {
-                    el.innerHTML = cards.map(t => _bdCard(t)).join('');
-                }
-            });
+            const emptyHtml = `<div class="flex flex-col items-center justify-center py-10 text-gray-300 text-xs gap-1"><svg class="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>No items</div>`;
+            wrap.innerHTML = BOARD_COLS.map(col => {
+                const cards = visible.filter(t => t.status === col.name);
+                const estH  = cards.reduce((s, t) => s + (+(t.weight)      || 0), 0);
+                const actH  = cards.reduce((s, t) => s + (+(t.actualHours) || 0), 0);
+                const hoursTxt = cards.length ? `est: ${_fmtH(estH)}  act: ${_fmtH(actH)}` : '';
+                const body  = cards.length ? cards.map(t => _bdCard(t)).join('') : emptyHtml;
+                return `<div class="flex-1 min-w-[228px] h-full flex flex-col" data-col="${col.key}">
+                    <div class="flex items-center justify-between px-3 py-2 rounded-t-xl bg-gray-50 border border-gray-200 border-b-0">
+                        <div class="flex items-center gap-2 flex-wrap min-w-0">
+                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${col.color}"></span>
+                            <span class="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate">${_esc(col.name)}</span>
+                            <span class="text-xs bg-gray-200 text-gray-600 font-semibold px-2 py-0.5 rounded-full">${cards.length || ''}</span>
+                            <span class="text-[10px] text-gray-400">${hoursTxt}</span>
+                        </div>
+                        <button onclick="_bdAddTask('${col.key}')" title="Add task"
+                                class="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors text-lg leading-none flex-shrink-0">+</button>
+                    </div>
+                    <div id="bd-cards-${col.key}" class="bd-dropzone flex-1 min-h-0 space-y-2 p-2 border border-gray-200 border-t-0 rounded-b-xl bg-gray-50/60 overflow-y-auto"
+                         ondragover="_bdDragOver(event)" ondrop="_bdDrop(event,'${col.key}')" ondragleave="_bdDragLeave(event)">${body}</div>
+                </div>`;
+            }).join('');
         }
 
         function _bdCard(t) {
@@ -2010,6 +2149,8 @@
             const priCls = BD_PRI_CLS[t.priority]  || 'bg-gray-100 text-gray-500';
             const owners = (t.owner || '').split(',').map(o => o.trim()).filter(Boolean);
             const avatars = owners.slice(0,3).map(o => _owAv(o, '22px', '-6px')).join('');
+            const bdSp    = (t.sprintId != null) ? _bdSprints.find(s => s.id === t.sprintId) : null;
+            const bdSpName = bdSp ? bdSp.name : '';
             // Req 10: overdue = has end date, past today, and not in a terminal status
             const today = new Date().toISOString().split('T')[0];
             const isOverdue = t.endDate && t.endDate < today && !['Done','Resolved','Closed'].includes(t.status);
@@ -2024,6 +2165,11 @@
                     <span class="text-sm flex-shrink-0 mt-0.5">${icon}</span>
                     <p class="text-sm font-medium text-gray-800 leading-snug flex-1 min-w-0">${_esc(t.goal || '—')}</p>
                 </div>
+                ${(t.project || t.property || bdSpName) ? `<div class="flex flex-wrap gap-1 mb-2">
+                    ${t.project  ? `<span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 max-w-[110px] truncate cursor-pointer hover:bg-blue-100" title="Module: ${_esc(t.project)}" data-val="${_esc(t.project)}" onclick="event.stopPropagation();quickFilterModule(this.dataset.val,event)">${_esc(t.project)}</span>` : ''}
+                    ${t.property ? `<span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 max-w-[110px] truncate cursor-pointer hover:bg-purple-100" title="Client: ${_esc(t.property)}" data-val="${_esc(t.property)}" onclick="event.stopPropagation();quickFilterClient(this.dataset.val,event)">${_esc(t.property)}</span>` : ''}
+                    ${bdSpName   ? `<span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 max-w-[110px] truncate" title="Sprint: ${_esc(bdSpName)}">⚡ ${_esc(bdSpName)}</span>` : ''}
+                </div>` : ''}
                 <div class="flex items-center gap-1.5 flex-wrap">
                     <span class="text-[10px] text-gray-400 font-mono">#${t.id}</span>
                     ${t.priority ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${priCls}">${_esc(t.priority)}</span>` : ''}
@@ -2062,8 +2208,16 @@
             if (!taskId) return;
             const task   = _bdTasks.find(t => t.id === taskId);
             if (!task) return;
-            const newStatus = BOARD_DROP[colKey][task.itemType || ''] || BOARD_DROP[colKey][''];
-            if (task.status === newStatus) return;
+            const col = BOARD_COLS.find(c => c.key === colKey);
+            const newStatus = col ? col.name : null;
+            if (!newStatus || task.status === newStatus) return;
+            // HARD flow rule: block moves that don't follow the item type's flow.
+            if (!_isFlowMoveAllowed(task.itemType || '', task.status, newStatus)) {
+                const nxt = _allowedNext(task.itemType || '', task.status);
+                showToast(`Can't move a ${task.itemType || 'item'} from ${task.status || '—'} to ${newStatus}.`
+                    + (nxt.length ? ` Allowed: ${nxt.join(', ')}.` : ''), 'error');
+                return;
+            }
             // Require actual hours when dragging into done column
             let bdActualHours = null;
             if (_isDoneStatus(task.itemType || '', newStatus)) {
@@ -2117,20 +2271,17 @@
 
         // ── Add task from column ──────────────────────────────────────────────
         function _bdAddTask(colKey) {
+            _bdInitCols();
+            const col = BOARD_COLS.find(c => c.key === colKey);
+            const defaultStatus = col ? col.name : 'To Do';
             openCanvas(null);
             setTimeout(() => {
-                // Pre-set status for the target column
-                const statusMap = {
-                    todo: { Task:'To Do', '':'To Do' },
-                    wip:  { Task:'In Progress', '':'In Progress' },
-                    done: { Task:'Done', '':'Done' },
-                };
-                const defaultStatus = statusMap[colKey][''] || 'To Do';
                 const statusSel = document.getElementById('cf-status');
                 if (statusSel) {
                     // Populate options if empty (new task has no item type yet)
                     if (!statusSel.options.length)
-                        ['New','To Do','Active','In Progress','Resolved','Done','Closed'].forEach(s => {
+                        (BOARD_COLS.length ? BOARD_COLS.map(c => c.name)
+                                           : ['New','To Do','Active','In Progress','Resolved','Done','Closed']).forEach(s => {
                             const o = document.createElement('option'); o.value = o.text = s;
                             statusSel.appendChild(o);
                         });
@@ -2240,8 +2391,11 @@
             _bdUpdateInfo(); _bdRender();
         };
 
-        // Auto-load
-        _bdLoad();
+        // Auto-load — defer to DOMContentLoaded so helpers defined in later script blocks
+        // (e.g. _esc) are parsed before the board renders; otherwise a fast backlog fetch can
+        // win the race and _bdRenderSprintTabs throws "_esc is not defined".
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => _bdLoad());
+        else _bdLoad();
         </script>
     }
 
@@ -2262,6 +2416,9 @@ function _owAv(o, sz, ml) {
 }
 const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
 const CV_LEAD   = @Html.Raw(User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead" ? "true" : "false");
+// Mirrors the server's CanModifyAsync bypass (IsTeamAdmin = System Admin OR team-role TeamAdmin).
+// Used for the "edit any task" gate so Team Admins get the edit form, not just System Admins.
+const CV_TEAM_ADMIN = @Html.Raw(User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value == "TeamAdmin" ? "true" : "false");
 const CV_USERS  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
     Model.Owners.Select(o => o.Name).Where(n => !string.IsNullOrEmpty(n)).ToList(),
     jsonOpts));
@@ -2285,43 +2442,43 @@ const ITEM_STATUSES = (() => {
 // Valid parent type for each item type
 const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'Story' };
 
-// Allowed status transitions per item type (mirrors TaskStatusRules server-side).
-// TeamLead+ bypass on the server; CV_ADMIN bypasses client-side filtering too.
-const ALLOWED_TRANSITIONS = {
-    Task: {
-        'To Do':            ['In Progress', 'Blocked'],
-        'In Progress':      ['Development Done', 'Blocked', 'To Do'],
-        'Development Done': ['Done', 'In Progress', 'Blocked'],
-        'Done':             ['In Progress', 'To Do'],
-        'Blocked':          ['To Do', 'In Progress', 'Development Done'],
-    },
-    Bug: {
-        'New':      ['Active', 'Resolved', 'Blocked'],
-        'Active':   ['Resolved', 'Blocked', 'New'],
-        'Resolved': ['Closed', 'Active', 'New'],
-        'Closed':   ['Active', 'New'],
-        'Blocked':  ['New', 'Active', 'Resolved'],
-    },
-    Story: {
-        'New':      ['Active', 'Blocked'],
-        'Active':   ['Resolved', 'Blocked', 'New'],
-        'Resolved': ['Closed', 'Active', 'New'],
-        'Closed':   ['Active', 'New'],
-        'Blocked':  ['New', 'Active', 'Resolved'],
-    },
-    Feature: {
-        'New':      ['Active', 'Blocked'],
-        'Active':   ['Resolved', 'Blocked', 'New'],
-        'Resolved': ['Closed', 'Active', 'New'],
-        'Closed':   ['Active', 'New'],
-        'Blocked':  ['New', 'Active', 'Resolved'],
-    },
-    Epic: {
-        'New':    ['Active'],
-        'Active': ['Closed', 'New'],
-        'Closed': ['Active', 'New'],
-    },
+// FORWARD-ONLY status flow (mirrors TaskStatusRules server-side). From any status you may
+// jump to ANY later status in the type's order (skips allowed, e.g. "To Do" → "Done") or to
+// "Blocked"; backward moves are rejected. Blocked resumes to any status. HARD rule for all roles.
+const FLOW_ORDER = {
+    Task:    ['To Do', 'In Progress', 'Development Done', 'In QA', 'Done'],
+    Bug:     ['New', 'Active', 'Resolved', 'Closed'],
+    Story:   ['New', 'Active', 'Resolved', 'Closed'],
+    Feature: ['New', 'Active', 'Resolved', 'Closed'],
+    Epic:    ['New', 'Active', 'Closed'],   // no Blocked side-state
 };
+// Derive from→[reachable] maps: each status maps to all LATER statuses (+ Blocked); Blocked maps
+// to the whole flow (resume anywhere). Keys stay the full status list so callers can enumerate them.
+const ALLOWED_TRANSITIONS = (() => {
+    const out = {};
+    for (const [type, flow] of Object.entries(FLOW_ORDER)) {
+        const hasBlocked = type !== 'Epic';
+        const m = {};
+        flow.forEach((s, i) => { m[s] = hasBlocked ? [...flow.slice(i + 1), 'Blocked'] : flow.slice(i + 1); });
+        if (hasBlocked) m['Blocked'] = flow.slice();
+        out[type] = m;
+    }
+    return out;
+})();
+
+// Initial status per item type — the only status a NEW item may be created in.
+const INITIAL_STATUS = { Task: 'To Do', Bug: 'New', Story: 'New', Feature: 'New', Epic: 'New', '': 'New' };
+// A status move is valid only if it stays put or advances forward in the item type's flow.
+// HARD rule for everyone (no admin bypass) — mirrors the server-side guard.
+function _isFlowMoveAllowed(itemType, from, to) {
+    if (!from || from === to) return true;
+    const next = (ALLOWED_TRANSITIONS[itemType] || {})[from];
+    if (!next) return true;          // unknown / legacy source status — don't trap (mirrors server)
+    return next.includes(to);
+}
+function _allowedNext(itemType, from) {
+    return (ALLOWED_TRANSITIONS[itemType] || {})[from] || [];
+}
 </script>
 
 <!-- ═══ OFF-CANVAS BACKDROP ═══ -->
@@ -2332,7 +2489,7 @@ const ALLOWED_TRANSITIONS = {
 <style>@@keyframes slideInToast{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}</style>
 <!-- ═══ OFF-CANVAS PANEL ═══ -->
 <div id="task-canvas"
-     class="fixed inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl z-50 translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+     class="fixed inset-y-0 right-0 w-full max-w-2xl lg:max-w-3xl bg-white shadow-2xl z-50 translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
     <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
         <div>
             <h2 id="canvas-title" class="text-lg font-semibold text-gray-900">New Task</h2>
@@ -2354,6 +2511,11 @@ const ALLOWED_TRANSITIONS = {
             <button id="canvas-copy-url" onclick="copyTaskUrl()" title="Copy link to this task"
                     class="hidden p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            </button>
+            <button id="canvas-split-btn" onclick="openSplitDialog()" title="Split — leave the done hours here as a linked task and carry the remainder to Backlog or a sprint"
+                    class="hidden items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-teal-200 text-teal-600 hover:bg-teal-50 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3v12m0 0a3 3 0 103 3M6 15a3 3 0 013-3h6a3 3 0 003-3V3"/></svg>
+                Split
             </button>
             <button onclick="closeCanvas()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -2413,7 +2575,7 @@ const ALLOWED_TRANSITIONS = {
         <input type="hidden" id="cf-parent-id"  name="ParentId"  value="" />
         <input type="hidden" id="cf-sprint-id"  name="SprintId"  value="" />
         <!-- Item Type + Parent -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Item Type</label>
                 <select id="cf-item-type-sel" onchange="onItemTypeChange(this.value)" data-searchable
@@ -2437,7 +2599,7 @@ const ALLOWED_TRANSITIONS = {
                 </p>
             </div>
         </div>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Module</label>
                 <select id="cf-project" name="Project" data-searchable
@@ -2478,9 +2640,9 @@ const ALLOWED_TRANSITIONS = {
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Assignee</label>
                 <input type="hidden" id="cf-owner" name="Owner" />
-                @if (User.IsInRole("Admin"))
+                @if (User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead")
                 {
-                    @* Admin: custom searchable multi-select picker *@
+                    @* Admin / Team Admin / Team Lead: searchable multi-select picker to assign anyone *@
                     <div id="cf-owner-picker" class="relative">
                         <div id="cf-owner-trigger"
                              onclick="toggleOwnerPicker()"
@@ -2520,7 +2682,7 @@ const ALLOWED_TRANSITIONS = {
                     </select>
                 }
             </div>
-            <div>
+            <div id="cf-status-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
                 <select id="cf-status" name="Status" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
@@ -2567,7 +2729,7 @@ const ALLOWED_TRANSITIONS = {
                 </select>
                 </div>
             </div>
-            <div>
+            <div id="cf-actual-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
                     <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Actual (h)
@@ -2575,7 +2737,7 @@ const ALLOWED_TRANSITIONS = {
                 <input id="cf-actual-hours" name="ActualHours" type="number" min="0" max="9999" step="0.5" placeholder="e.g. 6.5"
                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
             </div>
-            <div>
+            <div id="cf-remaining-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Remaining (h)</label>
                 <input id="cf-remaining-work-hours" name="RemainingWorkHours" type="number" min="0" max="9999" step="0.5" placeholder="e.g. 2"
                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
@@ -2752,6 +2914,10 @@ const ALLOWED_TRANSITIONS = {
 @section Scripts {
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css"
       integrity="sha384-uqD/OYCNfagd1EgXMgl5QedTD5K+B3e9b8GYo/41t7+Serf7CBxvl+tU1gHd+qd1"
+      crossorigin="anonymous" />
+<!-- Font Awesome 4.7 — EasyMDE renders its toolbar icons as FA classes (fa fa-bold, …).
+     Without it the toolbar shows blank buttons separated by "|" (i.e. "||||"). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css"
       crossorigin="anonymous" />
 <script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"
         integrity="sha384-KtB38COewxfrhJxoN2d+olxJAeT08LF8cVZ6DQ8Poqu89zIptqO6zAXoIxpGNWYE"
@@ -2979,7 +3145,7 @@ document.addEventListener('click', e => {
 
 // Restore owner field — admin: custom picker; non-admin: locked to self
 function _restoreOwner(ownerValue) {
-    if (CV_ADMIN) {
+    if (CV_ADMIN || CV_LEAD) {   // admin / team admin / team lead → multi-select picker (assign anyone)
         _ownerSelected = new Set(
             ownerValue.split(',').map(s => s.trim()).filter(Boolean)
         );
@@ -2990,6 +3156,78 @@ function _restoreOwner(ownerValue) {
         document.getElementById('cf-owner-label').textContent = displayName;
         document.getElementById('cf-owner').value = CV_ME;
     }
+}
+
+// ── Split task (from the drawer): leave the done hours here, carry the remainder ────────────────
+let _spEst = 0, _spAct = 0;
+function _spRecalc() {
+    const rem = document.getElementById('sp-remaining');
+    if (!rem || rem.dataset.touched === '1') return;
+    const hours = parseFloat(document.getElementById('sp-hours').value) || 0;
+    rem.value = Math.max(0, +(_spEst - _spAct - hours).toFixed(2));
+}
+async function openSplitDialog() {
+    const t = _cvTask;
+    if (!t) return;
+    _spEst = +(t.weight) || 0;
+    _spAct = +(t.actualHours) || 0;
+    // Destinations: Backlog + the open sprints already loaded in the drawer's sprint dropdown (excluding this task's own).
+    const sprintSel = document.getElementById('cf-sprint-sel');
+    const sprintOpts = sprintSel
+        ? [...sprintSel.options].filter(o => o.value && o.value !== String(t.sprintId ?? ''))
+        : [];
+    const destOptions = '<option value="backlog">← Backlog</option>' +
+        sprintOpts.map(o => `<option value="${o.value}">${_esc(o.text)}</option>`).join('');
+    const remDefault = Math.max(0, _spEst - _spAct);
+
+    const res = await Swal.fire({
+        title: 'Split task',
+        width: '32rem',
+        html: `<div class="text-left text-sm text-gray-600 space-y-3">
+            <p>Leave the completed hours here as a <b>done, linked</b> task, and carry the <b>remaining</b> work forward — as this same task (keeps its history).</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="block text-xs font-medium text-gray-500 mb-1">Hours worked now</label>
+                <input id="sp-hours" type="number" min="0" step="0.5" value="0" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" oninput="_spRecalc()"></div>
+              <div><label class="block text-xs font-medium text-gray-500 mb-1">Remaining (carry)</label>
+                <input id="sp-remaining" type="number" min="0" step="0.5" value="${remDefault}" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" oninput="this.dataset.touched='1'"></div>
+            </div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Carry remainder to</label>
+              <select id="sp-dest" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">${destOptions}</select></div>
+            <p class="text-[11px] text-gray-400">Est ${_spEst}h · actual ${_spAct}h. The estimate splits into <b>done</b> (${Math.max(0,(_spEst - remDefault)).toFixed(2)}h) + <b>remaining</b> — nothing is lost.</p>
+        </div>`,
+        showCancelButton: true,
+        confirmButtonText: 'Split task',
+        confirmButtonColor: '#0d9488',
+        focusConfirm: false,
+        allowOutsideClick: false,   // stay open on background clicks / notifications
+        allowEscapeKey: false,      // only Split task or Cancel closes it
+        preConfirm: () => {
+            const hours = parseFloat(document.getElementById('sp-hours').value) || 0;
+            const remaining = parseFloat(document.getElementById('sp-remaining').value) || 0;
+            if (remaining <= 0) { Swal.showValidationMessage('Enter remaining hours greater than 0.'); return false; }
+            if ((_spAct + hours) <= 0) { Swal.showValidationMessage('Log the hours already worked — a split needs a done portion.'); return false; }
+            return { hours, remaining, dest: document.getElementById('sp-dest').value };
+        }
+    });
+    if (!res.isConfirmed) return;
+
+    const fd = new FormData();
+    fd.append('id', t.id);
+    fd.append('hoursWorked', res.value.hours);
+    fd.append('remaining', res.value.remaining);
+    fd.append('moveTo', res.value.dest);
+    fd.append('__RequestVerificationToken', document.querySelector('#canvas-form input[name=__RequestVerificationToken]').value);
+    try {
+        const r = await fetch('/Tasks/Split', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.success) {
+            await Swal.fire({ icon: 'success', title: 'Task split', text: 'A done slice was left behind and the remainder was carried forward.', timer: 2200, showConfirmButton: false });
+            closeCanvas();
+            location.reload();
+        } else {
+            Swal.fire({ icon: 'error', text: d.error || 'Could not split the task.' });
+        }
+    } catch { Swal.fire({ icon: 'error', text: 'Network error while splitting.' }); }
 }
 
 // ── Sprint loader ─────────────────────────────────────────────────────────────
@@ -3017,8 +3255,23 @@ async function _loadSprints(currentSprintId) {
 
 function _updateStatusOptions(itemType, currentVal) {
     const sel = document.getElementById('cf-status');
-    let opts = ITEM_STATUSES[itemType] || ITEM_STATUSES[''];
-    if (currentVal && !opts.includes(currentVal)) opts = [...opts, currentVal];
+    // CREATE (no task id): lock to the item type's single initial status.
+    if (!_cvTaskId) {
+        const init = INITIAL_STATUS[itemType] ?? INITIAL_STATUS[''];
+        sel.innerHTML = `<option value="${init}" selected>${init}</option>`;
+        sel.value = init;
+        return;
+    }
+    // EDIT: offer only current status + its valid flow transitions when the state is
+    // known (hard rule); otherwise fall back to the full DB-driven list.
+    const flow = ALLOWED_TRANSITIONS[itemType];
+    let opts;
+    if (currentVal && flow && flow[currentVal] !== undefined) {
+        opts = [currentVal, ...flow[currentVal]];
+    } else {
+        opts = ITEM_STATUSES[itemType] || ITEM_STATUSES[''];
+        if (currentVal && !opts.includes(currentVal)) opts = [...opts, currentVal];
+    }
     sel.innerHTML = '<option value="">— None —</option>' +
         opts.map(s => `<option value="${s}"${s === currentVal ? ' selected' : ''}>${s}</option>`).join('');
 }
@@ -3091,12 +3344,17 @@ function openCanvas(task) {
     const isNew   = !task;
     const _owners = (task?.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const _meLc   = (CV_ME || '').toLowerCase();
-    // Mirrors server-side CanModify: admin, unowned, owner, reporter, or creator
-    const isEditable = isNew || CV_ADMIN || _owners.length === 0 || _owners.includes(_meLc)
+    // Mirrors server-side CanModify: team admin / system admin, unowned, owner, reporter, or creator
+    const isEditable = isNew || CV_TEAM_ADMIN || _owners.length === 0 || _owners.includes(_meLc)
         || (task?.reporter  || '').toLowerCase() === _meLc
         || (task?.createdBy || '').toLowerCase() === _meLc;
     _cvTaskId = task ? task.id : null;
     _cvTask   = task || null;
+
+    // Streamlined create: hide post-work fields (status is auto-set to the initial
+    // status; actual/remaining hours are only meaningful once work is under way).
+    ['cf-status-cell','cf-actual-cell','cf-remaining-cell'].forEach(id =>
+        document.getElementById(id)?.classList.toggle('hidden', isNew));
 
     // Clear form fields
     ['cf-id','cf-goal','cf-owner',
@@ -3159,8 +3417,8 @@ function openCanvas(task) {
         const reporterSelNew = document.getElementById('cf-reporter-sel');
         if (reporterSelNew) reporterSelNew.value = '@myDisplayName';
         document.getElementById('cf-ac-section').classList.add('hidden');
-        // Non-admin: default owner to themselves; admin: clear selection
-        _restoreOwner(CV_ADMIN ? '' : CV_ME);
+        // Member: default owner to themselves; admin / team admin / lead: clear selection to choose
+        _restoreOwner((CV_ADMIN || CV_LEAD) ? '' : CV_ME);
         _updateStatusOptions('', '');
         _loadSprints(null);
     }
@@ -3182,6 +3440,12 @@ function openCanvas(task) {
         watchBtn.classList.add('hidden');
         watchBtn.classList.remove('flex');
     }
+
+    // Split button — existing, editable work items only (not Epics/Features, which are containers).
+    const splitBtn = document.getElementById('canvas-split-btn');
+    const canSplit = !!task && isEditable && !['Epic','Feature'].includes(task.itemType || '');
+    splitBtn.classList.toggle('hidden', !canSplit);
+    splitBtn.classList.toggle('flex', canSplit);
 
     // Show comments, history, attachments, links for existing tasks
     const commSection       = document.getElementById('cf-comments-section');
@@ -3246,7 +3510,7 @@ function _applyCanvasMode(isEditable, task) {
         form.classList.add('hidden');
         document.getElementById('canvas-view-goal').textContent = task.goal || '';
         const owners = (task.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-        const canEdit = CV_ADMIN || owners.includes((CV_ME || '').toLowerCase());
+        const canEdit = CV_TEAM_ADMIN || owners.includes((CV_ME || '').toLowerCase());
         document.getElementById('canvas-edit-btn').classList.toggle('hidden', !canEdit);
     } else {
         // Edit / new: hide the card, show the form with fields enabled
@@ -3596,8 +3860,8 @@ async function _openTaskById(id) {
 }
 
 // ─── Task Links (Phase 5) ────────────────────────────────────────────────────
-const LINK_INVERSE = { 'Blocks':'Blocked By','Blocked By':'Blocks','Predecessor':'Successor','Successor':'Predecessor','Related':'Related','Duplicate':'Duplicate' };
-const LINK_COLORS  = { 'Related':'bg-gray-100 text-gray-600','Blocks':'bg-red-100 text-red-700','Blocked By':'bg-orange-100 text-orange-700','Duplicate':'bg-amber-100 text-amber-700','Predecessor':'bg-violet-100 text-violet-700','Successor':'bg-blue-100 text-blue-700' };
+const LINK_INVERSE = { 'Blocks':'Blocked By','Blocked By':'Blocks','Predecessor':'Successor','Successor':'Predecessor','Related':'Related','Duplicate':'Duplicate','Split':'Split' };
+const LINK_COLORS  = { 'Related':'bg-gray-100 text-gray-600','Blocks':'bg-red-100 text-red-700','Blocked By':'bg-orange-100 text-orange-700','Duplicate':'bg-amber-100 text-amber-700','Predecessor':'bg-violet-100 text-violet-700','Successor':'bg-blue-100 text-blue-700','Split':'bg-teal-100 text-teal-700' };
 
 let _linkSearchTimer   = null;
 let _linkSelectedTask  = null;
@@ -3786,9 +4050,12 @@ function toggleKanbanCol(btn) {
 })();
 
 // ── 7.4 Board person filter ───────────────────────────────────────────────────
-let _bdPersonFilter = '';
+// Default the Sprint Board to the logged-in user's tasks (Model.Owner is a comma-separated multi-select);
+// the Person dropdown can switch to a single person or All.
+let _bdOwnerFilter = (@Html.Raw(JsonSerializer.Serialize(Model.Owner ?? "")) || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
 function _bdFilterPerson(person) {
-    _bdPersonFilter = person;
+    _bdOwnerFilter = person ? [person] : [];
     // Re-apply by re-rendering current board data
     if (typeof _bdRenderBoard === 'function') _bdRenderBoard();
 }
@@ -4243,7 +4510,7 @@ function _buildDetailHtml(t) {
     ].filter(([, v]) => v && v !== '—');
 
     const currentUser = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(User.FindFirst("DisplayName")?.Value ?? "", jsonOpts));
-    const canEdit = @Html.Raw(User.IsInRole("Admin") ? "true" : "false")
+    const canEdit = CV_TEAM_ADMIN
         || !t.owner
         || ownerNames.includes(currentUser);
     const showClaim = !ownerNames.includes(currentUser)
@@ -4335,7 +4602,7 @@ function toggleStatusMenu(btn) {
 
     const taskId    = btn.dataset.taskId;
     const curStatus = btn.dataset.curStatus;
-    const itemType  = btn.dataset.itemType || '';
+    const itemType  = btn.dataset.itemType || 'Task';   // typeless legacy items display & behave as Task
     const owners    = (btn.dataset.owner || '').split(',').map(s => s.trim().toLowerCase());
     const isMyTask  = !btn.dataset.owner
                    || owners.includes(CV_ME.toLowerCase())
@@ -4345,18 +4612,14 @@ function toggleStatusMenu(btn) {
     // Members cannot change status on tasks they don't own
     if (!CV_ADMIN && !CV_LEAD && !isMyTask) return;
 
-    const WORKFLOW = {
-        'Task':    ['To Do', 'In Progress', 'Development Done', 'Done'],
-        'Bug':     ['New', 'Active', 'Resolved', 'Closed'],
-        'Story':   ['New', 'Active', 'Resolved', 'Closed'],
-        'Feature': ['New', 'Active', 'Resolved', 'Closed'],
-        'Epic':    ['New', 'Active', 'Closed'],
-    };
-    const workflowStatuses = WORKFLOW[itemType] || null;
-    // Always include current status even if it's outside the workflow (legacy data)
-    const allowed = workflowStatuses
-        ? (curStatus && !workflowStatuses.includes(curStatus) ? [curStatus, ...workflowStatuses] : workflowStatuses)
-        : (_wsData.map(w => w.name));
+    // Forward-only: offer the current status plus every status it may advance to (+ Blocked).
+    // Backward statuses are omitted so they can't be picked. The current status is always kept
+    // (even if off-flow legacy data) so it stays visible; unknown statuses fall back to the full flow.
+    const flow = ALLOWED_TRANSITIONS[itemType];
+    let allowed;
+    if (flow && flow[curStatus] !== undefined) allowed = [curStatus, ...flow[curStatus]];
+    else if (flow)                             allowed = [curStatus, ...Object.keys(flow)];
+    else                                       allowed = _wsData.map(w => w.name);
 
     _statusDd.innerHTML = '';
     _wsData.filter(ws => allowed.includes(ws.name)).forEach(ws => {
@@ -4596,6 +4859,19 @@ async function handleKanbanDrop(e, dropZone, newStatus, newSwimlane) {
     const oldStatus  = srcZone?.dataset.colStatus ?? '';
     const oldSwimlane = card.dataset.swimlane ?? 'Default';
 
+    // HARD flow rule: reject moves that don't follow the item type's flow
+    // (e.g. a Bug can't be dropped on "Done" — it must reach "Closed"; nothing skips to Done).
+    let _cardType = '';
+    try { _cardType = (JSON.parse(card.dataset.task || '{}').itemType) || ''; } catch {}
+    if (!_isFlowMoveAllowed(_cardType, oldStatus, newStatus)) {
+        _kDropLocked = false;
+        const nxt = _allowedNext(_cardType, oldStatus);
+        Swal.fire({ icon: 'warning', title: 'Move not allowed',
+            html: `A <b>${_cardType || 'work item'}</b> can't move from <b>${oldStatus || '—'}</b> to <b>${newStatus}</b>.`
+                + (nxt.length ? `<br><span style="font-size:.8rem;color:#64748b">Allowed next: ${nxt.join(', ')}</span>` : '') });
+        return;
+    }
+
     // WIP limit check on destination column
     const wipLimit   = parseInt(destColEl?.dataset.wipLimit || '0') || 0;
     const destCount  = destColEl?.querySelectorAll('.kanban-card').length ?? 0;
@@ -4733,6 +5009,37 @@ window.onLinkUpdated = function(taskId) {
 // ── Bulk selection (table view) ───────────────────────────────────────────────
 let _bulkSelected = new Set();
 let _bulkLastIdx  = -1;
+// Board/status order for presenting the flow-aware bulk status list.
+const _BULK_STATUS_ORDER = @Html.Raw(JsonSerializer.Serialize(Model.WorkStates.Select(w => w.Name)));
+
+// Statuses the WHOLE current selection can validly move to (intersection of each task's allowed
+// next-transitions, per ALLOWED_TRANSITIONS). Mirrors the server's flow rule, so we never offer a
+// status that would just be skipped. Tasks with an unknown/legacy status don't constrain the set
+// (the server is lenient there too).
+function _bulkAllowedStatuses() {
+    const checks = [...document.querySelectorAll('.bl-row-check')]
+        .filter(c => _bulkSelected.has(parseInt(c.dataset.id)));
+    if (!checks.length) return [];
+    let inter = null;
+    checks.forEach(c => {
+        const next = _allowedNext(c.dataset.itemType || 'Task', c.dataset.status || '');
+        if (!next.length) return;                 // unknown source status — unconstrained
+        const set = new Set(next);
+        inter = inter === null ? set : new Set([...inter].filter(s => set.has(s)));
+    });
+    if (inter === null) return _BULK_STATUS_ORDER.slice();   // all unconstrained → offer all
+    return _BULK_STATUS_ORDER.filter(s => inter.has(s));
+}
+
+// Rebuild the bulk status dropdown to only the flow-valid options for the current selection.
+function _bulkRefreshStatusOptions() {
+    const sel = document.getElementById('bulk-status-sel');
+    if (!sel) return;
+    const statuses = _bulkAllowedStatuses();
+    sel.innerHTML = '<option value="" disabled selected>Set Status…</option>' + (statuses.length
+        ? statuses.map(s => `<option value="${_esc(s)}">${_esc(s)}</option>`).join('')
+        : '<option value="" disabled>No common status for this mix</option>');
+}
 
 function _bulkToken() {
     return document.querySelector('#tbl-aft input[name="__RequestVerificationToken"]')?.value
@@ -4777,6 +5084,7 @@ function _bulkUpdateBar() {
     if (_bulkSelected.size > 0) {
         bar.classList.remove('hidden');
         cnt.textContent = _bulkSelected.size + ' selected';
+        _bulkRefreshStatusOptions();   // flow-aware: only statuses the selection can move to
     } else {
         bar.classList.add('hidden');
         ['bulk-status-sel','bulk-owner-sel','bulk-sprint-sel','bulk-priority-sel'].forEach(id => {
@@ -4832,8 +5140,12 @@ async function bulkChangeStatus(status) {
         const j = await r.json();
         if (j.success) {
             let msg = 'Status updated for ' + j.count + ' task(s).' + _deniedNote(j);
-            if (j.noOwner > 0) msg += ` ${j.noOwner} skipped — no owner assigned.`;
-            showToast(msg, (j.denied > 0 || j.noOwner > 0) ? 'warning' : 'success');
+            if (j.noOwner > 0)           msg += ` ${j.noOwner} skipped — no owner assigned.`;
+            if (j.needActualHours > 0)   msg += ` ${j.needActualHours} skipped — actual hours required.`;
+            if (j.invalidTransition > 0) msg += ` ${j.invalidTransition} skipped — not a valid flow step.`;
+            if (j.openChildren > 0)      msg += ` ${j.openChildren} skipped — has open children.`;
+            const skipped = j.denied > 0 || j.noOwner > 0 || j.needActualHours > 0 || j.invalidTransition > 0 || j.openChildren > 0;
+            showToast(msg, skipped ? 'warning' : 'success');
             setTimeout(() => location.reload(), 900);
         }
         else { showToast(j.error || 'Failed.', 'error'); if (sel) sel.selectedIndex = 0; }

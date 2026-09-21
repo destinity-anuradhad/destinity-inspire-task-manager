@@ -11,8 +11,9 @@
 
     function build(select) {
         if (select._ttBuilt) return;
-        if (select.multiple)  return;
         select._ttBuilt = true;
+        const isMulti = select.multiple;
+        const placeholder = select.dataset.placeholder || '';
 
         // Capture the select's visual geometry BEFORE hiding it
         const cs      = window.getComputedStyle(select);
@@ -25,7 +26,9 @@
             padBot    : cs.paddingBottom  || '6px',
             padL      : cs.paddingLeft    || '12px',
             padR      : cs.paddingRight   || '12px',
-            minH      : cs.height         || 'auto',
+            // A native <select multiple> reports a tall multi-row listbox height; ignore it and let
+            // padding define a single-line trigger. Single-selects keep their measured height.
+            minH      : isMulti ? 'auto' : (cs.height || 'auto'),
             color     : cs.color          || '#1e293b',
             fontFamily: cs.fontFamily     || 'inherit',
         };
@@ -143,20 +146,61 @@
         list.style.cssText = 'max-height:216px;overflow-y:auto;padding:4px 0;margin:0;list-style:none;';
 
         panel.appendChild(searchWrap);
+
+        // Multi-select only: "Select all / Clear" bulk actions. "Select all" respects the current
+        // search filter (selects just the visible options); "Clear" deselects everything.
+        if (isMulti) {
+            const bulkRow = document.createElement('div');
+            bulkRow.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid #f1f5f9;';
+            const mkBtn = (label, color) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.textContent = label;
+                b.style.cssText = `font-size:11px;font-weight:600;color:${color};background:transparent;border:none;cursor:pointer;padding:2px 4px;border-radius:4px;`;
+                b.addEventListener('mouseenter', () => b.style.background = '#f1f5f9');
+                b.addEventListener('mouseleave', () => b.style.background = 'transparent');
+                return b;
+            };
+            const selAllBtn = mkBtn('Select all', '#2563eb');
+            const clearBtn  = mkBtn('Clear', '#64748b');
+            selAllBtn.addEventListener('mousedown', e => {
+                e.preventDefault();
+                const q = (searchInput.value || '').toLowerCase().trim();
+                opts().forEach(o => { if (o.value !== '' && (!q || o.text.toLowerCase().includes(q))) o.selected = true; });
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                refreshLabel(); renderList(searchInput.value);
+            });
+            clearBtn.addEventListener('mousedown', e => {
+                e.preventDefault();
+                opts().forEach(o => o.selected = false);
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                refreshLabel(); renderList(searchInput.value);
+            });
+            const sep = document.createElement('span'); sep.textContent = '·'; sep.style.color = '#cbd5e1';
+            bulkRow.appendChild(selAllBtn); bulkRow.appendChild(sep); bulkRow.appendChild(clearBtn);
+            panel.appendChild(bulkRow);
+        }
+
         panel.appendChild(list);
 
         // ── Helpers ──────────────────────────────────────────────────────────
         let isOpen = false;
 
         const opts = () => Array.from(select.options);
+        const selectedOpts = () => opts().filter(o => o.selected && o.value !== '');
 
         function selectedLabel() {
+            if (isMulti) {
+                const sel = selectedOpts();
+                if (sel.length === 0) return placeholder || (opts()[0]?.text || '');
+                if (sel.length === 1) return sel[0].text;
+                return sel.length + ' selected';
+            }
             const o = opts().find(o => o.value === select.value);
             return o ? o.text : (opts()[0]?.text || '');
         }
 
         function refreshLabel() {
-            const hasVal = !!select.value;
+            const hasVal = isMulti ? selectedOpts().length > 0 : !!select.value;
             labelSpan.textContent = selectedLabel();
             labelSpan.style.color = hasVal ? trig.color : '#94a3b8';
             const dis = select.disabled;
@@ -169,7 +213,8 @@
         function renderList(q) {
             const query   = (q || '').toLowerCase().trim();
             const all     = opts();
-            searchWrap.style.display = all.length >= MIN_FOR_SEARCH ? '' : 'none';
+            // Always offer search on multi-selects; single-selects only once the list is long enough.
+            searchWrap.style.display = (isMulti || all.length >= MIN_FOR_SEARCH) ? '' : 'none';
 
             list.innerHTML = '';
             const filtered = query ? all.filter(o => o.text.toLowerCase().includes(query)) : all;
@@ -184,7 +229,7 @@
 
             const curVal = select.value;
             filtered.forEach(o => {
-                const active = o.value === curVal;
+                const active = isMulti ? o.selected : (o.value === curVal);
                 const li = document.createElement('li');
                 li.style.cssText = [
                     'display:flex',
@@ -205,12 +250,25 @@
                         : 'color:#1e293b;background:transparent;',
                 ].join(';');
 
+                // Multi-select: leading checkbox to make toggling obvious
+                if (isMulti) {
+                    const box = document.createElement('span');
+                    box.style.cssText = [
+                        'flex-shrink:0', 'width:15px', 'height:15px', 'border-radius:4px',
+                        'display:flex', 'align-items:center', 'justify-content:center',
+                        `border:1.5px solid ${active ? '#1d4ed8' : '#cbd5e1'}`,
+                        `background:${active ? '#1d4ed8' : '#fff'}`,
+                    ].join(';');
+                    if (active) box.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><path d="M5 13l4 4L19 7"/></svg>`;
+                    li.appendChild(box);
+                }
+
                 const textSpan = document.createElement('span');
                 textSpan.textContent = o.text;
                 textSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
                 li.appendChild(textSpan);
 
-                if (active) {
+                if (!isMulti && active) {
                     const tick = document.createElement('span');
                     tick.style.flexShrink = '0';
                     tick.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>`;
@@ -221,10 +279,17 @@
                 li.addEventListener('mouseleave', () => { if (!active) li.style.background = 'transparent'; });
                 li.addEventListener('mousedown', e => {
                     e.preventDefault();
-                    select.value = o.value;
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                    refreshLabel();
-                    closePanel();
+                    if (isMulti) {
+                        o.selected = !o.selected;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        refreshLabel();
+                        renderList(searchInput.value);   // keep panel open, refresh checkmarks
+                    } else {
+                        select.value = o.value;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        refreshLabel();
+                        closePanel();
+                    }
                 });
                 list.appendChild(li);
             });
@@ -296,12 +361,15 @@
 
         // Intercept select.value = x so the trigger label stays in sync with
         // programmatic value assignments (e.g. canvas form populating fields).
-        const _origDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
-        Object.defineProperty(select, 'value', {
-            get() { return _origDesc.get.call(this); },
-            set(v) { _origDesc.set.call(this, v); refreshLabel(); },
-            configurable: true,
-        });
+        // Single-select only — a multi-select's value is driven by option.selected.
+        if (!isMulti) {
+            const _origDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+            Object.defineProperty(select, 'value', {
+                get() { return _origDesc.get.call(this); },
+                set(v) { _origDesc.set.call(this, v); refreshLabel(); },
+                configurable: true,
+            });
+        }
 
         select._ttSelect = { refresh: refreshLabel, close: closePanel };
         refreshLabel();

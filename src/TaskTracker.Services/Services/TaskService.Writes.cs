@@ -278,12 +278,19 @@ public partial class TaskService
             }
         }
 
-        if (workflow == null && !isNewTask && changesStatus && !ctx.IsTeamLead
-            && !TaskStatusRules.IsTransitionAllowed(task.ItemType, oldStatus, status))
+        // Flow validity is a HARD rule for every role (incl. Team Lead / System Admin):
+        // out-of-flow status moves are rejected regardless of privilege — e.g. a Bug can
+        // never jump to "Done" (it must reach "Closed"), and nothing skips straight to Done.
+        // Only enforced when the CURRENT status is a recognized flow state, so empty/legacy
+        // statuses (e.g. "" → Active on a freshly-seeded item) aren't trapped. Role governs
+        // *whose* work you may change (CanModify), not which transitions exist.
+        var allowedFrom = TaskStatusRules.AllowedTransitions(task.ItemType, oldStatus);
+        if (workflow == null && !isNewTask && changesStatus && allowedFrom.Count > 0
+            && oldStatus != status && !allowedFrom.Contains(status ?? ""))
         {
-            var allowed = TaskStatusRules.AllowedTransitions(task.ItemType, oldStatus);
-            var hint = allowed.Count > 0 ? $" Allowed next: {string.Join(", ", allowed)}." : "";
-            return new StatusChangeResult { Error = $"Cannot move '{oldStatus}' → '{status}'.{hint}" };
+            return new StatusChangeResult {
+                Error = $"Cannot move '{oldStatus}' → '{status}'. Allowed next: {string.Join(", ", allowedFrom)}."
+            };
         }
 
         var requiresOwner = targetWorkflowState?.RequiresOwner ?? RequiresOwner(status);
@@ -733,6 +740,111 @@ public partial class TaskService
         return (true, null);
     }
 
+    // Splits a task on demand (from the task drawer): logs any hours worked, leaves a DONE "slice"
+    // in the task's current location with the delivered hours (linked), and carries the ORIGINAL task
+    // (keeping its id/history) — re-scoped to the remaining hours — to Backlog or another open sprint.
+    // Mirrors the sprint-close split; the original estimate is partitioned (delivered + remaining), never lost.
+    public async Task<(bool Success, string? Error, int? SliceId)> SplitTaskAsync(
+        int taskId, decimal hoursWorked, decimal remaining, string moveTo, UserCtx ctx)
+    {
+        var task = await FindTaskInTeam(taskId, ctx.TeamId);
+        if (task == null) return (false, "Task not found.", null);
+        if (!await CanModifyAsync(task, ctx))
+            return (false, "You don't have permission to split this task.", null);
+
+        hoursWorked = Math.Max(0m, hoursWorked);
+        remaining   = Math.Max(0m, remaining);
+        var origWeight  = task.Weight ?? 0m;
+        var totalActual = (task.ActualHours ?? 0) + hoursWorked;
+        if (remaining <= 0)
+            return (false, "Enter the remaining hours to carry forward (must be greater than 0).", null);
+        if (totalActual <= 0)
+            return (false, "A split needs a completed portion — log the hours already worked first.", null);
+
+        // Resolve the destination for the continuation (Backlog or an OPEN sprint).
+        int? targetSprintId = null;
+        var dest = string.IsNullOrWhiteSpace(moveTo) ? "backlog" : moveTo.Trim();
+        if (dest != "backlog" && int.TryParse(dest, out var sid))
+        {
+            var target = await _db.Sprints.FindAsync(sid);
+            if (target == null || (ctx.TeamId.HasValue && target.TeamId != ctx.TeamId))
+                return (false, "Target sprint not found.", null);
+            if (target.CompletedAt.HasValue)
+                return (false, "Target must be an open (not completed) sprint.", null);
+            targetSprintId = sid;
+        }
+
+        var currentSprintId = task.SprintId;   // the delivered slice stays here
+        var by = ctx.DisplayName;
+        static string DoneStatusFor(string? itemType) => itemType == "Task" ? "Done" : "Closed";
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        // ── Delivered SLICE — a new done record left where the task is now ──
+        var deliveredWeight = Math.Max(0m, origWeight - remaining);
+        var slice = new TaskItem {
+            Goal = task.Goal, Project = task.Project, ProjectId = task.ProjectId, Property = task.Property,
+            Priority = task.Priority, Status = DoneStatusFor(task.ItemType), Owner = task.Owner, ItemType = task.ItemType,
+            ParentId = task.ParentId, SprintId = currentSprintId, ModuleId = task.ModuleId, ClientId = task.ClientId,
+            Labels = task.Labels, EstimateUnit = task.EstimateUnit, Weight = deliveredWeight,
+            ActualHours = totalActual, RemainingWorkHours = 0m,
+            Reporter = task.Reporter, CreatedBy = by, CreatedAt = DateTime.Now, TeamId = task.TeamId,
+            Swimlane = task.Swimlane, StartDate = task.StartDate, EndDate = task.EndDate,
+            ActualStartDate = task.ActualStartDate, ActualEndDate = DateTime.Now
+        };
+        _db.Tasks.Add(slice);
+        await _db.SaveChangesAsync();
+
+        // Move the hours ledger for the current sprint onto the slice, then add the just-worked hours.
+        if (currentSprintId.HasValue)
+        {
+            await _db.TimeEntries.Where(e => e.TaskId == task.Id && e.SprintId == currentSprintId)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.TaskId, slice.Id));
+            await _db.SprintHoursLogs.Where(l => l.TaskId == task.Id && l.SprintId == currentSprintId)
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.TaskId, slice.Id));
+        }
+        var sliceHasEntries = await _db.TimeEntries.AnyAsync(e => e.TaskId == slice.Id);
+        if (!sliceHasEntries && (task.ActualHours ?? 0) > 0)
+            _db.TimeEntries.Add(new TimeEntry {
+                TaskId = slice.Id, SprintId = currentSprintId, UserId = null, Hours = task.ActualHours ?? 0,
+                WorkDate = task.CreatedAt.Date, EntryType = "LegacyOpeningBalance",
+                Note = $"Split from #{task.Id}.", CreatedAt = DateTime.UtcNow, CreatedBy = "system"
+            });
+        if (hoursWorked > 0)
+            _db.TimeEntries.Add(new TimeEntry {
+                TaskId = slice.Id, SprintId = currentSprintId, UserId = ctx.UserId > 0 ? ctx.UserId : null,
+                Hours = hoursWorked, WorkDate = DateTime.UtcNow.Date, EntryType = "Logged",
+                Note = $"Logged on split of #{task.Id}.", CreatedAt = DateTime.UtcNow, CreatedBy = by
+            });
+        await _db.SaveChangesAsync();
+
+        var sliceActual = await _db.TimeEntries.Where(e => e.TaskId == slice.Id).SumAsync(e => e.Hours);
+        slice.ActualHours = sliceActual > 0 ? sliceActual : totalActual;
+        if (currentSprintId.HasValue)
+            await UpsertSprintHoursLogAsync(currentSprintId.Value, slice.Id, slice.ActualHours ?? 0, by);
+
+        // ── Continuation = the ORIGINAL task (keeps id/history), re-scoped to the remaining work ──
+        task.Weight             = remaining;
+        task.RemainingWorkHours = remaining;
+        task.ActualEndDate      = null;
+        task.ActualHours        = await _db.TimeEntries.Where(e => e.TaskId == task.Id).SumAsync(e => e.Hours);
+        _db.SprintWorkItemEvents.Add(new SprintWorkItemEvent {
+            TaskId = task.Id, FromSprintId = currentSprintId, ToSprintId = targetSprintId, EventType = "CarriedForward",
+            Status = task.Status, Estimate = remaining, OccurredAt = DateTime.UtcNow, OccurredBy = by
+        });
+        task.SprintId = targetSprintId;
+        _db.TaskLinks.Add(new TaskLink {
+            FromTaskId = slice.Id, ToTaskId = task.Id, LinkType = "Split", CreatedAt = DateTime.Now, CreatedBy = by
+        });
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        await LogAsync(ctx, "Split",
+            $"Left {deliveredWeight:0.##}h done as #{slice.Id}; carried {remaining:0.##}h to {(targetSprintId.HasValue ? "a sprint" : "the backlog")}.",
+            task.Id, task.Goal, task.Project);
+        return (true, null, slice.Id);
+    }
+
     public async Task ReorderBacklogAsync(int[] ids, int? teamId)
     {
         if (ids == null || ids.Length == 0) return;
@@ -986,18 +1098,28 @@ public partial class TaskService
     }
 
     // Upsert one row per (sprint, task) — hours replace the previous value for this sprint.
-    private async Task UpsertSprintHoursLogAsync(int sprintId, int taskId, decimal hours, string loggedBy)
+    // Records the actual hours attributable to THIS sprint. `totalActualHours` is the task's
+    // cumulative actual; hours already booked to OTHER sprints are subtracted so a carried-forward
+    // task's earlier work is not double-counted (task carried A→B with 3h done in A and 5h in B
+    // records A=3, B=5 — not B=8). The raw per-entry truth lives in TimeEntries; this is the
+    // denormalized aggregate the sprint capacity / velocity views read.
+    private async Task UpsertSprintHoursLogAsync(int sprintId, int taskId, decimal totalActualHours, string loggedBy)
     {
+        var bookedElsewhere = await _db.SprintHoursLogs
+            .Where(l => l.TaskId == taskId && l.SprintId != sprintId)
+            .SumAsync(l => l.Hours);
+        var sprintHours = Math.Max(0m, totalActualHours - bookedElsewhere);
+
         var existing = await _db.SprintHoursLogs
             .FirstOrDefaultAsync(l => l.SprintId == sprintId && l.TaskId == taskId);
         if (existing == null)
             _db.SprintHoursLogs.Add(new SprintHoursLog {
                 SprintId = sprintId, TaskId = taskId,
-                Hours = hours, LoggedBy = loggedBy, LoggedAt = DateTime.Now
+                Hours = sprintHours, LoggedBy = loggedBy, LoggedAt = DateTime.Now
             });
         else
         {
-            existing.Hours    = hours;
+            existing.Hours    = sprintHours;
             existing.LoggedBy = loggedBy;
             existing.LoggedAt = DateTime.Now;
         }

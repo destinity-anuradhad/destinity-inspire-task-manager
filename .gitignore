@@ -15,9 +15,13 @@ obj/
 .vs/
 *.userprefs
 
-# Publish output
+# Publish output (incl. versioned publish-vX.Y.Z folders — build artifacts, not source)
 publish/
+publish-*/
 out/
+
+# Security audit that names live credentials — do not publish
+docs/audit-report.html
 
 # Runtime / logs
 *.log

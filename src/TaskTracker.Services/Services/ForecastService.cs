@@ -16,26 +16,45 @@ public sealed class ForecastService(AppDbContext db) : IForecastService
         recentSprints = Math.Clamp(recentSprints, 1, 50);
 
         // Completed sprints for the team, newest completion first, joined to their immutable snapshot.
-        var completed = await db.Sprints.AsNoTracking()
+        // Project to a plain shape (EF can order/take this in SQL); build the record in memory so EF
+        // never has to translate an OrderBy over the SprintVelocityPoint constructor projection.
+        var completedRaw = await db.Sprints.AsNoTracking()
             .Where(s => s.TeamId == teamId && s.CompletedAt != null)
             .Join(db.SprintCompletionSnapshots.AsNoTracking(), s => s.Id, snap => snap.SprintId,
-                  (s, snap) => new SprintVelocityPoint(s.Id, s.Name, s.CompletedAt, snap.CompletedEstimate))
-            .OrderByDescending(p => p.CompletedAt)
+                  (s, snap) => new { s.Id, s.Name, s.CompletedAt, snap.CompletedEstimate })
+            .OrderByDescending(x => x.CompletedAt)
             .Take(recentSprints)
             .ToListAsync(ct);
 
-        // Remaining backlog: open (not-done) point-estimated tasks in the team. IsDone is item-type
-        // aware, so filter in memory over a minimal projection.
-        var pointTasks = await db.Tasks.AsNoTracking()
-            .Where(t => t.TeamId == teamId && t.EstimateUnit == "Points")
+        // Actual hours logged per sprint (SprintHoursLogs is the per-sprint truth), for the reality-check
+        // velocity shown alongside the estimate-based projection.
+        var sprintIds = completedRaw.Select(x => x.Id).ToList();
+        var actualBySprint = await db.SprintHoursLogs.AsNoTracking()
+            .Where(l => sprintIds.Contains(l.SprintId))
+            .GroupBy(l => l.SprintId)
+            .Select(g => new { SprintId = g.Key, Hours = g.Sum(x => x.Hours) })
+            .ToDictionaryAsync(x => x.SprintId, x => x.Hours, ct);
+
+        var completed = completedRaw
+            .Select(x => new SprintVelocityPoint(
+                x.Id, x.Name, x.CompletedAt, x.CompletedEstimate,
+                actualBySprint.TryGetValue(x.Id, out var h) ? h : 0m))
+            .ToList();
+
+        // Remaining backlog: open (not-done) estimate hours in the team. Weight is the estimate (this
+        // project estimates in hours); IsDone is item-type aware, so filter in memory.
+        var openTasks = await db.Tasks.AsNoTracking()
+            .Where(t => t.TeamId == teamId)
             .Select(t => new { t.Weight, t.Status, t.ItemType })
             .ToListAsync(ct);
-        var remaining = pointTasks
+        var remaining = openTasks
             .Where(t => !TaskStatusRules.IsDone(t.ItemType, t.Status))
             .Sum(t => t.Weight ?? 0);
 
+        var avgActual = completed.Count == 0 ? 0m : Math.Round(completed.Average(p => p.ActualHours), 2);
+
         if (completed.Count == 0)
-            return new VelocityForecast(false, 0, 0, 0, 0, remaining, null, null, null, completed);
+            return new VelocityForecast(false, 0, 0, 0, 0, avgActual, remaining, null, null, null, completed);
 
         var velocities = completed.Select(p => p.CompletedEstimate).ToList();
         var avg = velocities.Average();
@@ -46,7 +65,7 @@ public sealed class ForecastService(AppDbContext db) : IForecastService
         var history = completed.OrderBy(p => p.CompletedAt).ToList();
 
         if (avg <= 0)
-            return new VelocityForecast(false, completed.Count, 0, min, max, remaining, null, null, null, history);
+            return new VelocityForecast(false, completed.Count, 0, min, max, avgActual, remaining, null, null, null, history);
 
         return new VelocityForecast(
             HasEnoughData: true,
@@ -54,7 +73,8 @@ public sealed class ForecastService(AppDbContext db) : IForecastService
             AverageVelocity: Math.Round(avg, 2),
             MinVelocity: min,
             MaxVelocity: max,
-            RemainingPoints: remaining,
+            AverageActualVelocity: avgActual,
+            RemainingHours: remaining,
             ProjectedSprintsExpected: Sprints(remaining, avg),
             ProjectedSprintsOptimistic: Sprints(remaining, max),
             ProjectedSprintsPessimistic: Sprints(remaining, min),

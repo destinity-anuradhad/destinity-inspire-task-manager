@@ -49,7 +49,7 @@ public partial class TaskService
           <table width='100%' cellpadding='0' cellspacing='0' border='0'><tr>
             <td style='vertical-align:middle;'>
               <p style='margin:0;color:#fafafa;font-size:15px;font-weight:700;letter-spacing:-0.3px;'>Destinity Inspire</p>
-              <p style='margin:3px 0 0;color:rgba(255,255,255,0.32);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:0.16em;'>Task Manager &nbsp;&middot;&nbsp; Scienter PMS</p>
+              <p style='margin:3px 0 0;color:rgba(255,255,255,0.32);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:0.16em;'>Task Manager &nbsp;&middot;&nbsp; Scienter Technologies PTE LTD</p>
               {teamRow}
             </td>
             <td align='right' style='vertical-align:top;padding-top:2px;'>
@@ -78,7 +78,7 @@ public partial class TaskService
           </p>
         </td></tr>
         <tr><td style='padding:14px 0 2px;text-align:center;'>
-          <p style='margin:0;color:#d4d4d8;font-size:10px;letter-spacing:0.04em;'>&copy; 2026 Scienter PMS &nbsp;&middot;&nbsp; Destinity Inspire</p>
+          <p style='margin:0;color:#d4d4d8;font-size:10px;letter-spacing:0.04em;'>&copy; 2026 Scienter Technologies PTE LTD &nbsp;&middot;&nbsp; Destinity Inspire</p>
         </td></tr>
       </table>
     </td></tr>

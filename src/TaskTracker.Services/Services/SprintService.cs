@@ -193,11 +193,27 @@ public class SprintService(AppDbContext db) : ISprintService
         if (teamId.HasValue && !await _db.Sprints.AnyAsync(s => s.Id == sprintId && s.TeamId == teamId))
             return null;
         var tasks = await _db.Tasks.Where(t => t.SprintId == sprintId && !t.IsDeleted).ToListAsync();
-        var incomplete = tasks.Count(t => !TaskStatusRules.IsDone(t.ItemType, t.Status));
-        return new SprintIncompleteResult { Total = tasks.Count, Incomplete = incomplete, Done = tasks.Count - incomplete };
+        var incompleteTasks = tasks.Where(t => !TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
+        return new SprintIncompleteResult {
+            Total = tasks.Count, Incomplete = incompleteTasks.Count, Done = tasks.Count - incompleteTasks.Count,
+            Tasks = incompleteTasks
+                .OrderBy(t => t.Priority).ThenBy(t => t.Goal)
+                .Select(t => new SprintIncompleteTask {
+                    Id       = t.Id,
+                    Goal     = t.Goal ?? "",
+                    ItemType = t.ItemType ?? "Task",
+                    Priority = t.Priority ?? "",
+                    Owner    = t.Owner ?? "",
+                    Estimate = t.Weight ?? 0,
+                    Actual   = t.ActualHours ?? 0,
+                    // Auto-fill remaining: use the stored re-estimate, else estimate − actual (never negative).
+                    Remaining = t.RemainingWorkHours ?? Math.Max(0m, (t.Weight ?? 0) - (t.ActualHours ?? 0))
+                }).ToList()
+        };
     }
 
-    public async Task<(bool Found, bool Success, int Moved, string MovedTo, string? Error)> CompleteAsync(int id, string moveTo, int? teamId, string completedBy)
+    public async Task<(bool Found, bool Success, int Moved, string MovedTo, string? Error)> CompleteAsync(
+        int id, string moveTo, List<SprintCarryItem>? carryItems, int? teamId, string completedBy)
     {
         var sprint = await _db.Sprints.FindAsync(id);
         if (sprint == null) return (false, false, 0, "", null);
@@ -205,51 +221,203 @@ public class SprintService(AppDbContext db) : ISprintService
         if (sprint.CompletedAt.HasValue)
             return (true, false, 0, "", "This sprint has already been completed.");
 
-        int? targetSprintId = null;
-        if (moveTo != "backlog" && int.TryParse(moveTo, out var tid))
+        // Resolve a carry-forward destination string → target sprint id (null = backlog).
+        // Target must be an OPEN (not completed) sprint of this team, and not the sprint being closed.
+        var destCache = new Dictionary<string, int?>();
+        async Task<(bool ok, int? target, string? error)> ResolveDest(string? dest)
         {
-            var targetSprint = await _db.Sprints.FindAsync(tid);
-            if (targetSprint == null)
-                return (true, false, 0, "", "Target sprint not found.");
-            if (teamId.HasValue && targetSprint.TeamId != teamId)
-                return (true, false, 0, "", "Target sprint not found.");
-            if (tid == id) return (true, false, 0, "", "A sprint cannot carry work forward to itself.");
-            if (targetSprint.CompletedAt.HasValue || !targetSprint.IsActive)
-                return (true, false, 0, "", "Carry-forward target must be an active, incomplete sprint.");
-            targetSprintId = tid;
+            dest = string.IsNullOrWhiteSpace(dest) ? "backlog" : dest.Trim();
+            if (dest == "backlog") return (true, null, null);
+            if (destCache.TryGetValue(dest, out var cached)) return (true, cached, null);
+            if (!int.TryParse(dest, out var tid)) return (true, null, null);   // unknown token → backlog
+            var target = await _db.Sprints.FindAsync(tid);
+            if (target == null || (teamId.HasValue && target.TeamId != teamId))
+                return (false, null, "Carry-forward target sprint not found.");
+            if (tid == id) return (false, null, "A sprint cannot carry work forward to itself.");
+            if (target.CompletedAt.HasValue)
+                return (false, null, "Carry-forward target must be an open (not completed) sprint.");
+            destCache[dest] = tid;
+            return (true, tid, null);
         }
 
-        var tasks = await _db.Tasks.Where(t => t.SprintId == id && !t.IsDeleted).ToListAsync();
-        int moved = 0;
+        // Terminal status a delivered "slice" is stamped with, per item type.
+        static string DoneStatusFor(string? itemType) => itemType == "Task" ? "Done" : "Closed";
+
+        var carryMap  = (carryItems ?? []).GroupBy(c => c.TaskId).ToDictionary(g => g.Key, g => g.Last());
+        var tasks     = await _db.Tasks.Where(t => t.SprintId == id && !t.IsDeleted).ToListAsync();
         var completed = tasks.Where(t => TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
-        foreach (var t in completed)
+        var carrying  = tasks.Except(completed).ToList();
+
+        // Validate every destination BEFORE mutating, so a bad target can't leave a half-completed sprint.
+        foreach (var t in carrying)
         {
+            carryMap.TryGetValue(t.Id, out var ci0);
+            var (ok0, _, err0) = await ResolveDest(ci0?.MoveTo ?? moveTo);
+            if (!ok0) return (true, false, 0, "", err0);
+        }
+
+        // Snapshot metrics use the sprint's ORIGINAL scope, captured before any split re-scopes a Weight.
+        int committedCount = tasks.Count;
+        decimal committedEstimate = tasks.Sum(t => t.Weight ?? 0);
+        int completedCount = completed.Count;
+        decimal completedEstimate = completed.Sum(t => t.Weight ?? 0);
+
+        int moved = 0;
+        var destinations = new HashSet<string>();
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        foreach (var t in completed)
             _db.SprintWorkItemEvents.Add(new SprintWorkItemEvent {
                 TaskId = t.Id, FromSprintId = id, ToSprintId = id, EventType = "Completed",
                 Status = t.Status, Estimate = t.Weight, OccurredAt = DateTime.UtcNow, OccurredBy = completedBy
             });
-        }
-        foreach (var t in tasks.Except(completed))
+
+        foreach (var t in carrying)
         {
-            _db.SprintWorkItemEvents.Add(new SprintWorkItemEvent {
-                TaskId = t.Id, FromSprintId = id, ToSprintId = targetSprintId, EventType = "CarriedForward",
-                Status = t.Status, Estimate = t.Weight, OccurredAt = DateTime.UtcNow, OccurredBy = completedBy
-            });
-            t.SprintId = targetSprintId;
-            moved++;
+            carryMap.TryGetValue(t.Id, out var ci);
+            var (_, target, _) = await ResolveDest(ci?.MoveTo ?? moveTo);   // cached + validated above
+
+            var hoursSpent  = Math.Max(0m, ci?.HoursSpent ?? 0m);
+            var origWeight  = t.Weight ?? 0m;
+            var remaining   = Math.Max(0m, ci?.Remaining ?? Math.Max(0m, origWeight - (t.ActualHours ?? 0)));
+            var totalActual = (t.ActualHours ?? 0) + hoursSpent;
+            // Split only makes sense when the caller asked AND there's both progress and remaining work.
+            var wantSplit   = string.Equals(ci?.Mode, "split", StringComparison.OrdinalIgnoreCase)
+                              && remaining > 0 && totalActual > 0;
+
+            if (wantSplit)
+            {
+                // ── Delivered SLICE — a new record left behind in this sprint (marked done). ──
+                var deliveredWeight = Math.Max(0m, origWeight - remaining);
+                var slice = new TaskItem {
+                    Goal = t.Goal, Project = t.Project, ProjectId = t.ProjectId, Property = t.Property,
+                    Priority = t.Priority, Status = DoneStatusFor(t.ItemType), Owner = t.Owner, ItemType = t.ItemType,
+                    ParentId = t.ParentId, SprintId = id, ModuleId = t.ModuleId, ClientId = t.ClientId,
+                    Labels = t.Labels, EstimateUnit = t.EstimateUnit, Weight = deliveredWeight,
+                    ActualHours = totalActual, RemainingWorkHours = 0m,
+                    Reporter = t.Reporter, CreatedBy = completedBy, CreatedAt = DateTime.Now, TeamId = t.TeamId,
+                    Swimlane = t.Swimlane, StartDate = t.StartDate, EndDate = t.EndDate,
+                    ActualStartDate = t.ActualStartDate, ActualEndDate = DateTime.Now
+                };
+                _db.Tasks.Add(slice);
+                await _db.SaveChangesAsync();   // materialise slice.Id
+
+                // The hours invested this sprint belong to the delivered slice — re-point the ledger onto it.
+                await _db.TimeEntries.Where(e => e.TaskId == t.Id && e.SprintId == id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(e => e.TaskId, slice.Id));
+                await _db.SprintHoursLogs.Where(l => l.TaskId == t.Id && l.SprintId == id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(l => l.TaskId, slice.Id));
+
+                // Task tracked hours only in the mutable field (no ledger yet) → open a balance on the slice.
+                var sliceHasEntries = await _db.TimeEntries.AnyAsync(e => e.TaskId == slice.Id);
+                if (!sliceHasEntries && (t.ActualHours ?? 0) > 0)
+                    _db.TimeEntries.Add(new TimeEntry {
+                        TaskId = slice.Id, SprintId = id, UserId = null, Hours = t.ActualHours ?? 0,
+                        WorkDate = t.CreatedAt.Date, EntryType = "LegacyOpeningBalance",
+                        Note = $"Split from #{t.Id} at close of sprint \"{sprint.Name}\".",
+                        CreatedAt = DateTime.UtcNow, CreatedBy = "system"
+                    });
+                if (hoursSpent > 0)
+                    _db.TimeEntries.Add(new TimeEntry {
+                        TaskId = slice.Id, SprintId = id, UserId = null, Hours = hoursSpent,
+                        WorkDate = DateTime.UtcNow.Date, EntryType = "Logged",
+                        Note = $"Logged at close of sprint \"{sprint.Name}\".",
+                        CreatedAt = DateTime.UtcNow, CreatedBy = completedBy
+                    });
+                await _db.SaveChangesAsync();
+
+                var sliceActual = await _db.TimeEntries.Where(e => e.TaskId == slice.Id).SumAsync(e => e.Hours);
+                slice.ActualHours = sliceActual > 0 ? sliceActual : totalActual;
+                await UpsertSprintHoursLogAsync(id, slice.Id, slice.ActualHours ?? 0, completedBy);
+
+                // ── Continuation = the ORIGINAL task (keeps its id, comments, attachments, history),
+                //    re-scoped to the remaining work and carried into the destination sprint. ──
+                t.Weight             = remaining;
+                t.RemainingWorkHours = remaining;
+                t.ActualEndDate      = null;
+                t.ActualHours        = await _db.TimeEntries.Where(e => e.TaskId == t.Id).SumAsync(e => e.Hours); // residual only
+                _db.SprintWorkItemEvents.Add(new SprintWorkItemEvent {
+                    TaskId = t.Id, FromSprintId = id, ToSprintId = target, EventType = "CarriedForward",
+                    Status = t.Status, Estimate = remaining, OccurredAt = DateTime.UtcNow, OccurredBy = completedBy
+                });
+                t.SprintId = target;
+
+                // Link the delivered slice → the continuation so both sprints show the connection.
+                _db.TaskLinks.Add(new TaskLink {
+                    FromTaskId = slice.Id, ToTaskId = t.Id, LinkType = "Split",
+                    CreatedAt = DateTime.Now, CreatedBy = completedBy
+                });
+
+                completedCount++;
+                completedEstimate += deliveredWeight;   // the slice delivered this much in this sprint
+                moved++;
+                destinations.Add(target.HasValue ? "sprint" : "backlog");
+            }
+            else
+            {
+                // ── Move the whole task (log any close-time hours against the OLD sprint first). ──
+                if (hoursSpent > 0)
+                {
+                    var hasEntries = await _db.TimeEntries.AnyAsync(e => e.TaskId == t.Id);
+                    if (!hasEntries && t.ActualHours is > 0)
+                        _db.TimeEntries.Add(new TimeEntry {
+                            TaskId = t.Id, SprintId = id, UserId = null, Hours = t.ActualHours.Value,
+                            WorkDate = t.CreatedAt.Date, EntryType = "LegacyOpeningBalance",
+                            Note = "Imported from legacy task total.", CreatedAt = DateTime.UtcNow, CreatedBy = "system"
+                        });
+                    _db.TimeEntries.Add(new TimeEntry {
+                        TaskId = t.Id, SprintId = id, UserId = null, Hours = hoursSpent,
+                        WorkDate = DateTime.UtcNow.Date, EntryType = "Logged",
+                        Note = $"Logged at close of sprint \"{sprint.Name}\".",
+                        CreatedAt = DateTime.UtcNow, CreatedBy = completedBy
+                    });
+                    var newActual = (t.ActualHours ?? 0) + hoursSpent;
+                    t.ActualHours = newActual;
+                    await _db.SaveChangesAsync();
+                    await UpsertSprintHoursLogAsync(id, t.Id, newActual, completedBy);
+                }
+                t.RemainingWorkHours = remaining;
+                _db.SprintWorkItemEvents.Add(new SprintWorkItemEvent {
+                    TaskId = t.Id, FromSprintId = id, ToSprintId = target, EventType = "CarriedForward",
+                    Status = t.Status, Estimate = remaining, OccurredAt = DateTime.UtcNow, OccurredBy = completedBy
+                });
+                t.SprintId = target;
+                moved++;
+                destinations.Add(target.HasValue ? "sprint" : "backlog");
+            }
         }
+
         _db.SprintCompletionSnapshots.Add(new SprintCompletionSnapshot {
             SprintId = id, CompletedAt = DateTime.UtcNow, CompletedBy = completedBy,
-            CommittedCount = tasks.Count, CompletedCount = completed.Count, CarriedForwardCount = moved,
-            CommittedEstimate = tasks.Where(t => t.EstimateUnit == "Points").Sum(t => t.Weight ?? 0),
-            CompletedEstimate = completed.Where(t => t.EstimateUnit == "Points").Sum(t => t.Weight ?? 0)
+            CommittedCount = committedCount, CompletedCount = completedCount, CarriedForwardCount = moved,
+            CommittedEstimate = committedEstimate, CompletedEstimate = completedEstimate
         });
         sprint.IsActive = false;
         sprint.CompletedAt = DateTime.UtcNow;
         sprint.CompletedBy = completedBy;
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
-        return (true, true, moved, targetSprintId.HasValue ? "sprint" : "backlog", null);
+        var movedTo = destinations.Count == 0 ? "backlog"
+                    : destinations.Count == 1 ? destinations.First()
+                    : "mixed";
+        return (true, true, moved, movedTo, null);
+    }
+
+    // Books a task's per-sprint hours into SprintHoursLogs (the actual-velocity source), never
+    // double-counting hours already booked against other sprints.
+    private async Task UpsertSprintHoursLogAsync(int sprintId, int taskId, decimal totalActual, string by)
+    {
+        var bookedElsewhere = await _db.SprintHoursLogs
+            .Where(l => l.TaskId == taskId && l.SprintId != sprintId).SumAsync(l => l.Hours);
+        var sprintHours = Math.Max(0m, totalActual - bookedElsewhere);
+        var existing = await _db.SprintHoursLogs.FirstOrDefaultAsync(l => l.SprintId == sprintId && l.TaskId == taskId);
+        if (existing == null)
+            _db.SprintHoursLogs.Add(new SprintHoursLog {
+                SprintId = sprintId, TaskId = taskId, Hours = sprintHours, LoggedBy = by, LoggedAt = DateTime.Now
+            });
+        else { existing.Hours = sprintHours; existing.LoggedBy = by; existing.LoggedAt = DateTime.Now; }
     }
 
     public async Task<(bool Success, string? Error)> DeleteAsync(int id, int? teamId)

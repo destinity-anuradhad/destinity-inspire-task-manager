@@ -27,7 +27,9 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         return !id.HasValue;
     }
 
-    [Authorize(Policy = Policies.TeamLead)]
+    // Read-only sprint board is visible to every authenticated team member.
+    // All mutation endpoints below stay gated by the TeamLead/TeamAdmin policies,
+    // and the view hides their controls for members — so this is view-only for them.
     public async Task<IActionResult> Index()
     {
         if (NoTeam(out _)) return RedirectToAction("AutoSelect", "Teams");
@@ -79,16 +81,34 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         if (NoTeam(out _)) return BadRequest();
         var result = await sprints.GetIncompleteAsync(sprintId, TeamId());
         if (result == null) return NotFound();
-        return Json(new { total = result.Total, incomplete = result.Incomplete, done = result.Done });
+        return Json(new {
+            total = result.Total, incomplete = result.Incomplete, done = result.Done,
+            tasks = result.Tasks.Select(t => new {
+                id = t.Id, goal = t.Goal, itemType = t.ItemType, priority = t.Priority, owner = t.Owner,
+                estimate = t.Estimate, actual = t.Actual, remaining = t.Remaining
+            })
+        });
     }
 
     [HttpPost, ValidateAntiForgeryToken, Authorize(Policy = Policies.TeamLead)]
-    public async Task<IActionResult> Complete(int id, string moveTo = "backlog")
+    public async Task<IActionResult> Complete(int id, string moveTo = "backlog", string? items = null)
     {
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
         var completedBy = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
-        var (found, ok, moved, movedTo, error) = await sprints.CompleteAsync(id, moveTo, TeamId(), completedBy);
+
+        // Per-task carry-forward instructions (destination + hours worked + remaining) — optional;
+        // absent means "use the single fallback moveTo for every unfinished task".
+        List<SprintCarryItem>? carry = null;
+        if (!string.IsNullOrWhiteSpace(items))
+        {
+            try {
+                carry = System.Text.Json.JsonSerializer.Deserialize<List<SprintCarryItem>>(
+                    items, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            } catch { return BadRequest(new { message = "Invalid carry-forward data." }); }
+        }
+
+        var (found, ok, moved, movedTo, error) = await sprints.CompleteAsync(id, moveTo, carry, TeamId(), completedBy);
         if (!found) return NotFound();
         if (!ok)    return BadRequest(new { message = error });
         return Json(new { success = true, moved, movedTo });

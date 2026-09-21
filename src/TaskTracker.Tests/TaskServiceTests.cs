@@ -425,7 +425,7 @@ public class TaskServiceTests
     {
         using var db = DbContextFactory.Create(nameof(SaveAsync_UpdateTask_CannotBypassCompletionHoursRequirement));
         var task = new TaskItem {
-            Goal = "Ready for QA", ItemType = "Task", Status = "Development Done", Owner = "Priya",
+            Goal = "Ready for QA", ItemType = "Task", Status = "In QA", Owner = "Priya",
             TeamId = 1, CreatedAt = DateTime.UtcNow, RowVersion = []
         };
         db.Tasks.Add(task);
@@ -439,7 +439,7 @@ public class TaskServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("actual hours", result.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("Development Done", (await db.Tasks.FindAsync(task.Id))!.Status);
+        Assert.Equal("In QA", (await db.Tasks.FindAsync(task.Id))!.Status);
     }
 
     [Fact]
@@ -447,7 +447,7 @@ public class TaskServiceTests
     {
         using var db = DbContextFactory.Create(nameof(UpdateStatusAsync_CompletionStampsActualEndDate));
         var task = new TaskItem {
-            Goal = "Ready for QA", ItemType = "Task", Status = "Development Done", Owner = "Priya",
+            Goal = "Ready for QA", ItemType = "Task", Status = "In QA", Owner = "Priya",
             TeamId = 1, ActualStartDate = DateTime.UtcNow.AddDays(-1), CreatedAt = DateTime.UtcNow, RowVersion = []
         };
         db.Tasks.Add(task);
@@ -461,6 +461,40 @@ public class TaskServiceTests
         var updated = await db.Tasks.FindAsync(task.Id);
         Assert.Equal(2, updated!.ActualHours);
         Assert.NotNull(updated.ActualEndDate);
+    }
+
+    [Fact]
+    public async Task LogTime_AfterCarryForward_DoesNotDoubleCountPreviousSprintHours()
+    {
+        using var db = DbContextFactory.Create(nameof(LogTime_AfterCarryForward_DoesNotDoubleCountPreviousSprintHours));
+        var s1 = new Sprint { Name = "S1", TeamId = 1, IsActive = true };
+        var s2 = new Sprint { Name = "S2", TeamId = 1, IsActive = false };
+        db.Sprints.AddRange(s1, s2);
+        var task = new TaskItem {
+            Goal = "Cross-sprint work", ItemType = "Task", Status = "In Progress", Owner = "Priya",
+            TeamId = 1, CreatedAt = DateTime.UtcNow, RowVersion = []
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+        task.SprintId = s1.Id;
+        await db.SaveChangesAsync();
+
+        var svc = ServiceFactory.CreateTaskService(db);
+        var ctx = new UserCtx(0, "Admin", "admin", IsAdmin: true, TeamRole: "", TeamId: 1);
+
+        // 3h logged while the task lives in sprint 1
+        Assert.True((await svc.LogTimeAsync(task.Id, 3m, DateTime.UtcNow, null, null, ctx)).Success);
+        // carry the task forward to sprint 2 (CompleteAsync does exactly this — moves the SprintId)
+        (await db.Tasks.FindAsync(task.Id))!.SprintId = s2.Id;
+        await db.SaveChangesAsync();
+        // 5h more logged while in sprint 2
+        Assert.True((await svc.LogTimeAsync(task.Id, 5m, DateTime.UtcNow, null, null, ctx)).Success);
+
+        var logs = await db.SprintHoursLogs.Where(l => l.TaskId == task.Id)
+            .ToDictionaryAsync(l => l.SprintId, l => l.Hours);
+        Assert.Equal(3m, logs[s1.Id]);   // previous sprint keeps its 3h
+        Assert.Equal(5m, logs[s2.Id]);   // new sprint records only ITS 5h — not the cumulative 8h
+        Assert.Equal(8m, (await db.Tasks.FindAsync(task.Id))!.ActualHours);  // task cumulative total intact
     }
 
     [Fact]
@@ -640,7 +674,7 @@ public class TaskServiceTests
     {
         using var db = DbContextFactory.Create(nameof(BulkChangeStatusAsync_CannotBypassCompletionHoursRequirement));
         var task = new TaskItem {
-            Goal = "Ready for QA", ItemType = "Task", Status = "Development Done", Owner = "Priya",
+            Goal = "Ready for QA", ItemType = "Task", Status = "In QA", Owner = "Priya",
             TeamId = 1, CreatedAt = DateTime.UtcNow, RowVersion = []
         };
         db.Tasks.Add(task);
@@ -653,7 +687,7 @@ public class TaskServiceTests
         Assert.True(result.Success, result.Error);
         Assert.Equal(0, result.Count);
         Assert.Equal(1, result.NeedActualHours);
-        Assert.Equal("Development Done", (await db.Tasks.FindAsync(task.Id))!.Status);
+        Assert.Equal("In QA", (await db.Tasks.FindAsync(task.Id))!.Status);
     }
 
     [Fact]
@@ -774,7 +808,7 @@ public class TaskServiceTests
             CreatedAt = DateTime.UtcNow, RowVersion = []
         };
         var blocked = new TaskItem {
-            Goal = "Blocked", ItemType = "Task", Status = "Development Done", Owner = "Priya", TeamId = 1,
+            Goal = "Blocked", ItemType = "Task", Status = "In QA", Owner = "Priya", TeamId = 1,
             CreatedAt = DateTime.UtcNow, RowVersion = []
         };
         db.Tasks.AddRange(blocker, blocked);
@@ -790,7 +824,7 @@ public class TaskServiceTests
 
         Assert.False(result.Success);
         Assert.Contains("blocking", result.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("Development Done", (await db.Tasks.FindAsync(blocked.Id))!.Status);
+        Assert.Equal("In QA", (await db.Tasks.FindAsync(blocked.Id))!.Status);
     }
 
     [Fact]

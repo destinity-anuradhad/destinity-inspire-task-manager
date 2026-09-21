@@ -13,11 +13,12 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next, string? cont
     // CDN and inline event handlers) but still restricts sources, framing, objects, and base URIs.
     private const string DefaultCsp =
         "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-        "font-src 'self' https://fonts.gstatic.com data:; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.google.com https://www.gstatic.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
+        "font-src 'self' https://fonts.gstatic.com data: https://cdn.jsdelivr.net; " +
         "img-src 'self' data: https:; " +
         "connect-src 'self' https: wss: ws:; " +
+        "frame-src 'self' https://www.google.com; " +   // Google reCAPTCHA challenge iframe
         "frame-ancestors 'self'; " +
         "object-src 'none'; " +
         "base-uri 'self'; " +
