@@ -4,15 +4,16 @@
    Purpose: Populate the WorkStates table — the SINGLE source of truth for the
             board/kanban COLUMNS and the status-change DROPDOWNS.
 
-   Why:     WorkStates was empty, so the app fell back to a 7-status set that is
+   Why:     WorkStates was empty, so the app fell back to a limited status set that is
             MISSING "Development Done", "In QA" and "Blocked". Because the status
             dropdown = (item type's flow  ∩  WorkStates rows), those three
             statuses were being filtered out of every dropdown, and the Kanban /
             Sprint Board couldn't show them as columns.
 
-   Result:  All 10 canonical statuses exist as columns (New → To Do → Active →
+   Result:  All 12 canonical statuses exist as columns (New → To Do → Active →
             In Progress → Development Done → In QA → Resolved → Done → Closed →
-            Blocked). Each ITEM TYPE still only ever sees its OWN flow, driven by:
+            Blocked → On hold → Rejected). Each ITEM TYPE sees its own workflow
+            plus the On hold and Rejected side-states, driven by:
               • status dropdowns  → ALLOWED_TRANSITIONS[type]  (hardcoded, per type)
               • create-form list  → the ItemTypes column below (null = all types)
 
@@ -21,7 +22,7 @@
       Bug     : New   → Active → Resolved → Closed                     (+ Blocked)
       Story   : New   → Active → Resolved → Closed                     (+ Blocked)
       Feature : New   → Active → Resolved → Closed                     (+ Blocked)
-      Epic    : New   → Active → Closed
+      Epic    : New   → Active → Closed  (+ On hold, Rejected)
 
    Idempotent: MERGE by Name — safe to re-run. Updates colour/order/scoping on
    existing rows, inserts missing ones, and never touches a manually-set WipLimit
@@ -41,6 +42,10 @@ INSERT INTO @ws (Name, Color, SortOrder, ItemTypes) VALUES
     ('Done',             '#16a34a',  80, 'Task'),                     -- Task terminal
     ('Closed',           '#047857',  90, 'Bug,Story,Feature,Epic'),  -- terminal for non-Task types
     ('Blocked',          '#ef4444', 100, 'Task,Bug,Story,Feature');  -- side-state; Epic has no Blocked
+-- All item types can also be placed On hold or Rejected; both are sprint-close exclusions.
+INSERT INTO @ws (Name, Color, SortOrder, ItemTypes) VALUES
+    ('On hold',          '#f59e0b', 110, 'Task,Bug,Story,Feature,Epic'),
+    ('Rejected',         '#ef4444', 120, 'Task,Bug,Story,Feature,Epic');
 
 MERGE dbo.WorkStates AS tgt
 USING @ws AS src ON tgt.Name = src.Name

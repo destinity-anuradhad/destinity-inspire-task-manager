@@ -37,7 +37,7 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         ViewBag.TaskCounts        = data.TaskCounts;
         ViewBag.OwnerNames        = data.OwnerNames;
         ViewBag.TeamMemberNames   = data.TeamMemberNames;
-        ViewBag.VelocityPoints    = data.VelocityPoints;
+        ViewBag.VelocityHours     = data.VelocityHours;
         ViewBag.SpilloverCounts   = data.SpilloverCounts;
         ViewBag.ActualHours       = data.ActualHours;
         ViewBag.EstimateHours     = data.EstimateHours;
@@ -62,7 +62,8 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
     {
         if (NoTeam(out _)) return BadRequest(new { message = "No active team." });
         if (!LegacySprintMutationsEnabled()) return SprintMutationsDisabled();
-        await sprints.SetActiveAsync(id, TeamId());
+        var by = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
+        await sprints.SetActiveAsync(id, TeamId(), by);
         return Ok();
     }
 
@@ -82,7 +83,7 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
         var result = await sprints.GetIncompleteAsync(sprintId, TeamId());
         if (result == null) return NotFound();
         return Json(new {
-            total = result.Total, incomplete = result.Incomplete, done = result.Done,
+            total = result.Total, incomplete = result.Incomplete, done = result.Done, excluded = result.Excluded,
             tasks = result.Tasks.Select(t => new {
                 id = t.Id, goal = t.Goal, itemType = t.ItemType, priority = t.Priority, owner = t.Owner,
                 estimate = t.Estimate, actual = t.Actual, remaining = t.Remaining
@@ -138,7 +139,6 @@ public class SprintsController(ISprintService sprints, IConfiguration config) : 
             rows           = data.Rows.Select(r => new {
                 ownerName          = r.OwnerName,
                 capacityHours      = r.CapacityHours,
-                allocatedPoints    = r.AllocatedPoints,
                 allocatedHours     = r.AllocatedHours,
                 actualHours        = r.ActualHours,
                 taskCount          = r.TaskCount,

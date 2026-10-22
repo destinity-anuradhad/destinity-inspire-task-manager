@@ -16,7 +16,7 @@ public interface ITaskService
     Task<ChildStatsResult?>   GetChildStatsAsync(int id, int? teamId);
     Task<List<TaskChecklistItem>?> GetChecklistAsync(int taskId, int? teamId);
 
-    Task<TaskSaveResult>   SaveAsync(TaskItem task, UserCtx ctx, bool forceClose);
+    Task<TaskSaveResult>   SaveAsync(TaskItem task, UserCtx ctx, bool forceClose, bool suppressActivityPost = false);
     Task<(bool Success, string? Error)> DeleteAsync(int id, UserCtx ctx);
     Task<(bool Success, string? Error)> ClaimTaskAsync(int taskId, UserCtx ctx);
     Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null, byte[]? expectedRowVersion = null);

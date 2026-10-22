@@ -33,7 +33,7 @@ public class CapacityViewStage2Tests
             new TaskOwner { TaskId = task.Id, UserId = 2 });
         db.SaveChanges();
 
-        var data = await new SprintService(db).GetCapacityAsync(1, teamId: 1);
+        var data = await new SprintService(db, new NullChatService()).GetCapacityAsync(1, teamId: 1);
 
         Assert.NotNull(data);
         var alice = data!.Rows.FirstOrDefault(r => r.OwnerName == "Alice");

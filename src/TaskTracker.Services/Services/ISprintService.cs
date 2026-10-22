@@ -6,7 +6,7 @@ public interface ISprintService
 {
     Task<SprintIndexData> GetIndexDataAsync(int? teamId);
     Task<(bool Success, int SprintId, string? Error)> SaveAsync(Sprint sprint, string createdBy, int? teamId);
-    Task SetActiveAsync(int id, int? teamId);
+    Task SetActiveAsync(int id, int? teamId, string? by = null);
     Task DeactivateAsync(int? teamId);
     Task<SprintIncompleteResult?> GetIncompleteAsync(int sprintId, int? teamId);
     Task<(bool Found, bool Success, int Moved, string MovedTo, string? Error)> CompleteAsync(int id, string moveTo, List<SprintCarryItem>? carryItems, int? teamId, string completedBy);
@@ -21,7 +21,7 @@ public class SprintIndexData
     public Dictionary<int, int>                          TaskCounts        { get; set; } = [];
     public List<string>                                  OwnerNames        { get; set; } = [];
     public List<string>                                  TeamMemberNames   { get; set; } = [];
-    public Dictionary<int, decimal>                      VelocityPoints    { get; set; } = [];
+    public Dictionary<int, decimal>                      VelocityHours     { get; set; } = [];
     public Dictionary<int, int>                          SpilloverCounts   { get; set; } = [];
     public Dictionary<int, decimal>                      ActualHours       { get; set; } = [];
     public Dictionary<int, decimal>                      EstimateHours     { get; set; } = [];
@@ -43,6 +43,7 @@ public class SprintIncompleteResult
     public int Total      { get; set; }
     public int Incomplete { get; set; }
     public int Done       { get; set; }
+    public int Excluded   { get; set; }
     public List<SprintIncompleteTask> Tasks { get; set; } = [];
 }
 
@@ -75,6 +76,7 @@ public class SprintCapacityData
     public string  SprintName       { get; set; } = "";
     public string? StartDate        { get; set; }
     public string? EndDate          { get; set; }
+    public bool    IsCompleted      { get; set; }
     public decimal TotalCapacity    { get; set; }
     public decimal TotalAllocated   { get; set; }
     public decimal TotalActualHours { get; set; }
@@ -85,7 +87,6 @@ public class SprintCapacityRow
 {
     public string   OwnerName          { get; set; } = "";
     public decimal? CapacityHours      { get; set; }
-    public decimal  AllocatedPoints    { get; set; }
     public decimal  AllocatedHours     { get; set; }
     public decimal  ActualHours        { get; set; }
     public int      TaskCount          { get; set; }

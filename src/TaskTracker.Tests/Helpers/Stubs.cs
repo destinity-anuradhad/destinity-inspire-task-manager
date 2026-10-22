@@ -99,6 +99,30 @@ internal sealed class NullAutomationService : IAutomationService
         => Task.FromResult(new AutomationPreviewResult(false, false, false, null, null, ""));
 }
 
+internal sealed class NullChatService : IChatService
+{
+    public Task<IReadOnlyList<ChatMessageDto>> GetMessagesAsync(int teamId, int? beforeId, int take, int? forUserId = null)
+        => Task.FromResult<IReadOnlyList<ChatMessageDto>>([]);
+    public Task<int> CreateMessageAsync(int teamId, int? userId, string senderName, string? body)
+        => Task.FromResult(0);
+    public Task<ChatMessageDto> FinalizeAndBroadcastAsync(int messageId, int teamId, IReadOnlyList<ChatIncomingAttachment> attachments)
+        => Task.FromResult(new ChatMessageDto());
+    public Task<ChatAttachmentFile?> GetAttachmentAsync(int attachmentId, int teamId)
+        => Task.FromResult<ChatAttachmentFile?>(null);
+    public Task<(bool Ok, string? Error)> DeleteMessageAsync(int messageId, int teamId, int? userId, bool isTeamAdmin)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<(bool Ok, string? Error)> EditMessageAsync(int messageId, int teamId, int userId, string newBody)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<(bool Ok, string? Error)> ToggleReactionAsync(int messageId, int teamId, int userId, string emoji)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<IReadOnlyList<string>> GetMemberNamesAsync(int teamId)
+        => Task.FromResult<IReadOnlyList<string>>([]);
+    public Task<IReadOnlyList<ChatFileDto>> GetTeamAttachmentsAsync(int teamId, int take = 120)
+        => Task.FromResult<IReadOnlyList<ChatFileDto>>([]);
+    public Task PostEventAsync(int teamId, int? actorUserId, string actorName, string body, object? meta = null)
+        => Task.CompletedTask;
+}
+
 // ── Factory helpers ───────────────────────────────────────────────────────────
 
 internal static class ServiceFactory
@@ -108,7 +132,7 @@ internal static class ServiceFactory
         var config = new ConfigurationBuilder().Build();
         var cache  = new MemoryCache(new MemoryCacheOptions());
         return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
-            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), new NullAutomationService());
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), new NullAutomationService(), new NullChatService());
     }
 
     public static AutomationService CreateAutomationService(TaskTracker.Data.AppDbContext db)
@@ -120,7 +144,7 @@ internal static class ServiceFactory
         var config = new ConfigurationBuilder().Build();
         var cache  = new MemoryCache(new MemoryCacheOptions());
         return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
-            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), automations);
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), automations, new NullChatService());
     }
 
     public static ActivityService CreateActivityService(TaskTracker.Data.AppDbContext db)

@@ -5,17 +5,20 @@
     var taskCounts       = ViewBag.TaskCounts       as Dictionary<int, int>     ?? new();
     var ownerNames       = ViewBag.OwnerNames       as List<string>             ?? new();
     var teamMemberNames  = ViewBag.TeamMemberNames  as List<string>             ?? new();
-    var velocityPoints   = ViewBag.VelocityPoints   as Dictionary<int, decimal> ?? new();
+    var velocityHours    = ViewBag.VelocityHours    as Dictionary<int, decimal> ?? new();
     var spilloverCounts  = ViewBag.SpilloverCounts  as Dictionary<int, int>     ?? new();
     var actualHours      = ViewBag.ActualHours      as Dictionary<int, decimal> ?? new();
     var estimateHours    = ViewBag.EstimateHours    as Dictionary<int, decimal> ?? new();
     var sprintHours      = ViewBag.SprintHours      as Dictionary<int, decimal> ?? new();
+    var userHours        = ViewBag.UserHours        as Dictionary<int, List<TaskTracker.Services.SprintUserHoursRow>> ?? new();
     var jsonOpts       = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     // View-only for plain members: they can see sprints + progress, but every
     // create/edit/activate/complete/capacity/delete control is hidden. The server
     // still enforces these via the TeamLead/TeamAdmin policies on the endpoints.
     var teamRole  = User.FindFirst("TeamRole")?.Value ?? "";
+    var activeTeamColor = User.FindFirst("ActiveTeamColor")?.Value ?? "#094f70";
+    if (!System.Text.RegularExpressions.Regex.IsMatch(activeTeamColor, "^#[0-9A-Fa-f]{6}$")) activeTeamColor = "#094f70";
     var canManage = teamRole is "TeamAdmin" or "TeamLead" || User.IsInRole("Admin");
     var canDelete = teamRole == "TeamAdmin" || User.IsInRole("Admin");
 }
@@ -59,157 +62,271 @@
     }
     else
     {
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            @foreach (var sprint in Model)
+        var activeSprints = Model.Where(s => s.IsActive).ToList();
+        <div class="grid grid-cols-1 gap-4">
+            @foreach (var sprint in activeSprints)
             {
                 var cnt  = taskCounts.GetValueOrDefault(sprint.Id, 0);
                 var sJson = System.Text.Json.JsonSerializer.Serialize(sprint,
                     new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
 
-                <div class="bg-white border @(sprint.IsActive ? "border-blue-400 ring-2 ring-blue-100" : "border-gray-200") rounded-xl p-5 flex flex-col gap-4 relative group">
-                    @if (sprint.IsActive)
-                    {
-                        <span class="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Active</span>
-                    }
-
-                    <!-- Sprint name & dates -->
-                    <div class="pr-16">
-                        <h2 class="font-semibold text-gray-900 text-base leading-snug">@sprint.Name</h2>
-                        @if (sprint.StartDate.HasValue || sprint.EndDate.HasValue)
-                        {
-                            <p class="text-xs text-gray-400 mt-0.5">
-                                @(sprint.StartDate?.ToString("yyyy-MM-dd") ?? "—") → @(sprint.EndDate?.ToString("yyyy-MM-dd") ?? "—")
-                            </p>
-                        }
-                    </div>
-
-                    <!-- Goal -->
-                    @if (!string.IsNullOrEmpty(sprint.Goal))
-                    {
-                        <p class="text-sm text-gray-600 line-clamp-2">@sprint.Goal</p>
-                    }
-
-                    <!-- Hours stats -->
+                <div class="bg-white border border-blue-200 rounded-2xl shadow-sm overflow-hidden">
                     @{
-                        var actH  = actualHours.GetValueOrDefault(sprint.Id, 0);
-                        var estH  = estimateHours.GetValueOrDefault(sprint.Id, 0);
-                        var sprH  = sprintHours.GetValueOrDefault(sprint.Id, 0);
+                        var actH = actualHours.GetValueOrDefault(sprint.Id, 0);
+                        var estH = estimateHours.GetValueOrDefault(sprint.Id, 0);
+                        var sprH = sprintHours.GetValueOrDefault(sprint.Id, 0);
                         var hrPct = sprH > 0 ? (int)Math.Round((double)(actH / sprH) * 100) : 0;
+                        var daysLeft = sprint.EndDate.HasValue ? (int?)(sprint.EndDate.Value.Date - DateTime.Today).Days : null;
+                        var dateHint = !daysLeft.HasValue ? "No end date set" : daysLeft.Value switch {
+                            < 0 => $"{Math.Abs(daysLeft.Value)} day{(Math.Abs(daysLeft.Value) == 1 ? "" : "s")} overdue",
+                            0 => "Ends today",
+                            1 => "1 day left",
+                            _ => $"{daysLeft.Value} days left"
+                        };
+                        var people = userHours.GetValueOrDefault(sprint.Id, []).Where(u => u.Estimate > 0 || u.Actual > 0 || u.Sprint > 0).OrderByDescending(u => u.Estimate + u.Actual).Take(3).ToList();
                         string FmtH(decimal v) => v > 0 ? (v % 1 == 0 ? ((int)v).ToString() : v.ToString("0.#")) + "h" : "—";
                     }
-                    <div class="grid grid-cols-3 gap-2 rounded-lg bg-gray-50 border border-gray-100 px-2 py-2">
-                        <div class="flex flex-col items-center gap-0.5">
-                            <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Estimate</span>
-                            <span class="text-sm font-semibold text-gray-700">@FmtH(estH)</span>
-                        </div>
-                        <div class="flex flex-col items-center gap-0.5 border-x border-gray-200">
-                            <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Actual</span>
-                            <span class="text-sm font-semibold @(actH > 0 ? "text-blue-600" : "text-gray-700")">@FmtH(actH)</span>
-                        </div>
-                        <div class="flex flex-col items-center gap-0.5">
-                            <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Sprint</span>
-                            <span class="text-sm font-semibold text-gray-700">@FmtH(sprH)</span>
-                        </div>
-                    </div>
-                    @if (sprH > 0 || actH > 0)
-                    {
-                        var barPct = Math.Min(hrPct, 100);
-                        var barCls = hrPct >= 100 ? "bg-emerald-500" : hrPct >= 75 ? "bg-blue-500" : hrPct >= 40 ? "bg-amber-400" : "bg-gray-300";
-                        var pctCls = hrPct >= 100 ? "text-emerald-600" : hrPct >= 75 ? "text-blue-600" : hrPct >= 40 ? "text-amber-600" : "text-gray-400";
-                        <div class="flex items-center gap-2">
-                            <div class="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                                <div class="@barCls h-1.5 rounded-full transition-all duration-500" style="width:@barPct%"></div>
+                    <div class="px-4 py-3 sm:px-5 bg-slate-50/80 border-b border-gray-100" style="border-top:2px solid @activeTeamColor">
+                        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] items-start gap-4">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] mb-0.5" style="color:@activeTeamColor">
+                                    <span class="w-2 h-2 rounded-full" style="background-color:@activeTeamColor"></span> Active sprint
+                                </div>
+                                <h2 class="text-xl sm:text-2xl font-bold leading-tight text-gray-900 truncate">@sprint.Name</h2>
+                                <div class="flex flex-wrap items-center gap-2 mt-3">
+                            @if (canManage && !sprint.CompletedAt.HasValue)
+                            {
+                                <button onclick='openSprintPanel(@Html.Raw(sJson))' class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                    Edit
+                                </button>
+                                <button onclick="completeSprint(@sprint.Id, '@Html.Raw(Html.Encode(sprint.Name))')" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    Complete sprint
+                                </button>
+                            }
+                            <button onclick="openCapacity(@sprint.Id, @(sprint.CompletedAt.HasValue ? "true" : "false"))" class="inline-flex items-center gap-1.5 rounded-lg border border-purple-300 bg-white px-3 py-2 text-sm font-semibold text-purple-700 shadow-sm hover:bg-purple-50">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                                Capacity
+                            </button>
+                            @if (canDelete && !sprint.CompletedAt.HasValue)
+                            {
+                                <button onclick="deleteSprint(@sprint.Id, @cnt)" class="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    Delete
+                                </button>
+                            }
+                                </div>
+                                <p class="mt-3 max-w-3xl text-xs text-gray-600 line-clamp-2"><span class="font-semibold text-gray-500">Goal:</span> @(string.IsNullOrWhiteSpace(sprint.Goal) ? "No goal has been added yet." : sprint.Goal)</p>
                             </div>
-                            <span class="text-[11px] font-semibold @pctCls shrink-0 w-10 text-right">@hrPct%</span>
+                            <div class="flex flex-col gap-2 lg:items-end">
+                                @if (!string.IsNullOrWhiteSpace(sprint.CreatedBy))
+                                {
+                                    <div class="text-xs text-gray-500">Created by <span class="font-semibold text-gray-800">@sprint.CreatedBy</span></div>
+                                }
+                                <div class="rounded-lg border border-gray-200 bg-white px-3 py-2 sm:min-w-[250px] sm:text-right">
+                                    <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">Sprint dates</p>
+                                    <p class="mt-1 text-sm font-semibold text-gray-800">
+                                        @(sprint.StartDate?.ToString("MMM d, yyyy") ?? "Start date not set")
+                                        <span class="px-1 text-gray-400">→</span>
+                                        @(sprint.EndDate?.ToString("MMM d, yyyy") ?? "No end date")
+                                    </p>
+                                    <span class="mt-2 inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">@dateHint</span>
+                                </div>
+                            </div>
                         </div>
-                    }
-
-                    <!-- Stats -->
-                    <div class="flex items-center gap-3 text-xs text-gray-500">
-                        <span class="flex items-center gap-1">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
-                            </svg>
-                            @cnt task@(cnt == 1 ? "" : "s")
-                        </span>
-                        @{
-                            var vel = velocityPoints.GetValueOrDefault(sprint.Id, 0);
-                        }
-                        @if (vel > 0)
-                        {
-                            <span class="flex items-center gap-1 text-emerald-600 font-medium">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                                </svg>
-                                @vel.ToString("0.#") pts done
-                            </span>
-                        }
-                        @if (spilloverCounts.TryGetValue(sprint.Id, out var spillover) && spillover > 0)
-                        {
-                            <span class="text-amber-600 font-medium">@spillover carried forward</span>
-                        }
-                        @if (!string.IsNullOrEmpty(sprint.CreatedBy))
-                        {
-                            <span>by @sprint.CreatedBy</span>
-                        }
                     </div>
 
-                    <!-- Actions. Capacity Planning is visible to everyone (read-only for members);
-                         Edit / Set Active / Complete / Delete stay management-only. -->
-                    <div class="flex items-center gap-2 pt-1 border-t border-gray-100">
-                        @if (canManage)
-                        {
-                        <button onclick='openSprintPanel(@Html.Raw(sJson))'
-                                class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                            Edit
-                        </button>
-                        @if (!sprint.IsActive)
-                        {
-                            <button onclick="setActive(@sprint.Id)"
-                                    class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Set Active
-                            </button>
-                        }
-                        else
-                        {
-                            <button onclick="completeSprint(@sprint.Id, '@Html.Raw(Html.Encode(sprint.Name))')"
-                                    class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 flex items-center justify-center gap-1.5 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Complete Sprint
-                            </button>
-                        }
-                        }
-                        <button onclick="openCapacity(@sprint.Id)"
-                                class="@(canManage ? "p-1.5" : "flex-1 px-3 py-1.5 gap-1.5") text-xs text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors flex items-center justify-center"
-                                title="Capacity Planning">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                            </svg>
-                            @if (!canManage) { <span>Capacity Planning</span> }
-                        </button>
-                        @if (canDelete)
-                        {
-                        <button onclick="deleteSprint(@sprint.Id, @cnt)"
-                                class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete sprint">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                        </button>
-                        }
+                    <div class="p-3 sm:p-4 space-y-3">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5"><p class="text-[11px] font-medium text-gray-500">Work items</p><p class="text-base font-bold text-gray-900">@cnt</p></div>
+                            <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5"><p class="text-[11px] font-medium text-gray-500">Estimate</p><p class="text-base font-bold text-gray-900">@FmtH(estH)</p></div>
+                            <div class="flex items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-2.5 py-1.5"><p class="text-[11px] font-medium text-blue-700">Logged</p><p class="text-base font-bold text-blue-800">@FmtH(actH)</p></div>
+                            <div class="flex items-center justify-between gap-2 rounded-lg border border-purple-100 bg-purple-50/60 px-2.5 py-1.5"><p class="text-[11px] font-medium text-purple-700">Capacity · @hrPct% used</p><p class="text-base font-bold text-purple-800">@FmtH(sprH)</p></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-5 gap-3">
+                            <div class="lg:col-span-3 rounded-lg border border-gray-100 p-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div><h3 class="text-sm font-semibold text-gray-900">Task progress</h3><p data-progress-label="@sprint.Id" class="text-xs text-gray-500 mt-1">Loading task completion…</p></div>
+                                    <span data-progress-pct="@sprint.Id" class="text-sm font-bold text-gray-700">—</span>
+                                </div>
+                                <div class="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden"><div data-progress-bar="@sprint.Id" class="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500" style="width:0%"></div></div>
+                                @if (spilloverCounts.GetValueOrDefault(sprint.Id) > 0)
+                                {
+                                    <p class="mt-3 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">@spilloverCounts[sprint.Id] task@(spilloverCounts[sprint.Id] == 1 ? "" : "s") carried into this sprint</p>
+                                }
+                            </div>
+                            <div class="lg:col-span-2 rounded-lg border border-gray-100 p-3">
+                                <div class="flex items-center justify-between mb-2"><h3 class="text-sm font-semibold text-gray-900">Team workload</h3></div>
+                                @if (people.Any())
+                                {
+                                    <div class="space-y-2">
+                                    @foreach (var person in people)
+                                    {
+                                        var personPct = person.Sprint is > 0 ? Math.Min((int)Math.Round((double)(person.Actual / person.Sprint.Value) * 100), 100) : 0;
+                                        <div><div class="flex items-center justify-between gap-2 text-xs mb-1"><span class="font-medium text-gray-700 truncate">@person.Name</span><span class="text-gray-500 whitespace-nowrap">@FmtH(person.Actual) / @FmtH(person.Sprint ?? 0)</span></div><div class="h-1.5 rounded-full bg-gray-100 overflow-hidden"><div class="h-full rounded-full bg-purple-400" style="width:@personPct%"></div></div></div>
+                                    }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-xs text-gray-400 py-2">No individual capacity or time data yet.</p>
+                                }
+                            </div>
+                        </div>
+
                     </div>
+
                 </div>
             }
         </div>
+
+        var otherSprints = Model.Where(s => !s.IsActive).OrderByDescending(s => s.StartDate).ToList();
+        string OtherFmtH(decimal value) => value > 0 ? (value % 1 == 0 ? ((int)value).ToString() : value.ToString("0.#")) + "h" : "—";
+        @if (otherSprints.Any())
+        {
+            <section class="space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-base font-semibold text-gray-900">Other sprints</h2>
+                        <p class="text-xs text-gray-500 mt-0.5">Browse sprint history, details, and actions.</p>
+                    </div>
+                    <span class="text-xs text-gray-400">@otherSprints.Count sprint@(otherSprints.Count == 1 ? "" : "s")</span>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm">
+                    <table data-other-sprints-table class="w-full min-w-[1000px] text-sm">
+                        <thead>
+                            <tr class="text-left bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wide text-gray-500">
+                                <th class="px-4 py-3 font-semibold">Sprint</th>
+                                <th class="px-4 py-3 font-semibold whitespace-nowrap">Dates</th>
+                                <th class="px-4 py-3 font-semibold">Status</th>
+                                <th class="px-4 py-3 font-semibold text-right">Tasks</th>
+                                <th class="px-4 py-3 font-semibold text-right">Estimate</th>
+                                <th class="px-4 py-3 font-semibold text-right">Actual</th>
+                                <th class="px-4 py-3 font-semibold text-right">Capacity</th>
+                                <th class="px-4 py-3 font-semibold">Details</th>
+                                <th class="px-4 py-3 font-semibold text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sprint in otherSprints)
+                            {
+                                var cnt = taskCounts.GetValueOrDefault(sprint.Id, 0);
+                                var sJson = System.Text.Json.JsonSerializer.Serialize(sprint,
+                                    new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                                var estH = estimateHours.GetValueOrDefault(sprint.Id, 0);
+                                var actH = actualHours.GetValueOrDefault(sprint.Id, 0);
+                                var capH = sprintHours.GetValueOrDefault(sprint.Id, 0);
+                                var vel = velocityHours.GetValueOrDefault(sprint.Id, 0);
+                                var spillover = spilloverCounts.GetValueOrDefault(sprint.Id, 0);
+                                <tr data-other-sprint-row class="border-b border-gray-100 last:border-0 hover:bg-blue-50/30 transition-colors">
+                                    <td class="px-4 py-3 max-w-sm">
+                                        <div class="font-semibold text-gray-800">@sprint.Name</div>
+                                        @if (!string.IsNullOrWhiteSpace(sprint.Goal))
+                                        {
+                                            <div class="text-xs text-gray-500 mt-0.5 line-clamp-2" title="@sprint.Goal">@sprint.Goal</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(sprint.CreatedBy))
+                                        {
+                                            <div class="text-[11px] text-gray-400 mt-1">Created by @sprint.CreatedBy</div>
+                                        }
+                                    </td>
+                                    <td class="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                                        @(sprint.StartDate?.ToString("yyyy-MM-dd") ?? "—")<br>
+                                        <span class="text-gray-400">to @(sprint.EndDate?.ToString("yyyy-MM-dd") ?? "—")</span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        @if (sprint.CompletedAt.HasValue)
+                                        {
+                                            <span class="inline-flex px-2 py-1 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">Completed</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="inline-flex px-2 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">Planned</span>
+                                        }
+                                    </td>
+                                    <td class="px-4 py-3 text-right text-gray-700">@cnt</td>
+                                    <td class="px-4 py-3 text-right font-medium text-gray-700 whitespace-nowrap">@OtherFmtH(estH)</td>
+                                    <td class="px-4 py-3 text-right font-medium @(actH > 0 ? "text-blue-600" : "text-gray-400") whitespace-nowrap">@OtherFmtH(actH)</td>
+                                    <td class="px-4 py-3 text-right text-gray-700 whitespace-nowrap">@OtherFmtH(capH)</td>
+                                    <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                                        @if (vel > 0) { <div class="text-emerald-600 font-medium">@vel.ToString("0.##")h done</div> }
+                                        @if (spillover > 0) { <div class="text-amber-600">@spillover carried forward</div> }
+                                        @if (vel <= 0 && spillover <= 0) { <span>—</span> }
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                                            @if (canManage && !sprint.CompletedAt.HasValue)
+                                            {
+                                                <button onclick='openSprintPanel(@Html.Raw(sJson))' class="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50">Edit</button>
+                                                @if (!sprint.CompletedAt.HasValue)
+                                                {
+                                                    <button onclick="setActive(@sprint.Id)" class="px-2.5 py-1.5 rounded-lg border border-blue-200 text-xs font-medium text-blue-600 hover:bg-blue-50">Set active</button>
+                                                }
+                                            }
+                                            <button onclick="openCapacity(@sprint.Id, @(sprint.CompletedAt.HasValue ? "true" : "false"))" class="px-2.5 py-1.5 rounded-lg border border-purple-200 text-xs font-medium text-purple-600 hover:bg-purple-50" title="Capacity planning">Capacity</button>
+                                            @if (canDelete && !sprint.CompletedAt.HasValue)
+                                            {
+                                                <button onclick="deleteSprint(@sprint.Id, @cnt)" class="px-2.5 py-1.5 rounded-lg border border-red-100 text-xs font-medium text-red-500 hover:bg-red-50" title="Delete sprint">Delete</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div data-other-sprints-pagination class="hidden flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-1">
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                        <label for="other-sprints-page-size">Rows per page</label>
+                        <select id="other-sprints-page-size" class="border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                        <span data-other-sprints-page-info></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" data-other-sprints-prev class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none">Previous</button>
+                        <span data-other-sprints-page-number class="min-w-16 text-center text-xs text-gray-500"></span>
+                        <button type="button" data-other-sprints-next class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:pointer-events-none">Next</button>
+                    </div>
+                </div>
+            </section>
+            <script>
+            (() => {
+                const table = document.querySelector('[data-other-sprints-table]');
+                if (!table) return;
+                const rows = [...table.querySelectorAll('[data-other-sprint-row]')];
+                const pager = document.querySelector('[data-other-sprints-pagination]');
+                const sizeSelect = document.getElementById('other-sprints-page-size');
+                const info = document.querySelector('[data-other-sprints-page-info]');
+                const pageNumber = document.querySelector('[data-other-sprints-page-number]');
+                const prev = document.querySelector('[data-other-sprints-prev]');
+                const next = document.querySelector('[data-other-sprints-next]');
+                let page = 1;
+                const render = () => {
+                    const pageSize = Number(sizeSelect.value) || 10;
+                    const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+                    page = Math.min(page, pages);
+                    const start = (page - 1) * pageSize;
+                    const end = Math.min(start + pageSize, rows.length);
+                    rows.forEach((row, index) => { row.hidden = index < start || index >= end; });
+                    info.textContent = `${start + 1}–${end} of ${rows.length}`;
+                    pageNumber.textContent = `Page ${page} of ${pages}`;
+                    prev.disabled = page <= 1;
+                    next.disabled = page >= pages;
+                    pager.classList.toggle('hidden', pages <= 1);
+                    pager.classList.toggle('flex', pages > 1);
+                };
+                sizeSelect.addEventListener('change', () => { page = 1; render(); });
+                prev.addEventListener('click', () => { page--; render(); });
+                next.addEventListener('click', () => { page++; render(); });
+                render();
+            })();
+            </script>
+        }
     }
 </div>
 
@@ -235,7 +352,7 @@
         @* Add member footer — editors only. Members get a read-only view. *@
         @if (canManage)
         {
-        <div class="border-t border-gray-100 px-6 py-3 bg-gray-50 rounded-b-2xl shrink-0">
+        <div id="cap-add-footer" class="border-t border-gray-100 px-6 py-3 bg-gray-50 rounded-b-2xl shrink-0">
             <div class="flex items-center gap-2">
                 <select id="cap-add-owner" class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white">
                     <option value="">Add team member…</option>
@@ -251,8 +368,14 @@
         }
         else
         {
-        <div class="border-t border-gray-100 px-6 py-2.5 bg-gray-50 rounded-b-2xl shrink-0 text-center text-xs text-gray-400">
+        <div id="cap-view-footer" class="border-t border-gray-100 px-6 py-2.5 bg-gray-50 rounded-b-2xl shrink-0 text-center text-xs text-gray-400">
             View only — capacity is managed by your Team Lead or Team Admin.
+        </div>
+        }
+        @if (canManage)
+        {
+        <div id="cap-view-footer" class="hidden border-t border-gray-100 px-6 py-2.5 bg-gray-50 rounded-b-2xl shrink-0 text-center text-xs text-gray-500">
+            Completed sprint — capacity is view only.
         </div>
         }
     </div>
@@ -369,6 +492,25 @@
 </div>
 
 <script>
+document.querySelectorAll('[data-progress-label]').forEach(async label => {
+    const sprintId = label.dataset.progressLabel;
+    try {
+        const response = await fetch('/Sprints/GetIncomplete?sprintId=' + encodeURIComponent(sprintId));
+        if (!response.ok) throw new Error('Unable to load task progress');
+        const progress = await response.json();
+        const percent = progress.total > 0 ? Math.round(progress.done / progress.total * 100) : 0;
+        label.textContent = progress.total > 0
+            ? `${progress.done} of ${progress.total} tasks complete${progress.incomplete ? ` · ${progress.incomplete} in progress` : ''}${progress.excluded ? ` · ${progress.excluded} on hold or rejected` : ''}`
+            : 'No active work items in this sprint yet';
+        const percentLabel = document.querySelector(`[data-progress-pct="${sprintId}"]`);
+        const progressBar = document.querySelector(`[data-progress-bar="${sprintId}"]`);
+        if (percentLabel) percentLabel.textContent = percent + '%';
+        if (progressBar) progressBar.style.width = percent + '%';
+    } catch {
+        label.textContent = 'Task progress is temporarily unavailable';
+    }
+});
+
 const spBackdrop = document.getElementById('sp-backdrop');
 const spPanel    = document.getElementById('sprint-panel');
 
@@ -663,7 +805,7 @@ function _scRefreshCount() {
 }
 
 async function completeSprint(id, name) {
-    let info = { total: 0, incomplete: 0, done: 0, tasks: [] };
+    let info = { total: 0, incomplete: 0, done: 0, excluded: 0, tasks: [] };
     try {
         const r = await fetch('/Sprints/GetIncomplete?sprintId=' + id);
         info = await r.json();
@@ -697,9 +839,10 @@ async function completeSprint(id, name) {
             </div>`;
         }).join('');
 
+        const skippedNote = info.excluded > 0 ? `<br><span class="text-gray-400">${info.excluded} On hold/Rejected item(s) excluded from sprint completion.</span>` : '';
         html = `<div class="text-left">
                 <p class="text-sm text-gray-600 mb-3">
-                  <b>${info.done}</b> of ${info.total} done · <b class="text-amber-600"><span id="sc-remaining-count">${info.incomplete}</span> unfinished</b>.
+                  <b>${info.done}</b> of ${info.total} in-scope item(s) done · <b class="text-amber-600"><span id="sc-remaining-count">${info.incomplete}</span> unfinished</b>.${skippedNote}
                   Pick where each goes, then hit <b>Apply</b> to do that one now — or set them all and click <b>Complete Sprint</b>. Tap <b>Split</b> first if you want to leave the done hours behind and carry only the remainder.
                 </p>
                 <div class="flex items-center gap-2 mb-2.5 text-xs">
@@ -710,7 +853,7 @@ async function completeSprint(id, name) {
                 <div id="sc-rows" class="overflow-y-auto overflow-x-hidden pr-1" style="max-height:56vh">${rows}</div>
             </div>`;
     } else {
-        html = `<p class="text-sm text-gray-600">All ${info.total} item(s) are complete. 🎉</p>`;
+        html = `<p class="text-sm text-gray-600">All ${info.total} in-scope item(s) are complete. 🎉${info.excluded > 0 ? `<br><span class="text-gray-400">${info.excluded} On hold/Rejected item(s) excluded from sprint completion.</span>` : ''}</p>`;
     }
 
     const res = await Swal.fire({
@@ -751,8 +894,10 @@ async function completeSprint(id, name) {
     const d  = await r2.json();
     if (d.success) {
         const dest = d.movedTo === 'backlog' ? 'the Backlog' : d.movedTo === 'mixed' ? 'their chosen destinations' : 'the selected sprint';
+        const skipped = info.excluded > 0 ? ` ${info.excluded} On hold/Rejected item(s) were left in this sprint and excluded.` : '';
         await Swal.fire({ icon: 'success', title: 'Sprint completed',
-            text: d.moved > 0 ? `${d.moved} unfinished item(s) moved to ${dest}.` : 'All items were complete.',
+            text: d.moved > 0 ? `${d.moved} unfinished item(s) moved to ${dest}.${skipped}`
+                : info.excluded > 0 ? `No unfinished items needed carrying forward.${skipped}` : 'All items were complete.',
             timer: 2600, showConfirmButton: false });
         location.reload();
     } else {
@@ -789,6 +934,7 @@ const CAP_OWNERS = @Html.Raw(JsonSerializer.Serialize(ownerNames, jsonOpts));
 const CAP_CAN_MANAGE = @(canManage ? "true" : "false");
 
 let _capSprintId = null;
+let _capReadOnly = false;
 
 function _capToken() {
     return document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
@@ -799,13 +945,25 @@ function _capEsc(s) {
                     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function openCapacity(sprintId) {
+function openCapacity(sprintId, isCompleted = false) {
     _capSprintId = sprintId;
+    _capReadOnly = Boolean(isCompleted);
+    _updateCapacityFooter();
     const modal  = document.getElementById('cap-modal');
     modal.style.removeProperty('display');
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
     _loadCapacity();
+}
+
+function _updateCapacityFooter() {
+    const addFooter = document.getElementById('cap-add-footer');
+    const viewFooter = document.getElementById('cap-view-footer');
+    const canEdit = CAP_CAN_MANAGE && !_capReadOnly;
+    if (addFooter) addFooter.style.display = canEdit ? '' : 'none';
+    if (viewFooter) viewFooter.style.display = canEdit ? 'none' : '';
+    if (viewFooter && _capReadOnly) viewFooter.textContent = 'Completed sprint — capacity is view only.';
+    else if (viewFooter) viewFooter.textContent = 'View only — capacity is managed by your Team Lead or Team Admin.';
 }
 
 function closeCapacity() {
@@ -824,6 +982,8 @@ async function _loadCapacity() {
         return;
     }
     const data = await r.json();
+    _capReadOnly = _capReadOnly || Boolean(data.isCompleted);
+    _updateCapacityFooter();
     document.getElementById('cap-title').textContent = 'Capacity — ' + data.sprintName;
     const dates = [data.startDate, data.endDate].filter(Boolean).join(' → ');
     document.getElementById('cap-subtitle').textContent = dates;
@@ -857,6 +1017,7 @@ function _renderCapRows(rows, totalCap, totalAlloc, totalActual) {
 
     function _fmtH(val) { return val > 0 ? val.toFixed(1).replace(/\.0$/, '') + 'h' : '—'; }
 
+    const canEditCapacity = CAP_CAN_MANAGE && !_capReadOnly;
     const tableRows = rows.map(row => {
         const pct    = row.completionPct;
         const barW   = Math.min(pct, 100);
@@ -884,7 +1045,7 @@ function _renderCapRows(rows, totalCap, totalAlloc, totalActual) {
             +   '<span class="text-xs font-medium text-blue-600">' + _fmtH(row.actualHours) + '</span>'
             + '</td>'
             + '<td class="py-2 pr-3 text-center">'
-            +   (CAP_CAN_MANAGE
+            +   (canEditCapacity
                   ? '<input type="number" min="0" step="0.5" value="' + capVal + '" placeholder="—"'
                     +     ' data-owner="' + ownEsc + '"'
                     +     ' class="w-16 text-center text-xs border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white"'
@@ -947,6 +1108,7 @@ function _renderCapRows(rows, totalCap, totalAlloc, totalActual) {
 }
 
 async function saveCapacityRow(ownerName, hoursStr) {
+    if (!CAP_CAN_MANAGE || _capReadOnly) return;
     const pts = parseFloat(hoursStr);
     if (isNaN(pts) || pts < 0) return;
     await fetch('/Sprints/SaveCapacity', {
@@ -958,6 +1120,7 @@ async function saveCapacityRow(ownerName, hoursStr) {
 }
 
 async function addCapacityRow() {
+    if (!CAP_CAN_MANAGE || _capReadOnly) return;
     const ownerSel = document.getElementById('cap-add-owner');
     const ptsFld   = document.getElementById('cap-add-pts');
     const owner    = ownerSel.value.trim();

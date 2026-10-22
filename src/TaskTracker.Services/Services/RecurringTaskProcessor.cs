@@ -40,7 +40,7 @@ public class RecurringTaskProcessor(AppDbContext db, ITaskService tasks, ILogger
             var ctx = new UserCtx(0, "Scheduler", "scheduler", true, "", currentDefinition.TeamId);
             var save = await tasks.SaveAsync(new TaskItem {
                 Goal = currentDefinition.Goal, Owner = owner?.DisplayName, Status = "New", ItemType = template.ItemType,
-                Priority = template.Priority, Weight = template.Estimate, EstimateUnit = template.EstimateUnit,
+                Priority = template.Priority, Weight = template.Estimate, EstimateUnit = "Hours",
                 Notes = template.Notes, Labels = template.Labels, AcceptanceCriteria = template.AcceptanceCriteria, RowVersion = []
             }, ctx, false);
             if (!save.Success)

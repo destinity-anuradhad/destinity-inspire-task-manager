@@ -353,15 +353,15 @@
             const sd = sprint?.startDate ? String(sprint.startDate).slice(0,10) : null;
             const ed = sprint?.endDate   ? String(sprint.endDate).slice(0,10)   : null;
             const dateRow = sprint && (sd||ed)
-                ? `<div class="flex justify-between mt-2 text-[10px] text-gray-500"><span>${sd||'—'} → ${ed||'—'}</span><span>${sprintItems.length} item${sprintItems.length!==1?'s':''} · ${pts}h</span></div>`
-                : sprint ? `<div class="text-right mt-2 text-[10px] text-gray-500">${sprintItems.length} items · ${pts}h</div>` : '';
+                ? `<div class="flex justify-between mt-2 text-[10px] text-gray-500"><span>${sd||'—'} → ${ed||'—'}</span><span>${sprintItems.length} item${sprintItems.length!==1?'s':''} · ${_formatEstimateHours(pts)}</span></div>`
+                : sprint ? `<div class="text-right mt-2 text-[10px] text-gray-500">${sprintItems.length} items · ${_formatEstimateHours(pts)}</div>` : '';
 
             const itemsHtml = sprintItems.length
                 ? sprintItems.map(t => `
                     <div class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group/pi border-b border-gray-50 last:border-0">
                         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${_blTypeCfg[t.itemType]?.cls||'bg-gray-100 text-gray-500'}">${_blTypeCfg[t.itemType]?.lbl||'—'}</span>
                         <span class="flex-1 text-xs text-gray-700 truncate" title="${_esc(t.goal||'')}">${_esc(t.goal||'—')}</span>
-                        ${t.weight ? `<span class="text-[10px] text-gray-500 shrink-0">${t.weight}h</span>` : ''}
+                        ${t.weight ? `<span class="text-[10px] text-gray-500 shrink-0">${_formatEstimateHours(t.weight)}</span>` : ''}
                         <button onclick="_blRemoveFromSprint(${t.id})" class="opacity-0 group-hover/pi:opacity-100 text-gray-500 hover:text-red-500 text-sm shrink-0 transition-all" title="Move to Backlog">↩</button>
                     </div>`).join('')
                 : `<div class="text-center py-8 text-xs text-gray-500 px-4">No items in this sprint<br>Drag rows here to assign</div>`;

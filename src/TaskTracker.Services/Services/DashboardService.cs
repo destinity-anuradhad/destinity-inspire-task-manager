@@ -45,9 +45,10 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Done         = mine.Count(TaskStatusRules.IsDone),
             InProgress   = mine.Count(TaskStatusRules.IsActive),
             Open         = mine.Count(t => t.Status is "New" or "To Do"),
-            Overdue      = mine.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
+            Overdue      = mine.Count(t => !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date < today),
+            DueToday     = mine.Count(t => !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date == today),
             Pending      = mine.Where(t => !TaskStatusRules.IsDone(t))
-                              .OrderBy(t => t.TargetDate ?? DateTime.MaxValue)
+                              .OrderBy(t => t.EndDate ?? DateTime.MaxValue)
                               .Take(10).ToList(),
             WorkingOn    = mine.Where(TaskStatusRules.IsActive).ToList(),
             ByType       = mine.GroupBy(t => t.ItemType ?? "Task").ToDictionary(g => g.Key, g => g.Count()),
@@ -58,6 +59,16 @@ public class DashboardService(AppDbContext db) : IDashboardService
             BestProjectDone   = bestGroup?.Done  ?? 0,
         };
         data.CompletionPct = mine.Count > 0 ? (int)Math.Round((double)data.Done / mine.Count * 100) : 0;
+
+        if (teamId.HasValue)
+        {
+            var activeSprintId = await _db.Sprints.AsNoTracking()
+                .Where(s => s.TeamId == teamId && s.IsActive)
+                .Select(s => (int?)s.Id).FirstOrDefaultAsync();
+            if (activeSprintId.HasValue)
+                data.ActiveSprintDueToday = mine.Count(t => t.SprintId == activeSprintId
+                    && !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date == today);
+        }
 
         try
         {
@@ -91,7 +102,8 @@ public class DashboardService(AppDbContext db) : IDashboardService
                 Total       = teamTasks.Count,
                 Done        = done,
                 Active      = teamTasks.Count(TaskStatusRules.IsActive),
-                Overdue     = teamTasks.Count(x => !TaskStatusRules.IsDone(x) && x.TargetDate.HasValue && x.TargetDate.Value.Date < today),
+                Overdue     = teamTasks.Count(x => !TaskStatusRules.IsDone(x) && x.EndDate.HasValue && x.EndDate.Value.Date < today),
+                DueToday    = teamTasks.Count(x => !TaskStatusRules.IsDone(x) && x.EndDate.HasValue && x.EndDate.Value.Date == today),
                 CompletePct = teamTasks.Count > 0 ? (int)Math.Round((double)done / teamTasks.Count * 100) : 0,
             };
         }).ToList();
@@ -128,7 +140,7 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Total      = kv.Value.Count,
             Done       = kv.Value.Count(TaskStatusRules.IsDone),
             InProgress = kv.Value.Count(TaskStatusRules.IsActive),
-            Overdue    = kv.Value.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today)
+            Overdue    = kv.Value.Count(t => !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date < today)
         }).OrderByDescending(o => o.Total).ToList();
 
         var appUsers      = await _db.AppUsers.ToListAsync();
@@ -146,7 +158,8 @@ public class DashboardService(AppDbContext db) : IDashboardService
             Total         = all.Count,
             Done          = all.Count(TaskStatusRules.IsDone),
             InProgress    = all.Count(TaskStatusRules.IsActive),
-            Overdue       = all.Count(t => !TaskStatusRules.IsDone(t) && t.TargetDate.HasValue && t.TargetDate.Value.Date < today),
+            Overdue       = all.Count(t => !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date < today),
+            DueToday      = all.Count(t => !TaskStatusRules.IsDone(t) && t.EndDate.HasValue && t.EndDate.Value.Date == today),
             StatusLabels  = JsonSerializer.Serialize(statusCounts.Keys.ToArray()),
             StatusValues  = JsonSerializer.Serialize(statusCounts.Values.ToArray()),
             ProjectLabels = JsonSerializer.Serialize(projectCounts.Select(p => p.Key).ToArray()),

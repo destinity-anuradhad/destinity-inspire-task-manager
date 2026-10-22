@@ -645,6 +645,44 @@ public class TaskServiceTests
         Assert.False(result.Success);
     }
 
+    [Fact]
+    public async Task TeamLead_CanEditAnotherMembersTask()
+    {
+        using var db = DbContextFactory.Create(nameof(TeamLead_CanEditAnotherMembersTask));
+        var task = new TaskItem {
+            Goal = "Member task", Owner = "Kasun", CreatedBy = "Kasun", TeamId = 1,
+            CreatedAt = DateTime.UtcNow, RowVersion = []
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var svc = ServiceFactory.CreateTaskService(db);
+        var lead = new UserCtx(99, "Priya", "priya", IsAdmin: false, TeamRole: "TeamLead", TeamId: 1);
+        var result = await svc.AddChecklistItemAsync(task.Id, "Review the change", lead);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Contains(db.TaskChecklistItems, item => item.TaskId == task.Id && item.Text == "Review the change");
+    }
+
+    [Fact]
+    public async Task TeamLead_CannotDeleteAnotherMembersTask()
+    {
+        using var db = DbContextFactory.Create(nameof(TeamLead_CannotDeleteAnotherMembersTask));
+        var task = new TaskItem {
+            Goal = "Member task", Owner = "Kasun", CreatedBy = "Kasun", TeamId = 1,
+            CreatedAt = DateTime.UtcNow, RowVersion = []
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var svc = ServiceFactory.CreateTaskService(db);
+        var lead = new UserCtx(99, "Priya", "priya", IsAdmin: false, TeamRole: "TeamLead", TeamId: 1);
+        var result = await svc.DeleteAsync(task.Id, lead);
+
+        Assert.False(result.Success);
+        Assert.False((await db.Tasks.IgnoreQueryFilters().FirstAsync(t => t.Id == task.Id)).IsDeleted);
+    }
+
     // ── BulkChangeStatusAsync ─────────────────────────────────────────────────
 
     [Fact]

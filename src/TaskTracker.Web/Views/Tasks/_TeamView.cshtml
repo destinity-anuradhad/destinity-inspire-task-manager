@@ -164,7 +164,7 @@
                         var h=t.weight||1;if(h<0.5)h=0.5;
                         var end=Math.min(cum+h,cap);
                         bars.push({lf:cum/cap,rt:end/cap,task:t,seq:i+1,
-                                   tchip:(t.weight?(Math.round(t.weight*100)/100)+'h':'~1h')+(cum+h>cap?' · continues next week':'')});
+                                   tchip:(t.weight?_formatEstimateHours(t.weight):'~1h')+(cum+h>cap?' · continues next week':'')});
                         cum+=h;
                     }
                     return bars;
@@ -185,7 +185,7 @@
                         if(cur+mins>END&&cur>START){lane++;cur=START;}
                         var em=Math.min(cur+mins,END);
                         bars.push({lf:(cur-START)/TOTAL,rt:(em-START)/TOTAL,_lane:lane,seq:i+1,task:t,
-                                   tchip:fmtTime(cur)+' – '+fmtTime(Math.min(cur+mins,END))+' · '+(t.weight?((Math.round(t.weight*100)/100)+'h'):'~1h')});
+                                   tchip:fmtTime(cur)+' – '+fmtTime(Math.min(cur+mins,END))+' · '+(t.weight?_formatEstimateHours(t.weight):'~1h')});
                         cur+=mins;
                     }
                     return{owner:owner,bars:bars,rowH:Math.max(64,(lane+1)*62+8)};

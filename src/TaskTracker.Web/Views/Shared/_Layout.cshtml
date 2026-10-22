@@ -1,3 +1,7 @@
+@{
+    // Full-bleed pages (e.g. Chat) fill the viewport under the nav with no page padding or footer.
+    var fullBleed = (ViewData["FullBleed"] as bool?) == true;
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,7 +46,7 @@
         [x-cloak] { display: none !important; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body class="min-h-screen flex flex-col @(fullBleed ? "h-screen overflow-hidden" : "")">
 
     <!-- Keyboard users can jump straight past the nav to the page content. -->
     <a href="#main-content"
@@ -200,6 +204,12 @@
                        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all @(activeNav == "Sprints" ? "nav-link-active" : "nav-link-idle")">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         Sprints
+                    </a>
+                    <a href="/Chat"
+                       class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all @(activeNav == "Chat" ? "nav-link-active" : "nav-link-idle")">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                        Chat
+                        <span id="chatUnreadBadge" class="hidden min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-bold items-center justify-center" style="background:#f23f43;display:none"></span>
                     </a>
                     @* ── Work (Projects · Templates · Recurring) ── *@
                     <div class="relative" id="workMenuWrap">
@@ -440,21 +450,24 @@
     </nav>
 
     <!-- ── Main Content ──────────────────────────────────────────── -->
-    <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-3 pb-4">
+    <main id="main-content" class="@(fullBleed ? "flex-1 w-full min-h-0" : "flex-1 w-full px-4 sm:px-6 pt-3 pb-4")">
         @RenderBody()
     </main>
 
     <!-- ── Footer ────────────────────────────────────────────────── -->
-    <footer class="mt-auto border-t border-white/60" style="background:rgba(255,255,255,0.7);backdrop-filter:blur(8px)">
-        <div class="w-full px-4 sm:px-6 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <img src="/assets/img/destinity-inspire.svg" alt="" class="h-4 w-auto opacity-40"
-                     onerror="this.style.display='none'" />
-                <p class="text-[11px] text-gray-400 font-medium">Team Destinity Inspire &copy; 2026</p>
+    @if (!fullBleed)
+    {
+        <footer class="mt-auto border-t border-white/60" style="background:rgba(255,255,255,0.7);backdrop-filter:blur(8px)">
+            <div class="w-full px-4 sm:px-6 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <img src="/assets/img/destinity-inspire.svg" alt="" class="h-4 w-auto opacity-40"
+                         onerror="this.style.display='none'" />
+                    <p class="text-[11px] text-gray-400 font-medium">Team Destinity Inspire &copy; 2026</p>
+                </div>
+                <p class="text-[10px] text-gray-300 font-medium tracking-wide uppercase">Scienter Technologies PTE LTD</p>
             </div>
-            <p class="text-[10px] text-gray-300 font-medium tracking-wide uppercase">Scienter Technologies PTE LTD</p>
-        </div>
-    </footer>
+        </footer>
+    }
 
     @{
         var _tMsgs = new System.Collections.Generic.List<(string Msg, string Type)>();
@@ -694,6 +707,53 @@
     });
     _srConn.on('LinkUpdated', taskId => {
         if (typeof window.onLinkUpdated === 'function') window.onLinkUpdated(taskId);
+    });
+
+    // ── Chat unread badge (visible on every page via the persistent team group) ──
+    const _chatMyName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(User.FindFirst("DisplayName")?.Value ?? ""));
+    const _chatTeamId = '@(User.FindFirst("ActiveTeamId")?.Value ?? "")';
+    const _onChatPage = location.pathname.toLowerCase().indexOf('/chat') === 0;
+    function _renderChatBadge(){
+        const b = document.getElementById('chatUnreadBadge'); if (!b) return;
+        const n = parseInt(localStorage.getItem('chatUnread_' + _chatTeamId) || '0', 10);
+        const mention = localStorage.getItem('chatMention_' + _chatTeamId) === '1';
+        if (n > 0){ b.textContent = n > 99 ? '99+' : n; b.style.display = 'flex'; b.style.background = '#f23f43'; b.style.boxShadow = mention ? '0 0 0 2px rgba(242,63,67,.35)' : 'none'; }
+        else b.style.display = 'none';
+    }
+    function _chatBeep(){
+        try { const Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+            const ac = new Ctx(); const o = ac.createOscillator(); const g = ac.createGain();
+            o.connect(g); g.connect(ac.destination); o.type = 'sine'; o.frequency.value = 880;
+            g.gain.setValueAtTime(0.05, ac.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.25);
+            o.start(); o.stop(ac.currentTime + 0.26);
+        } catch {}
+    }
+    function _chatMentionAlert(m){
+        if (localStorage.getItem('chatAlerts') === '0') return;      // user muted alerts
+        if (_onChatPage && !document.hidden) return;                 // actively watching the channel
+        _chatBeep();
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted'){
+            try { const n = new Notification((m.senderName || 'Someone') + ' mentioned you',
+                    { body: (m.body || '').replace(/\s+/g, ' ').slice(0, 120), icon: '/assets/img/destinity-inspire.ico' });
+                  n.onclick = () => { window.focus(); if (!location.pathname.toLowerCase().startsWith('/chat')) location.href = '/Chat'; };
+            } catch {}
+        }
+    }
+    _srConn.on('ChatMessage', m => {
+        if (m.senderName === _chatMyName) return;
+        const mentioned = !!(m.body && _chatMyName && new RegExp('@@' + _chatMyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(m.body));
+        if (mentioned) _chatMentionAlert(m);
+        if (_onChatPage) return;   // reading the channel — don't bump the unread badge
+        const key = 'chatUnread_' + _chatTeamId;
+        localStorage.setItem(key, parseInt(localStorage.getItem(key) || '0', 10) + 1);
+        if (mentioned) localStorage.setItem('chatMention_' + _chatTeamId, '1');
+        _renderChatBadge();
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+        _renderChatBadge();
+        // Ask for desktop-notification permission on first interaction (browsers require a gesture).
+        if (localStorage.getItem('chatAlerts') !== '0' && 'Notification' in window && Notification.permission === 'default')
+            document.addEventListener('click', () => { if (Notification.permission === 'default') Notification.requestPermission(); }, { once: true });
     });
 
     async function srJoinTask(taskId) {

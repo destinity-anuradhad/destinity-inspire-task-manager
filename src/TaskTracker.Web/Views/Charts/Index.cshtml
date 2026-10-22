@@ -70,7 +70,7 @@
 
     <!-- Full-width: Velocity -->
     <div class="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-gray-700 mb-1">Velocity <span class="text-xs text-gray-400 font-normal">(story points per sprint)</span></h2>
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Velocity <span class="text-xs text-gray-400 font-normal">(estimated hours per sprint)</span></h2>
         <p class="text-xs text-gray-400 mb-4">Committed = all estimated hours in sprint · Completed = hours in Done/Resolved/Closed</p>
         <div class="relative" style="height: 280px;">
             <canvas id="velocityChart"></canvas>
@@ -102,6 +102,7 @@
         'On track':    '#3b82f6',
         'Delayed':     '#ef4444',
         'On hold':     '#94a3b8',
+        'Rejected':    '#ef4444',
         'Testing':     '#f59e0b',
         'Not Started': '#8b5cf6',
         'Unknown':     '#e2e8f0'
@@ -237,7 +238,7 @@
         }
     });
 
-    // Velocity: committed vs completed points per sprint
+    // Velocity: committed vs completed estimate hours per sprint
     new Chart(document.getElementById('velocityChart'), {
         type: 'bar',
         data: {

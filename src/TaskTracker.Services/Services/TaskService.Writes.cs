@@ -11,15 +11,22 @@ public partial class TaskService
 {
     // ── ITaskService: write methods ────────────────────────────────────────────
 
-    public async Task<TaskSaveResult> SaveAsync(TaskItem task, UserCtx ctx, bool forceClose)
+    public async Task<TaskSaveResult> SaveAsync(TaskItem task, UserCtx ctx, bool forceClose, bool suppressActivityPost = false)
     {
         try
         {
-            if (!TryNormalizeEstimateUnit(task.EstimateUnit, out var estimateUnit))
-                return new TaskSaveResult { Error = "Estimate unit must be Points or Hours." };
+            // Accept legacy unit values from old clients, but normalize every saved estimate to hours.
+            if (!string.IsNullOrWhiteSpace(task.EstimateUnit)
+                && !string.Equals(task.EstimateUnit, "Hours", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(task.EstimateUnit, "Points", StringComparison.OrdinalIgnoreCase))
+                return new TaskSaveResult { Error = "Estimate unit must be Hours." };
+            if (task.Id == 0 && !task.Weight.HasValue)
+                return new TaskSaveResult { Error = "Estimate is required. Enter at least 10 minutes in 10-minute increments." };
+            if (task.Weight.HasValue && task.Weight.Value < 0.166667m)
+                return new TaskSaveResult { Error = "Estimate must be at least 10 minutes." };
             if (task.RemainingWorkHours < 0)
                 return new TaskSaveResult { Error = "Remaining work cannot be negative." };
-            task.EstimateUnit = estimateUnit;
+            task.EstimateUnit = "Hours";
             var projectError = await ResolveGovernedProjectAsync(task, ctx.TeamId);
             if (projectError != null) return new TaskSaveResult { Error = projectError };
             string action, details;
@@ -27,6 +34,12 @@ public partial class TaskService
 
             if (task.Id == 0)
             {
+                if (string.IsNullOrWhiteSpace(task.ItemType))
+                    return new TaskSaveResult { Error = "Item Type is required." };
+                if (string.IsNullOrWhiteSpace(task.Priority))
+                    return new TaskSaveResult { Error = "Priority is required." };
+                if (task.Weight.HasValue && !IsTenMinuteEstimate(task.Weight.Value))
+                    return new TaskSaveResult { Error = "Estimate must use 10-minute increments (for example, 0.166667 hours for 10 minutes)." };
                 // Auto-assign member as owner BEFORE the status guard so a member
                 // can create a task directly in a started status.
                 if (ctx.IsMember) task.Owner = ctx.DisplayName;
@@ -52,7 +65,7 @@ public partial class TaskService
                 await CascadeParentStatusAsync(task.ParentId, ctx);
                 action  = "Created";
                 details = $"Goal: {task.Goal}";
-                await NotifyAssignedAsync(task, null, ctx);
+                await NotifyAssignedAsync(task, null, ctx, suppressActivityPost);
                 await PublishTaskWebhookAsync(task, WebhookEvents.TaskCreated, ctx);
             }
             else
@@ -61,6 +74,8 @@ public partial class TaskService
                 if (existing == null) return new TaskSaveResult { Error = "Task not found" };
                 if (!await CanModifyAsync(existing, ctx))
                     return new TaskSaveResult { Error = "You don't have permission to edit this task." };
+                if (task.Weight.HasValue && task.Weight.Value != existing.Weight && !IsTenMinuteEstimate(task.Weight.Value))
+                    return new TaskSaveResult { Error = "Estimate must use 10-minute increments (for example, 0.166667 hours for 10 minutes)." };
 
                 // Members cannot change the owner — resolve it before the status guard
                 // so the guard sees the correct effective owner, not the empty form value.
@@ -143,12 +158,13 @@ public partial class TaskService
                 await CascadeParentStatusAsync(existing.ParentId, ctx);
                 action  = "Updated";
                 details = changes.Count > 0 ? string.Join("; ", changes) : "Minor update";
-                await NotifyAssignedAsync(existing, oldOwner, ctx);
+                await NotifyAssignedAsync(existing, oldOwner, ctx, suppressActivityPost);
                 if (!string.Equals(oldOwner, existing.Owner, StringComparison.Ordinal))
                     await PublishTaskWebhookAsync(existing, WebhookEvents.TaskAssigned, ctx);
                 if (oldStatus != existing.Status)
                 {
                     await NotifyWatchersStatusAsync(existing, oldStatus, existing.Status, ctx);
+                    await PostStatusChatAsync(existing, oldStatus, existing.Status, ctx);
                     // Log a canonical "Status Changed" entry so GetBurndownAsync can count completions.
                     await LogAsync(ctx, "Status Changed", $"'{oldStatus}' → '{existing.Status}'",
                         existing.Id, existing.Goal, existing.Project);
@@ -181,6 +197,9 @@ public partial class TaskService
         catch (Exception ex) { return new TaskSaveResult { Error = ex.Message }; }
     }
 
+    private static bool IsTenMinuteEstimate(decimal hours) =>
+        Math.Abs(hours * 60m / 10m - decimal.Round(hours * 60m / 10m, 0)) <= 0.001m;
+
     public async Task<TaskUpdateResult> UpdateStatusAsync(int id, string status, string? swimlane, UserCtx ctx, bool forceClose, decimal? actualHours = null, byte[]? expectedRowVersion = null)
     {
         var task = await FindTaskInTeam(id, ctx.TeamId);
@@ -209,6 +228,7 @@ public partial class TaskService
         if (old != task.Status)
         {
             await NotifyWatchersStatusAsync(task, old, task.Status, ctx);
+            await PostStatusChatAsync(task, old, task.Status, ctx);
             await PublishTaskWebhookAsync(task, WebhookEvents.TaskStatusChanged, ctx);
         }
         var logDetails = $"'{old}' → '{task.Status}'" + (swimlane != null ? $"; Swimlane: {swimlane}" : "");
@@ -464,7 +484,7 @@ public partial class TaskService
         foreach (var uid in ownerUserIds)
         {
             var used = await _db.Tasks
-                .Where(t => t.SprintId == sprintId && !t.IsDeleted && t.EstimateUnit == "Hours"
+                .Where(t => t.SprintId == sprintId && !t.IsDeleted
                     && _db.TaskOwners.Any(o => o.TaskId == t.Id && o.UserId == uid))
                 .SumAsync(t => t.Weight ?? 0);
             var cap = await _db.SprintCapacities
@@ -737,6 +757,12 @@ public partial class TaskService
         await SyncTaskOwnersAsync(task.Id, task.Owner);
         await _db.SaveChangesAsync();
         await LogAsync(ctx, "Owner Changed", $"'{old}' → '{task.Owner}'", id, task.Goal, task.Project);
+        if (!string.Equals(old, task.Owner, StringComparison.Ordinal))
+        {
+            var prevSet = SplitOwners(old).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var added   = (await GetOwnerUsersAsync(task.Id)).Where(u => !prevSet.Contains(u.DisplayName)).ToList();
+            await PostAssignmentChatAsync(task, added, ctx);
+        }
         return (true, null);
     }
 
@@ -786,7 +812,7 @@ public partial class TaskService
             Goal = task.Goal, Project = task.Project, ProjectId = task.ProjectId, Property = task.Property,
             Priority = task.Priority, Status = DoneStatusFor(task.ItemType), Owner = task.Owner, ItemType = task.ItemType,
             ParentId = task.ParentId, SprintId = currentSprintId, ModuleId = task.ModuleId, ClientId = task.ClientId,
-            Labels = task.Labels, EstimateUnit = task.EstimateUnit, Weight = deliveredWeight,
+            Labels = task.Labels, EstimateUnit = "Hours", Weight = deliveredWeight,
             ActualHours = totalActual, RemainingWorkHours = 0m,
             Reporter = task.Reporter, CreatedBy = by, CreatedAt = DateTime.Now, TeamId = task.TeamId,
             Swimlane = task.Swimlane, StartDate = task.StartDate, EndDate = task.EndDate,
@@ -920,7 +946,7 @@ public partial class TaskService
     {
         var task = await FindTaskInTeam(id, ctx.TeamId);
         if (task == null) return (true, null); // nothing to delete — treat as success (redirect to index)
-        if (!await CanModifyAsync(task, ctx))
+        if (!await CanDeleteAsync(task, ctx))
             return (false, "You don't have permission to delete this task.");
         task.IsDeleted = true;
         task.DeletedAt = DateTime.Now;
@@ -970,7 +996,7 @@ public partial class TaskService
         if (ids == null || ids.Length == 0) return new BulkOpResult { Error = "No tasks selected" };
         var now   = DateTime.Now;
         var all   = await TeamTasks(ctx.TeamId).Where(t => ids.Contains(t.Id)).ToListAsync();
-        var tasks = await GetModifiableTasksAsync(all, ctx);
+        var tasks = await GetDeletableTasksAsync(all, ctx);
         var denied = all.Count - tasks.Count;
         foreach (var t in tasks) { t.IsDeleted = true; t.DeletedAt = now; t.DeletedBy = ctx.DisplayName; }
         await _db.SaveChangesAsync();
@@ -1079,22 +1105,6 @@ public partial class TaskService
         if (project == null) return "Project not found or is not active for the current team.";
         task.Project = project.Name;
         return null;
-    }
-
-    private static bool TryNormalizeEstimateUnit(string? value, out string estimateUnit)
-    {
-        estimateUnit = value?.Trim() ?? "Points";
-        if (string.Equals(estimateUnit, "points", StringComparison.OrdinalIgnoreCase))
-        {
-            estimateUnit = "Points";
-            return true;
-        }
-        if (string.Equals(estimateUnit, "hours", StringComparison.OrdinalIgnoreCase))
-        {
-            estimateUnit = "Hours";
-            return true;
-        }
-        return false;
     }
 
     // Upsert one row per (sprint, task) — hours replace the previous value for this sprint.

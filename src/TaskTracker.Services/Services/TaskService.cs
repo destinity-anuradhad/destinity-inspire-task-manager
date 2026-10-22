@@ -12,7 +12,8 @@ using TaskTracker.Models.ViewModels;
 namespace TaskTracker.Services;
 
 public partial class TaskService(AppDbContext db, IConfiguration config, IHubContext<TaskHub> hub, IEmailQueue emailQueue,
-    ILogger<TaskService> logger, IMemoryCache cache, IWebhookService webhooks, IAutomationService automations) : ITaskService
+    ILogger<TaskService> logger, IMemoryCache cache, IWebhookService webhooks, IAutomationService automations,
+    IChatService chat) : ITaskService
 {
     private readonly AppDbContext         _db          = db;
     private readonly IConfiguration      _config      = config;
@@ -22,6 +23,7 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
     private readonly IMemoryCache        _cache       = cache;
     private readonly IWebhookService     _webhooks    = webhooks;
     private readonly IAutomationService  _automations = automations;
+    private readonly IChatService        _chat        = chat;
 
     private static readonly TimeSpan _lookupTtl = TimeSpan.FromMinutes(5);
 
@@ -32,6 +34,14 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
 
     private async Task<bool> CanModifyAsync(TaskItem task, UserCtx ctx)
     {
+        if (ctx.IsTeamLead) return true;
+        if (string.Equals(task.CreatedBy, ctx.DisplayName, StringComparison.OrdinalIgnoreCase)) return true;
+        return ctx.UserId > 0 && await _db.TaskOwners.AnyAsync(o =>
+            o.TaskId == task.Id && o.UserId == ctx.UserId);
+    }
+
+    private async Task<bool> CanDeleteAsync(TaskItem task, UserCtx ctx)
+    {
         if (ctx.IsTeamAdmin) return true;
         if (string.Equals(task.CreatedBy, ctx.DisplayName, StringComparison.OrdinalIgnoreCase)) return true;
         return ctx.UserId > 0 && await _db.TaskOwners.AnyAsync(o =>
@@ -39,6 +49,23 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
     }
 
     private async Task<List<TaskItem>> GetModifiableTasksAsync(IEnumerable<TaskItem> tasks, UserCtx ctx)
+    {
+        var candidates = tasks.ToList();
+        if (ctx.IsTeamLead) return candidates;
+        if (ctx.UserId <= 0)
+            return candidates.Where(t => string.Equals(t.CreatedBy, ctx.DisplayName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var taskIds = candidates.Select(t => t.Id).ToList();
+        var ownedTaskIds = await _db.TaskOwners
+            .Where(o => o.UserId == ctx.UserId && taskIds.Contains(o.TaskId))
+            .Select(o => o.TaskId)
+            .ToListAsync();
+        var owned = ownedTaskIds.ToHashSet();
+        return candidates.Where(t => owned.Contains(t.Id)
+            || string.Equals(t.CreatedBy, ctx.DisplayName, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task<List<TaskItem>> GetDeletableTasksAsync(IEnumerable<TaskItem> tasks, UserCtx ctx)
     {
         var candidates = tasks.ToList();
         if (ctx.IsTeamAdmin) return candidates;

@@ -4,9 +4,10 @@ using TaskTracker.Models;
 
 namespace TaskTracker.Services;
 
-public class SprintService(AppDbContext db) : ISprintService
+public class SprintService(AppDbContext db, IChatService chat) : ISprintService
 {
     private readonly AppDbContext _db = db;
+    private readonly IChatService _chat = chat;
 
     public async Task<SprintIndexData> GetIndexDataAsync(int? teamId)
     {
@@ -34,19 +35,19 @@ public class SprintService(AppDbContext db) : ISprintService
             : new List<string>();
 
         var doneStatuses = new[] { "Done", "Resolved", "Closed" };
-        var activeVelocityPoints = await _db.Tasks
+        var activeVelocityHours = await _db.Tasks
             .Where(t => t.SprintId.HasValue && sprintIds.Contains(t.SprintId.Value) && !t.IsDeleted
-                     && doneStatuses.Contains(t.Status) && t.EstimateUnit == "Points")
+                     && doneStatuses.Contains(t.Status))
             .GroupBy(t => t.SprintId!.Value)
             .Select(g => new { SprintId = g.Key, Weight = g.Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m })
             .ToDictionaryAsync(x => x.SprintId, x => x.Weight);
         var completionSnapshots = await _db.SprintCompletionSnapshots
             .Where(s => sprintIds.Contains(s.SprintId))
             .ToDictionaryAsync(s => s.SprintId, s => s);
-        var velocityPoints = sprints.ToDictionary(s => s.Id, s =>
+        var velocityHours = sprints.ToDictionary(s => s.Id, s =>
             s.CompletedAt.HasValue && completionSnapshots.TryGetValue(s.Id, out var snapshot)
                 ? snapshot.CompletedEstimate
-                : activeVelocityPoints.GetValueOrDefault(s.Id));
+                : activeVelocityHours.GetValueOrDefault(s.Id));
         var spilloverCounts = await _db.SprintWorkItemEvents
             .Where(e => e.EventType == "CarriedForward" && e.FromSprintId.HasValue && sprintIds.Contains(e.FromSprintId.Value))
             .GroupBy(e => e.FromSprintId!.Value)
@@ -62,11 +63,10 @@ public class SprintService(AppDbContext db) : ISprintService
 
         var taskOwnerRaw = await _db.Tasks
             .Where(t => t.SprintId != null && sprintIds.Contains(t.SprintId!.Value) && !t.IsDeleted)
-            .Select(t => new { t.SprintId, t.Id, t.Weight, t.EstimateUnit })
+            .Select(t => new { t.SprintId, t.Id, t.Weight })
             .ToListAsync();
 
         var estimateHours = taskOwnerRaw
-            .Where(t => t.EstimateUnit == "Hours")
             .GroupBy(t => t.SprintId!.Value)
             .ToDictionary(g => g.Key, g => g.Sum(t => (decimal)(t.Weight ?? 0)));
 
@@ -101,7 +101,7 @@ public class SprintService(AppDbContext db) : ISprintService
             var sprint = sprints.First(s => s.Id == sid);
 
             var estMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-            foreach (var t in taskOwnerRaw.Where(t => t.SprintId == sid && t.EstimateUnit == "Hours"))
+            foreach (var t in taskOwnerRaw.Where(t => t.SprintId == sid))
                 foreach (var name in ownersByTask.GetValueOrDefault(t.Id, []))
                 { estMap.TryGetValue(name, out var c); estMap[name] = c + (t.Weight ?? 0); }
 
@@ -133,7 +133,7 @@ public class SprintService(AppDbContext db) : ISprintService
             TaskCounts      = taskCounts,
             OwnerNames      = ownerNames,
             TeamMemberNames = teamMemberNames,
-            VelocityPoints  = velocityPoints,
+            VelocityHours   = velocityHours,
             SpilloverCounts = spilloverCounts,
             ActualHours     = actualHoursRaw,
             EstimateHours   = estimateHours,
@@ -146,7 +146,8 @@ public class SprintService(AppDbContext db) : ISprintService
     {
         try
         {
-            if (sprint.Id == 0)
+            var isNew = sprint.Id == 0;
+            if (isNew)
             {
                 sprint.CreatedAt = DateTime.Now;
                 sprint.CreatedBy = createdBy;
@@ -165,18 +166,32 @@ public class SprintService(AppDbContext db) : ISprintService
                 existing.Goal      = sprint.Goal;
             }
             await _db.SaveChangesAsync();
+            if (isNew && sprint.TeamId.HasValue)
+            {
+                var dates = sprint.StartDate.HasValue && sprint.EndDate.HasValue
+                    ? $" ({sprint.StartDate:MMM d} – {sprint.EndDate:MMM d})" : "";
+                var body = $"Created sprint “{sprint.Name}”{dates}"
+                         + (!string.IsNullOrWhiteSpace(sprint.Goal) ? $"\nGoal: {sprint.Goal}" : "");
+                await _chat.PostEventAsync(sprint.TeamId.Value, null, createdBy, body,
+                    new { icon = "📅", type = "sprint", url = "/Sprints", link = "Open sprints" });
+            }
             return (true, sprint.Id, null);
         }
         catch (Exception ex) { return (false, 0, ex.Message); }
     }
 
-    public async Task SetActiveAsync(int id, int? teamId)
+    public async Task SetActiveAsync(int id, int? teamId, string? by = null)
     {
         var sprintQ = _db.Sprints.AsQueryable();
         if (teamId.HasValue) sprintQ = sprintQ.Where(s => s.TeamId == teamId);
         var sprints = await sprintQ.ToListAsync();
         foreach (var s in sprints) s.IsActive = s.Id == id && !s.CompletedAt.HasValue;
         await _db.SaveChangesAsync();
+
+        var activated = sprints.FirstOrDefault(s => s.Id == id && s.IsActive);
+        if (activated != null && activated.TeamId.HasValue && !string.IsNullOrWhiteSpace(by))
+            await _chat.PostEventAsync(activated.TeamId.Value, null, by, $"Started sprint “{activated.Name}”",
+                new { icon = "🚀", type = "sprint", url = "/Sprints", link = "Open sprints" });
     }
 
     public async Task DeactivateAsync(int? teamId)
@@ -193,9 +208,12 @@ public class SprintService(AppDbContext db) : ISprintService
         if (teamId.HasValue && !await _db.Sprints.AnyAsync(s => s.Id == sprintId && s.TeamId == teamId))
             return null;
         var tasks = await _db.Tasks.Where(t => t.SprintId == sprintId && !t.IsDeleted).ToListAsync();
-        var incompleteTasks = tasks.Where(t => !TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
+        var skippedCount = tasks.Count(TaskStatusRules.IsExcludedFromSprintCompletion);
+        var inScopeTasks = tasks.Where(t => !TaskStatusRules.IsExcludedFromSprintCompletion(t)).ToList();
+        var incompleteTasks = inScopeTasks.Where(t => !TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
         return new SprintIncompleteResult {
-            Total = tasks.Count, Incomplete = incompleteTasks.Count, Done = tasks.Count - incompleteTasks.Count,
+            Total = inScopeTasks.Count, Incomplete = incompleteTasks.Count,
+            Done = inScopeTasks.Count - incompleteTasks.Count, Excluded = skippedCount,
             Tasks = incompleteTasks
                 .OrderBy(t => t.Priority).ThenBy(t => t.Goal)
                 .Select(t => new SprintIncompleteTask {
@@ -245,8 +263,9 @@ public class SprintService(AppDbContext db) : ISprintService
 
         var carryMap  = (carryItems ?? []).GroupBy(c => c.TaskId).ToDictionary(g => g.Key, g => g.Last());
         var tasks     = await _db.Tasks.Where(t => t.SprintId == id && !t.IsDeleted).ToListAsync();
-        var completed = tasks.Where(t => TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
-        var carrying  = tasks.Except(completed).ToList();
+        var inScopeTasks = tasks.Where(t => !TaskStatusRules.IsExcludedFromSprintCompletion(t)).ToList();
+        var completed = inScopeTasks.Where(t => TaskStatusRules.IsDone(t.ItemType, t.Status)).ToList();
+        var carrying  = inScopeTasks.Except(completed).ToList();
 
         // Validate every destination BEFORE mutating, so a bad target can't leave a half-completed sprint.
         foreach (var t in carrying)
@@ -257,8 +276,8 @@ public class SprintService(AppDbContext db) : ISprintService
         }
 
         // Snapshot metrics use the sprint's ORIGINAL scope, captured before any split re-scopes a Weight.
-        int committedCount = tasks.Count;
-        decimal committedEstimate = tasks.Sum(t => t.Weight ?? 0);
+        int committedCount = inScopeTasks.Count;
+        decimal committedEstimate = inScopeTasks.Sum(t => t.Weight ?? 0);
         int completedCount = completed.Count;
         decimal completedEstimate = completed.Sum(t => t.Weight ?? 0);
 
@@ -294,7 +313,7 @@ public class SprintService(AppDbContext db) : ISprintService
                     Goal = t.Goal, Project = t.Project, ProjectId = t.ProjectId, Property = t.Property,
                     Priority = t.Priority, Status = DoneStatusFor(t.ItemType), Owner = t.Owner, ItemType = t.ItemType,
                     ParentId = t.ParentId, SprintId = id, ModuleId = t.ModuleId, ClientId = t.ClientId,
-                    Labels = t.Labels, EstimateUnit = t.EstimateUnit, Weight = deliveredWeight,
+                    Labels = t.Labels, EstimateUnit = "Hours", Weight = deliveredWeight,
                     ActualHours = totalActual, RemainingWorkHours = 0m,
                     Reporter = t.Reporter, CreatedBy = completedBy, CreatedAt = DateTime.Now, TeamId = t.TeamId,
                     Swimlane = t.Swimlane, StartDate = t.StartDate, EndDate = t.EndDate,
@@ -399,10 +418,52 @@ public class SprintService(AppDbContext db) : ISprintService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
+        await PostSprintCompletedChatAsync(sprint, committedCount, completedCount, moved,
+            committedEstimate, completedEstimate, completedBy);
+
         var movedTo = destinations.Count == 0 ? "backlog"
                     : destinations.Count == 1 ? destinations.First()
                     : "mixed";
         return (true, true, moved, movedTo, null);
+    }
+
+    // Auto-posts the sprint's capacity + burndown summary card to the team chat on close.
+    private async Task PostSprintCompletedChatAsync(Sprint sprint, int committedCount, int completedCount,
+        int carried, decimal plannedHours, decimal deliveredHours, string completedBy)
+    {
+        try
+        {
+            if (!sprint.TeamId.HasValue) return;
+            var actualHours = await _db.SprintHoursLogs.Where(l => l.SprintId == sprint.Id).SumAsync(l => l.Hours);
+            var prev = await _db.SprintCompletionSnapshots
+                .Where(s => s.SprintId != sprint.Id)
+                .Join(_db.Sprints, s => s.SprintId, sp => sp.Id, (s, sp) => new { s.CompletedEstimate, sp.TeamId, s.CompletedAt })
+                .Where(x => x.TeamId == sprint.TeamId)
+                .OrderByDescending(x => x.CompletedAt)
+                .Select(x => (decimal?)x.CompletedEstimate)
+                .FirstOrDefaultAsync();
+
+            var pct = plannedHours > 0 ? (int)Math.Round(deliveredHours / plannedHours * 100m)
+                    : committedCount > 0 ? (int)Math.Round(100m * completedCount / committedCount) : 0;
+            var arrow = prev.HasValue ? (deliveredHours > prev ? " ▲" : deliveredHours < prev ? " ▼" : "") : "";
+
+            var lines = new List<string> {
+                $"Completed sprint “{sprint.Name}”",
+                $"Capacity   {plannedHours:0.#}h planned · {actualHours:0.#}h done ({pct}%)",
+                $"Tasks      {completedCount} done · {carried} carried over",
+                $"Velocity   {deliveredHours:0.#}h{arrow}" + (prev.HasValue ? $" (prev {prev:0.#}h)" : "")
+            };
+            if (sprint.EndDate.HasValue && sprint.CompletedAt.HasValue)
+            {
+                var days = (sprint.EndDate.Value.Date - sprint.CompletedAt.Value.Date).Days;
+                lines.Add(days > 0 ? $"Closed {days} day{(days == 1 ? "" : "s")} early"
+                        : days < 0 ? $"Closed {-days} day{(days == -1 ? "" : "s")} late"
+                        : "Closed on the due date");
+            }
+            await _chat.PostEventAsync(sprint.TeamId.Value, null, completedBy, string.Join("\n", lines),
+                new { icon = "🏁", type = "sprint", url = "/Forecast", link = "View full report" });
+        }
+        catch { /* report post is best-effort — the sprint is already completed and committed */ }
     }
 
     // Books a task's per-sprint hours into SprintHoursLogs (the actual-velocity source), never
@@ -442,7 +503,7 @@ public class SprintService(AppDbContext db) : ISprintService
         // Load sprint tasks; owners come from the TaskOwners junction (#7 stage 2), not the string.
         var sprintTasksRaw = await _db.Tasks
             .Where(t => t.SprintId == sprintId && !t.IsDeleted)
-            .Select(t => new { t.Id, t.Weight, t.EstimateUnit, t.ItemType, t.Status })
+            .Select(t => new { t.Id, t.Weight, t.ItemType, t.Status })
             .ToListAsync();
 
         // Per-sprint actual hours — join hours log to its task (deleted tasks included for history).
@@ -461,7 +522,7 @@ public class SprintService(AppDbContext db) : ISprintService
                 var owners = ownerNames.GetValueOrDefault(t.Id, []);
                 return owners.Select(name => new {
                     DisplayName = name, t.Id, Estimate = (t.Weight ?? 0) / owners.Count,
-                    t.EstimateUnit, t.ItemType, t.Status
+                    t.ItemType, t.Status
                 });
             })
             .ToList();
@@ -480,15 +541,14 @@ public class SprintService(AppDbContext db) : ISprintService
             actualMap[h.DisplayName!] = cur + h.Hours;
         }
 
-        // Aggregate per owner: total tasks, done tasks, story points
-        var ownerMap = new Dictionary<string, (decimal pts, decimal hrs, int total, int done)>(StringComparer.OrdinalIgnoreCase);
+        // Aggregate estimated hours and task completion per owner.
+        var ownerMap = new Dictionary<string, (decimal hrs, int total, int done)>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in sprintTasks.Where(a => !string.IsNullOrWhiteSpace(a.DisplayName)))
         {
             ownerMap.TryGetValue(a.DisplayName!, out var cur);
             var isDone = TaskStatusRules.IsDone(a.ItemType, a.Status);
             ownerMap[a.DisplayName!] = (
-                cur.pts   + (a.EstimateUnit == "Points" ? a.Estimate : 0),
-                cur.hrs   + (a.EstimateUnit == "Hours" ? a.Estimate : 0),
+                cur.hrs   + a.Estimate,
                 cur.total + 1,
                 cur.done  + (isDone ? 1 : 0)
             );
@@ -529,7 +589,6 @@ public class SprintService(AppDbContext db) : ISprintService
             return new SprintCapacityRow {
                 OwnerName       = owner,
                 CapacityHours   = capacity,
-                AllocatedPoints = agg.pts,
                 AllocatedHours  = agg.hrs,
                 ActualHours     = sprintHours,
                 TaskCount       = agg.total,
@@ -542,6 +601,7 @@ public class SprintService(AppDbContext db) : ISprintService
             SprintName       = sprint.Name,
             StartDate        = sprint.StartDate?.ToString("yyyy-MM-dd"),
             EndDate          = sprint.EndDate?.ToString("yyyy-MM-dd"),
+            IsCompleted      = sprint.CompletedAt.HasValue,
             TotalCapacity    = rows.Sum(r => r.CapacityHours ?? 0),
             TotalAllocated   = rows.Sum(r => r.AllocatedHours),
             TotalActualHours = rows.Sum(r => r.ActualHours),
@@ -567,7 +627,9 @@ public class SprintService(AppDbContext db) : ISprintService
 
     public async Task<bool> SaveCapacityAsync(SprintCapacityRequest req, int? teamId)
     {
-        if (teamId.HasValue && !await _db.Sprints.AnyAsync(s => s.Id == req.SprintId && s.TeamId == teamId))
+        var sprint = await _db.Sprints.FirstOrDefaultAsync(s => s.Id == req.SprintId
+            && (!teamId.HasValue || s.TeamId == teamId.Value));
+        if (sprint == null || sprint.CompletedAt.HasValue)
             return false;
         var user = await _db.AppUsers.FirstOrDefaultAsync(u => u.DisplayName == req.OwnerName);
         if (user == null) return false;

@@ -24,12 +24,13 @@ public class TaskTemplateService(AppDbContext db) : ITaskTemplateService
         if (!ctx.TeamId.HasValue) return (false, "Select a team before managing templates.");
         var name = template.Name?.Trim();
         if (string.IsNullOrWhiteSpace(name)) return (false, "Template name is required.");
-        if (template.Estimate < 0) return (false, "Estimate cannot be negative.");
-        if (template.EstimateUnit is not ("Points" or "Hours")) return (false, "Estimate unit must be Points or Hours.");
+        if (template.Estimate is null or < 0.166667m) return (false, "Estimate must be at least 10 minutes.");
+        if (Math.Abs(template.Estimate.Value * 60m / 10m - decimal.Round(template.Estimate.Value * 60m / 10m, 0)) > 0.001m)
+            return (false, "Estimate must use 10-minute increments (for example, 0.166667 hours for 10 minutes).");
         if (await db.TaskTemplates.AnyAsync(t => t.TeamId == ctx.TeamId && t.Name == name)) return (false, "A template with that name already exists for this team.");
         var entity = new TaskTemplate {
             TeamId = ctx.TeamId, Name = name, ItemType = template.ItemType, Priority = template.Priority,
-            Estimate = template.Estimate, EstimateUnit = template.EstimateUnit, Notes = template.Notes,
+            Estimate = template.Estimate, EstimateUnit = "Hours", Notes = template.Notes,
             Labels = template.Labels, AcceptanceCriteria = template.AcceptanceCriteria,
             CreatedAt = DateTime.UtcNow, CreatedBy = ctx.DisplayName
         };

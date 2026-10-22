@@ -62,8 +62,8 @@ public class ChartService(AppDbContext db) : IChartService
             .GroupBy(t => t.SprintId!.Value)
             .Select(g => new {
                 SprintId  = g.Key,
-                Committed = g.Where(t => t.EstimateUnit == "Points").Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m,
-                Completed = g.Where(t => t.EstimateUnit == "Points" && (t.Status == "Done" || t.Status == "Resolved" || t.Status == "Closed"))
+                Committed = g.Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m,
+                Completed = g.Where(t => t.Status == "Done" || t.Status == "Resolved" || t.Status == "Closed")
                              .Sum(t => (decimal?)(t.Weight ?? 0)) ?? 0m
             })
             .ToDictionaryAsync(x => x.SprintId);

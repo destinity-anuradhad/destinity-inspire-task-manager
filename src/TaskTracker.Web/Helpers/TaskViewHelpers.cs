@@ -21,9 +21,10 @@ public static class TaskViewHelpers
     public static string StatusBadge(string? s) => s switch
     {
         "Done"        => "bg-green-100 text-green-700 border border-green-200",
+        "On hold"     => "bg-amber-100 text-amber-700 border border-amber-200",
+        "Rejected"    => "bg-red-100 text-red-700 border border-red-200",
         "On track"    => "bg-blue-100 text-blue-700 border border-blue-200",
         "Delayed"     => "bg-red-100 text-red-700 border border-red-200",
-        "On hold"     => "bg-gray-100 text-gray-600 border border-gray-200",
         "Testing"     => "bg-amber-100 text-amber-700 border border-amber-200",
         "Not Started" => "bg-purple-100 text-purple-700 border border-purple-200",
         _             => "bg-gray-100 text-gray-500 border border-gray-200"
@@ -31,7 +32,7 @@ public static class TaskViewHelpers
 
     public static bool IsOverdue(DateTime? expectedEnd, string? status)
     {
-        if (status is "Done" or "On hold") return false;
+        if (status is "Done" or "On hold" or "Rejected") return false;
         return expectedEnd.HasValue && expectedEnd.Value.Date < DateTime.Today;
     }
 

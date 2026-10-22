@@ -1378,7 +1378,7 @@ namespace TaskTracker.Migrations
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("Points");
+                        .HasDefaultValue("Hours");
 
                     b.Property<int?>("ExternalId")
                         .HasColumnType("int");
@@ -1453,7 +1453,7 @@ namespace TaskTracker.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal?>("Weight")
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<int?>("WorkflowDefinitionId")
                         .HasColumnType("int");
@@ -1564,14 +1564,14 @@ namespace TaskTracker.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal?>("Estimate")
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<string>("EstimateUnit")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("Points");
+                        .HasDefaultValue("Hours");
 
                     b.Property<string>("ItemType")
                         .IsRequired()

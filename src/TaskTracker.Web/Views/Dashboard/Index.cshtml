@@ -15,6 +15,8 @@
     int myInProg     = ViewBag.MyInProgress    != null ? (int)ViewBag.MyInProgress    : 0;
     int myOpen       = ViewBag.MyOpen          != null ? (int)ViewBag.MyOpen          : 0;
     int myOverdue    = ViewBag.MyOverdue       != null ? (int)ViewBag.MyOverdue       : 0;
+    int myDueToday   = ViewBag.MyDueToday      != null ? (int)ViewBag.MyDueToday      : 0;
+    int mySprintDueToday = ViewBag.MySprintDueToday != null ? (int)ViewBag.MySprintDueToday : 0;
     int myPct        = ViewBag.MyCompletionPct != null ? (int)ViewBag.MyCompletionPct : 0;
     string bestProj  = ViewBag.MyBestProject   as string ?? "";
     int bestCount    = ViewBag.MyBestProjectCount != null ? (int)ViewBag.MyBestProjectCount : 0;
@@ -75,7 +77,7 @@
     </div>
 
     <!-- Stat cards row 1 -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
 
         <div class="stat-card">
             <div class="flex items-start justify-between mb-3">
@@ -128,6 +130,19 @@
             </div>
             <p class="stat-card-value" style="color:@(myOverdue > 0 ? "#ef4444" : "var(--text-3)")">@myOverdue</p>
             <p class="stat-card-note">Past target date</p>
+        </div>
+
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label" style="@(myDueToday > 0 ? "color:#f47920" : "")">Due Today</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#fff7ed">
+                    <svg style="color:#f47920;width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13H4V6a1 1 0 011-1z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:#f47920">@myDueToday</p>
+            <p class="stat-card-note">@mySprintDueToday in the active sprint</p>
         </div>
 
     </div>

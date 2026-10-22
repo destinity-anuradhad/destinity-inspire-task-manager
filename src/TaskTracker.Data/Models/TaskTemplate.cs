@@ -11,7 +11,7 @@ public class TaskTemplate
     public string ItemType { get; set; } = "Task";
     public string? Priority { get; set; }
     public decimal? Estimate { get; set; }
-    public string EstimateUnit { get; set; } = "Points";
+    public string EstimateUnit { get; set; } = "Hours";
     public string? Notes { get; set; }
     public string? Labels { get; set; }
     public string? AcceptanceCriteria { get; set; }

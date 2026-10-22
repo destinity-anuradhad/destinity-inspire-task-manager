@@ -33,13 +33,14 @@
 
     <div class="bg-white border border-gray-200 rounded-2xl p-6 mb-8">
         <p class="text-sm font-semibold text-gray-800 mb-2">CSV format</p>
-        <p class="text-xs text-gray-500 mb-3">First row must be a header. <span class="font-medium text-gray-700">Goal</span> is required; all other columns are optional.</p>
+        <p class="text-xs text-gray-500 mb-3">First row must be a header. <span class="font-medium text-gray-700">Goal</span> and <span class="font-medium text-gray-700">Weight</span> (hours, minimum 10 minutes in 10-minute increments) are required.</p>
         <div class="overflow-x-auto">
-            <code class="block bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono text-gray-700 whitespace-pre">Goal,ItemType,Status,Priority,Owner,TargetDate,Weight,EstimateUnit,Labels,ExternalKey
-Build login page,Task,New,High,,2026-10-01,5,Points,auth,IMP-001
-Fix logout bug,Bug,To Do,Medium,,,3,Points,auth,IMP-002</code>
+            <code class="block bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono text-gray-700 whitespace-pre">Goal,ItemType,Status,Priority,Owner,TargetDate,Weight,Labels,ExternalKey
+Build login page,Task,New,High,,2026-10-01,5,auth,IMP-001
+Fix logout bug,Bug,To Do,Medium,,,3,auth,IMP-002</code>
         </div>
         <p class="text-xs text-gray-400 mt-3">
+            <span class="font-medium">Weight:</span> required estimate in hours (10-minute increments; 10 minutes = 0.166667) ·
             <span class="font-medium">ItemType:</span> Epic, Feature, Story, Task, Bug ·
             <span class="font-medium">ExternalKey:</span> optional idempotency key — rows already imported for this team are skipped on re-upload.
         </p>

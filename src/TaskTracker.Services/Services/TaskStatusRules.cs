@@ -18,6 +18,9 @@ public static class TaskStatusRules
         };
 
     public static bool IsDone(TaskItem t)       => IsDone(t.ItemType, t.Status);
+    public static bool IsExcludedFromSprintCompletion(TaskItem t) =>
+        string.Equals(t.Status, "On hold", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(t.Status, "Rejected", StringComparison.OrdinalIgnoreCase);
     public static bool IsActive(string? status) => status is "In Progress" or "Active";
     public static bool IsActive(TaskItem t)     => IsActive(t.Status);
 
@@ -41,8 +44,8 @@ public static class TaskStatusRules
     // ── Transition rules ──────────────────────────────────────────────────────
     // FORWARD-ONLY flow: from any status you may advance to ANY later status in the item
     // type's order (skipping intermediate stages is allowed — e.g. "To Do" → "Done") or to
-    // "Blocked". BACKWARD moves are rejected for every role. Blocked is a side-state: you can
-    // block from anywhere and resume from Blocked to any status.
+    // "Blocked", "On hold", or "Rejected". BACKWARD moves are rejected for every role. These
+    // statuses are side-states: they can be set from anywhere and resume to any flow status.
     private static readonly Dictionary<string, string[]> _flowOrder = new(StringComparer.OrdinalIgnoreCase) {
         ["Task"]    = ["To Do", "In Progress", "Development Done", "In QA", "Done"],
         ["Bug"]     = ["New", "Active", "Resolved", "Closed"],
@@ -51,11 +54,15 @@ public static class TaskStatusRules
         ["Epic"]    = ["New", "Active", "Closed"],   // no Blocked side-state
     };
     private const string BlockedStatus = "Blocked";
+    private static readonly string[] SideStatuses = [BlockedStatus, "On hold", "Rejected"];
 
     private static string[] FlowFor(string? itemType) =>
         itemType != null && _flowOrder.TryGetValue(itemType, out var f) ? f : _flowOrder["Task"];
 
-    // Every type except Epic carries the Blocked side-state.
+    /// <summary>The initial (first) status a new work item of this type starts in.</summary>
+    public static string InitialStatus(string? itemType) => FlowFor(itemType).FirstOrDefault() ?? "To Do";
+
+    // Blocked is available to every type except Epic. On hold and Rejected apply to all types.
     private static bool HasBlocked(string? itemType) =>
         !string.Equals(itemType, "Epic", StringComparison.OrdinalIgnoreCase);
 
@@ -67,8 +74,8 @@ public static class TaskStatusRules
         var flow = FlowFor(itemType);
         var set  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // From Blocked: resume to any status in the flow.
-        if (string.Equals(fromStatus, BlockedStatus, StringComparison.OrdinalIgnoreCase))
+        // Resume from a side-state to any status in the type's workflow.
+        if (SideStatuses.Contains(fromStatus, StringComparer.OrdinalIgnoreCase))
         {
             foreach (var s in flow) set.Add(s);
             return set;
@@ -80,6 +87,8 @@ public static class TaskStatusRules
         else
             foreach (var s in flow) set.Add(s);   // unknown/legacy status — offer the whole flow, don't trap
 
+        set.Add("On hold");
+        set.Add("Rejected");
         if (HasBlocked(itemType)) set.Add(BlockedStatus);
         return set;
     }

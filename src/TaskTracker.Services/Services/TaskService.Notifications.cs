@@ -152,7 +152,7 @@ public partial class TaskService
             .Join(_db.AppUsers, o => o.UserId, u => u.Id, (o, u) => u)
             .ToListAsync();
 
-    private async Task NotifyAssignedAsync(TaskItem task, string? previousOwner, UserCtx ctx)
+    private async Task NotifyAssignedAsync(TaskItem task, string? previousOwner, UserCtx ctx, bool suppressActivityPost = false)
     {
         try
         {
@@ -185,6 +185,7 @@ public partial class TaskService
             }
             await _db.SaveChangesAsync();
             await PushNotifBadgeAsync(pushIds);
+            if (!suppressActivityPost) await PostAssignmentChatAsync(task, newOwners, ctx);
         }
         catch (Exception ex) { _log.LogError(ex, "NotifyAssignedAsync failed for task {TaskId}", task.Id); }
     }

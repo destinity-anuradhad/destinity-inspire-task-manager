@@ -105,7 +105,7 @@ public class ApiV1Controller(IProjectService projects, ITaskService tasks) : App
             Goal = request.Goal.Trim(), Project = request.Project?.Trim(), Property = request.Property?.Trim(),
             Priority = request.Priority?.Trim(), Status = request.Status?.Trim(), Owner = request.Owner?.Trim(),
             TargetDate = request.TargetDate?.Date, StartDate = request.StartDate?.Date, EndDate = request.EndDate?.Date,
-            Weight = request.Weight, EstimateUnit = request.EstimateUnit?.Trim() ?? "Points",
+            Weight = request.Weight, EstimateUnit = "Hours",
             ItemType = request.ItemType?.Trim(), ParentId = request.ParentId, SprintId = request.SprintId,
             Labels = request.Labels?.Trim(), AcceptanceCriteria = request.AcceptanceCriteria?.Trim(),
             Notes = request.Notes?.Trim(), TeamId = ActiveTeamId(), ProjectId = request.ProjectId

@@ -7,7 +7,7 @@ namespace TaskTracker.Services;
 /// Forecasts delivery from historical velocity. The velocity baseline is the immutable
 /// <c>SprintCompletionSnapshot.CompletedEstimate</c> of the team's completed sprints (the same
 /// authoritative facts the historical burndown uses), and the remaining work is the sum of open
-/// point-estimated backlog. All read-only.
+/// hour-estimated backlog. All read-only.
 /// </summary>
 public sealed class ForecastService(AppDbContext db) : IForecastService
 {

@@ -21,6 +21,8 @@ public class DashboardController(IDashboardService dashboard, AppDbContext db) :
         ViewBag.MyInProgress       = data.InProgress;
         ViewBag.MyOpen             = data.Open;
         ViewBag.MyOverdue          = data.Overdue;
+        ViewBag.MyDueToday         = data.DueToday;
+        ViewBag.MySprintDueToday   = data.ActiveSprintDueToday;
         ViewBag.MyCompletionPct    = data.CompletionPct;
         ViewBag.MyPending          = data.Pending;
         ViewBag.MyWorkingOn        = data.WorkingOn;
@@ -45,6 +47,7 @@ public class DashboardController(IDashboardService dashboard, AppDbContext db) :
         ViewBag.TotalCount     = data.Total;
         ViewBag.DoneCount      = data.Done;
         ViewBag.OverdueCount   = data.Overdue;
+        ViewBag.DueTodayCount  = data.DueToday;
         ViewBag.InProgress     = data.InProgress;
         ViewBag.StatusLabels   = data.StatusLabels;
         ViewBag.StatusValues   = data.StatusValues;
@@ -64,6 +67,7 @@ public class DashboardController(IDashboardService dashboard, AppDbContext db) :
         ViewBag.TeamName       = User.FindFirst("ActiveTeamName")?.Value ?? "";
 
         var teamId = ActiveTeamId();
+        ViewBag.SprintDueToday = 0;
         var activeSprint = teamId.HasValue
             ? await db.Sprints.AsNoTracking().FirstOrDefaultAsync(s => s.IsActive && s.TeamId == teamId)
             : null;
@@ -75,6 +79,8 @@ public class DashboardController(IDashboardService dashboard, AppDbContext db) :
             ViewBag.SprintTotal      = sprintTasks.Count;
             ViewBag.SprintDone       = sprintTasks.Count(t => TaskStatusRules.IsDone(t.ItemType, t.Status));
             ViewBag.SprintInProgress = sprintTasks.Count(TaskStatusRules.IsActive);
+            ViewBag.SprintDueToday = sprintTasks.Count(t => !TaskStatusRules.IsDone(t)
+                && t.EndDate.HasValue && t.EndDate.Value.Date == DateTime.Today);
         }
 
         ViewData["ActiveNav"] = "Team";

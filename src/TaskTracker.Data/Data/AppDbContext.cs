@@ -51,14 +51,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AutomationRule> AutomationRules { get; set; }
     public DbSet<AutomationRuleRun> AutomationRuleRuns { get; set; }
     public DbSet<SlaPolicy> SlaPolicies { get; set; }
+    public DbSet<ChatMessage>    ChatMessages    { get; set; }
+    public DbSet<ChatAttachment> ChatAttachments { get; set; }
+    public DbSet<ChatReaction>   ChatReactions   { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<TaskItem>()
             .Property(t => t.Weight)
-            .HasColumnType("decimal(18,2)");
+            .HasColumnType("decimal(18,6)");
         modelBuilder.Entity<TaskItem>()
-            .Property(t => t.EstimateUnit).HasMaxLength(20).HasDefaultValue("Points");
+            .Property(t => t.EstimateUnit).HasMaxLength(20).HasDefaultValue("Hours");
 
         modelBuilder.Entity<TaskItem>()
             .Property(t => t.ActualHours)
@@ -151,8 +154,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne<TaskItem>().WithMany().HasForeignKey(i => i.TaskId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<TaskTemplate>().Property(t => t.Name).HasMaxLength(200);
         modelBuilder.Entity<TaskTemplate>().Property(t => t.ItemType).HasMaxLength(50);
-        modelBuilder.Entity<TaskTemplate>().Property(t => t.EstimateUnit).HasMaxLength(20).HasDefaultValue("Points");
-        modelBuilder.Entity<TaskTemplate>().Property(t => t.Estimate).HasColumnType("decimal(18,2)");
+        modelBuilder.Entity<TaskTemplate>().Property(t => t.EstimateUnit).HasMaxLength(20).HasDefaultValue("Hours");
+        modelBuilder.Entity<TaskTemplate>().Property(t => t.Estimate).HasColumnType("decimal(18,6)");
         modelBuilder.Entity<TaskTemplate>().Property(t => t.Notes).HasMaxLength(4000);
         modelBuilder.Entity<TaskTemplate>().Property(t => t.AcceptanceCriteria).HasMaxLength(4000);
         modelBuilder.Entity<TaskTemplate>().HasIndex(t => new { t.TeamId, t.Name }).IsUnique()
@@ -227,6 +230,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<TaskItem>().HasIndex(t => t.TeamId);
         modelBuilder.Entity<Sprint>().HasIndex(s => s.TeamId);
         modelBuilder.Entity<Sprint>().HasIndex(s => s.CompletedAt);
+
+        // Chat
+        modelBuilder.Entity<ChatMessage>().HasIndex(m => new { m.TeamId, m.Id });
+        modelBuilder.Entity<ChatAttachment>().HasIndex(a => a.MessageId);
+        modelBuilder.Entity<ChatReaction>().HasIndex(r => r.MessageId);
+        modelBuilder.Entity<ChatReaction>().HasIndex(r => new { r.MessageId, r.UserId, r.Emoji }).IsUnique();
 
         // Composite covering indexes — eliminate full-scan hot paths
         modelBuilder.Entity<TaskItem>().HasIndex(t => new { t.TeamId, t.IsDeleted, t.Status });

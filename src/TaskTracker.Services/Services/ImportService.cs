@@ -112,7 +112,7 @@ public sealed class ImportService(AppDbContext db, ITaskService tasks) : IImport
                 Goal = f.Goal, ItemType = f.ItemType, Status = f.Status, Priority = f.Priority,
                 Owner = string.IsNullOrWhiteSpace(f.Owner) ? null : f.Owner,
                 TargetDate = f.TargetDate, Weight = f.Weight,
-                EstimateUnit = string.IsNullOrWhiteSpace(f.EstimateUnit) ? "Points" : f.EstimateUnit!,
+                EstimateUnit = "Hours",
                 Labels = f.Labels,
                 RowVersion = [],   // store-generated on SQL Server; set so the in-memory provider accepts the insert
             };
@@ -205,9 +205,17 @@ public sealed class ImportService(AppDbContext db, ITaskService tasks) : IImport
 
         decimal? weight = null;
         var rawWeight = Get("weight");
-        if (rawWeight.Length > 0)
+        if (rawWeight.Length == 0)
+            errors.Add("Estimate hours are required (minimum 10 minutes, in 10-minute increments)");
+        else
         {
-            if (decimal.TryParse(rawWeight, out var w)) weight = w;
+            if (decimal.TryParse(rawWeight, out var w))
+            {
+                weight = w;
+                if (w < 0.166667m) errors.Add("Estimate hours must be at least 10 minutes");
+                else if (Math.Abs(w * 60m / 10m - decimal.Round(w * 60m / 10m, 0)) > 0.001m)
+                    errors.Add("Estimate hours must use 10-minute increments (for example, 0.166667 for 10 minutes)");
+            }
             else errors.Add($"Invalid weight '{rawWeight}'");
         }
 

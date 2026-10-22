@@ -26,8 +26,8 @@ public class TaskItem
     public DateTime CreatedAt   { get; set; } = DateTime.Now;
     public string? CreatedBy    { get; set; }
     public decimal? Weight       { get; set; }
-    // Weight is either story points or hours; capacity may only consume hours.
-    public string EstimateUnit { get; set; } = "Points";
+    // Weight is always an estimate in hours.
+    public string EstimateUnit { get; set; } = "Hours";
     public decimal? ActualHours  { get; set; }
     // Explicitly measured in hours; estimate Weight remains a separately governed unit.
     public decimal? RemainingWorkHours { get; set; }

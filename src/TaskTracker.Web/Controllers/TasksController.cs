@@ -1,14 +1,17 @@
+using System.IO.Compression;
+using System.Xml.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TaskTracker.Data;
 using TaskTracker.Models;
 using TaskTracker.Services;
+using TaskTracker.Web.Auth;
 
 namespace TaskTracker.Controllers;
 
 [Authorize]
-public class TasksController(ITaskService tasks, ITeamService teams, IProjectService projects, ITaskTemplateService templates, IAttachmentStorage attachmentStorage, IConfiguration config) : AppControllerBase
+public class TasksController(ITaskService tasks, ITeamService teams, IProjectService projects, ITaskTemplateService templates, IAttachmentStorage attachmentStorage, IConfiguration config, IChatService chat, AppDbContext db) : AppControllerBase
 {
     private bool LegacyFullTaskEditEnabled() =>
         config.GetValue<bool>("Features:AllowLegacyFullTaskEdit");
@@ -97,6 +100,230 @@ public class TasksController(ITaskService tasks, ITeamService teams, IProjectSer
             return Json(new { success = false, conflict = r.Conflict, error = r.Error });
         }
         return Json(new { success = true, capacityWarning = r.CapacityWarning, taskId = r.TaskId });
+    }
+
+    // ── Bulk CSV / Excel task import (offcanvas in the Tasks view) ───────────────
+
+    public sealed class ImportRowInput
+    {
+        public string? Task { get; set; }
+        public string? Assignee { get; set; }
+        public string? Priority { get; set; }
+        public string? Due { get; set; }
+        public string? Type { get; set; }
+        public string? Estimate { get; set; }
+    }
+
+    // Parse only — returns the rows for review/edit; writes nothing.
+    [HttpPost, ValidateAntiForgeryToken, RequestSizeLimit(6 * 1024 * 1024)]
+    [Authorize(Policy = Policies.TeamLead)]
+    public async Task<IActionResult> ImportParse(IFormFile? file)
+    {
+        if (ActiveTeamId() is null) return Json(new { success = false, error = "Select a team first." });
+        if (file is null || file.Length == 0) return Json(new { success = false, error = "Choose a CSV or Excel (.xlsx) file." });
+        if (file.Length > 6 * 1024 * 1024) return Json(new { success = false, error = "File too large (max 6 MB)." });
+        try
+        {
+            List<string[]> records;
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            await using var stream = file.OpenReadStream();
+            if (ext == ".xlsx") records = ParseXlsx(stream);
+            else { using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, true); records = ParseCsv(await reader.ReadToEndAsync()); }
+
+            if (records.Count == 0) return Json(new { success = false, error = "The file has no rows." });
+            var header = BuildImportHeader(records[0]);
+            if (!header.ContainsKey("task"))
+                return Json(new { success = false, error = "The header row must include a 'Task' column (or Goal/Title)." });
+
+            string Cell(string[] c, string key) => header.TryGetValue(key, out var i) && i < c.Length ? c[i].Trim() : "";
+            var rows = records.Skip(1).Take(1000)
+                .Select(c => new {
+                    task = Cell(c, "task"), assignee = Cell(c, "assignee"), priority = Cell(c, "priority"),
+                    due = Cell(c, "due"), type = Cell(c, "type"), estimate = Cell(c, "estimate")
+                })
+                .Where(r => r.task.Length > 0 || r.assignee.Length > 0)
+                .ToList();
+            return Json(new { success = true, rows });
+        }
+        catch (Exception ex) { return Json(new { success = false, error = "Could not read the file: " + ex.Message }); }
+    }
+
+    // Create ONE task from an (edited) row — assignment notifications fire, but the per-task chat
+    // post is suppressed; the client posts a single summary via ImportNotify at the end.
+    [HttpPost, ValidateAntiForgeryToken]
+    [Authorize(Policy = Policies.TeamLead)]
+    public async Task<IActionResult> ImportCreateRow(ImportRowInput row)
+    {
+        if (ActiveTeamId() is null) return Json(new { success = false, error = "No active team." });
+        var goal = (row.Task ?? "").Trim();
+        if (goal.Length == 0) return Json(new { success = false, error = "Task title is required." });
+
+        // The Assignee column holds usernames (e.g. "anuradhad") — resolve to display name(s) for Owner.
+        string? owner = null;
+        var assigneeInput = (row.Assignee ?? "").Trim();
+        if (assigneeInput.Length > 0)
+        {
+            var tokens = assigneeInput.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct().ToList();
+            var users = await db.AppUsers
+                .Where(u => tokens.Contains(u.Username) || tokens.Contains(u.DisplayName))
+                .Select(u => new { u.Username, u.DisplayName }).ToListAsync();
+            var names = new List<string>(); var missing = new List<string>();
+            foreach (var tok in tokens)
+            {
+                var m = users.FirstOrDefault(u => string.Equals(u.Username, tok, StringComparison.OrdinalIgnoreCase)
+                                               || string.Equals(u.DisplayName, tok, StringComparison.OrdinalIgnoreCase));
+                if (m == null) missing.Add(tok);
+                else if (!names.Contains(m.DisplayName)) names.Add(m.DisplayName);
+            }
+            if (missing.Count > 0) return Json(new { success = false, error = $"Unknown assignee: {string.Join(", ", missing)}" });
+            owner = string.Join(", ", names);
+        }
+
+        var itemType = NormalizeItemType(row.Type);
+        var task = new TaskItem {
+            Goal = goal,
+            Owner = owner,
+            Priority = string.IsNullOrWhiteSpace(row.Priority) ? null : row.Priority.Trim(),
+            ItemType = itemType,
+            Status = TaskStatusRules.InitialStatus(itemType),
+            EstimateUnit = "Hours",
+            RowVersion = [],
+        };
+        if (DateTime.TryParse(row.Due, out var due)) task.TargetDate = due.Date;
+        if (decimal.TryParse(row.Estimate, out var est) && est >= 0) task.Weight = est;
+
+        var r = await tasks.SaveAsync(task, BuildUserCtx(), forceClose: false, suppressActivityPost: true);
+        return Json(new { success = r.Success, taskId = r.TaskId, error = r.Error, assignee = owner });
+    }
+
+    // Post one activity card to the team chat summarising the import.
+    [HttpPost, ValidateAntiForgeryToken]
+    [Authorize(Policy = Policies.TeamLead)]
+    public async Task<IActionResult> ImportNotify(int created, string? assignees)
+    {
+        var teamId = ActiveTeamId();
+        if (teamId is null || created <= 0) return Json(new { success = true });
+        var body = $"Imported {created} task{(created == 1 ? "" : "s")} from a file";
+        if (!string.IsNullOrWhiteSpace(assignees)) body += "\n" + assignees.Trim();
+        await chat.PostEventAsync(teamId.Value, CurrentUserId() > 0 ? CurrentUserId() : (int?)null, CurrentDisplayName(), body,
+            new { icon = "📥", type = "assign", url = "/Tasks", link = "View tasks" });
+        return Json(new { success = true });
+    }
+
+    // Team members (username + display name) for the import assignee autocomplete.
+    [HttpGet]
+    public async Task<IActionResult> TeamMembers()
+    {
+        var teamId = ActiveTeamId();
+        if (teamId is null) return Json(Array.Empty<object>());
+        var members = await db.TeamMembers.Where(m => m.TeamId == teamId)
+            .Join(db.AppUsers, m => m.UserId, u => u.Id, (m, u) => new { username = u.Username, name = u.DisplayName })
+            .OrderBy(x => x.name).ToListAsync();
+        return Json(members);
+    }
+
+    private static string NormalizeItemType(string? t)
+    {
+        t = (t ?? "").Trim();
+        foreach (var it in new[] { "Epic", "Feature", "Story", "Task", "Bug" })
+            if (string.Equals(t, it, StringComparison.OrdinalIgnoreCase)) return it;
+        return "Task";
+    }
+
+    // Maps flexible header names (Task/Goal/Title, Assignee/Owner, Due/TargetDate, …) to canonical keys.
+    private static Dictionary<string, int> BuildImportHeader(string[] cells)
+    {
+        var raw = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < cells.Length; i++)
+        {
+            var k = cells[i].Trim().Replace(" ", "").ToLowerInvariant();
+            if (k.Length > 0 && !raw.ContainsKey(k)) raw[k] = i;
+        }
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        void Set(string canon, params string[] names) { foreach (var n in names) if (raw.TryGetValue(n, out var i)) { map[canon] = i; return; } }
+        Set("task", "task", "goal", "title", "summary", "name", "tasktitle", "taskname");
+        Set("assignee", "assignee", "owner", "assignedto", "assigned", "assigneename", "responsible");
+        Set("priority", "priority");
+        Set("due", "due", "duedate", "targetdate", "deadline");
+        Set("type", "type", "itemtype", "tasktype");
+        Set("estimate", "estimate", "estimatehours", "hours", "weight", "effort");
+        return map;
+    }
+
+    /// <summary>Minimal RFC-4180 CSV reader: quoted fields, escaped quotes, embedded commas/newlines.</summary>
+    private static List<string[]> ParseCsv(string text)
+    {
+        var rows = new List<string[]>(); var current = new List<string>();
+        var field = new System.Text.StringBuilder(); var inQuotes = false;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inQuotes)
+            {
+                if (c == '"') { if (i + 1 < text.Length && text[i + 1] == '"') { field.Append('"'); i++; } else inQuotes = false; }
+                else field.Append(c);
+            }
+            else switch (c)
+            {
+                case '"': inQuotes = true; break;
+                case ',': current.Add(field.ToString()); field.Clear(); break;
+                case '\r': break;
+                case '\n': current.Add(field.ToString()); field.Clear(); rows.Add(current.ToArray()); current = []; break;
+                default: field.Append(c); break;
+            }
+        }
+        if (field.Length > 0 || current.Count > 0) { current.Add(field.ToString()); rows.Add(current.ToArray()); }
+        return rows.Where(r => r.Any(c => c.Trim().Length > 0)).ToList();
+    }
+
+    // Minimal .xlsx reader (first worksheet) using the built-in ZIP/XML — no external package.
+    private static List<string[]> ParseXlsx(Stream xlsx)
+    {
+        var rows = new List<string[]>();
+        using var zip = new ZipArchive(xlsx, ZipArchiveMode.Read);
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var shared = new List<string>();
+        var ss = zip.GetEntry("xl/sharedStrings.xml");
+        if (ss != null)
+        {
+            using var s = ss.Open(); var doc = XDocument.Load(s);
+            foreach (var si in doc.Root!.Elements(ns + "si"))
+                shared.Add(string.Concat(si.Descendants(ns + "t").Select(t => t.Value)));
+        }
+        var sheet = zip.GetEntry("xl/worksheets/sheet1.xml")
+            ?? zip.Entries.FirstOrDefault(e => e.FullName.StartsWith("xl/worksheets/") && e.FullName.EndsWith(".xml"));
+        if (sheet == null) return rows;
+        using var stream = sheet.Open();
+        var wb = XDocument.Load(stream);
+        var data = wb.Root!.Element(ns + "sheetData");
+        if (data == null) return rows;
+        foreach (var row in data.Elements(ns + "row"))
+        {
+            var cells = new SortedDictionary<int, string>();
+            foreach (var c in row.Elements(ns + "c"))
+            {
+                var col = XlsxColIndex((string?)c.Attribute("r") ?? "");
+                if (col < 0) continue;
+                var t = (string?)c.Attribute("t");
+                string val;
+                if (t == "s") { var vi = c.Element(ns + "v")?.Value; val = int.TryParse(vi, out var idx) && idx >= 0 && idx < shared.Count ? shared[idx] : ""; }
+                else if (t == "inlineStr") val = string.Concat(c.Element(ns + "is")?.Descendants(ns + "t").Select(x => x.Value) ?? []);
+                else val = c.Element(ns + "v")?.Value ?? "";
+                cells[col] = val;
+            }
+            var max = cells.Count > 0 ? cells.Keys.Max() : -1;
+            var arr = new string[max + 1];
+            for (var i = 0; i <= max; i++) arr[i] = cells.TryGetValue(i, out var v) ? v : "";
+            if (arr.Any(x => x.Trim().Length > 0)) rows.Add(arr);
+        }
+        return rows;
+    }
+
+    private static int XlsxColIndex(string cellRef)
+    {
+        var col = 0;
+        foreach (var ch in cellRef) { if (char.IsLetter(ch)) col = col * 26 + (char.ToUpper(ch) - 'A' + 1); else break; }
+        return col - 1;
     }
 
     [HttpPost, ValidateAntiForgeryToken]

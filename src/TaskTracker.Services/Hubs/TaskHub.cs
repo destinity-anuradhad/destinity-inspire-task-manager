@@ -13,6 +13,15 @@ public class TaskHub : Hub
     public async Task LeaveTask(string taskId) =>
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, "task-" + taskId);
 
+    // Transient "user is typing" ping to the rest of the team (chat). Nothing is persisted.
+    public async Task ChatTyping()
+    {
+        var teamId = Context.User?.FindFirst("ActiveTeamId")?.Value;
+        var name   = Context.User?.FindFirst("DisplayName")?.Value ?? "Someone";
+        if (!string.IsNullOrEmpty(teamId))
+            await Clients.OthersInGroup("team-" + teamId).SendAsync("ChatTyping", name);
+    }
+
     public override async Task OnConnectedAsync()
     {
         // Join team group (task updates) and user group (notification badge pushes).

@@ -10,6 +10,8 @@
     int doneCount    = ViewBag.DoneCount    != null ? (int)ViewBag.DoneCount    : 0;
     int overdueCount = ViewBag.OverdueCount != null ? (int)ViewBag.OverdueCount : 0;
     int inProgress   = ViewBag.InProgress   != null ? (int)ViewBag.InProgress   : 0;
+    int dueTodayCount = ViewBag.DueTodayCount != null ? (int)ViewBag.DueTodayCount : 0;
+    int sprintDueTodayCount = ViewBag.SprintDueToday != null ? (int)ViewBag.SprintDueToday : 0;
     int teamPct      = totalCount > 0 ? (int)Math.Round((double)doneCount / totalCount * 100) : 0;
 }
 
@@ -32,7 +34,7 @@
     </div>
 
     <!-- Stat cards -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
 
         <div class="stat-card">
             <div class="flex items-start justify-between mb-3">
@@ -87,6 +89,19 @@
             <p class="stat-card-note">Past target date</p>
         </div>
 
+        <div class="stat-card">
+            <div class="flex items-start justify-between mb-3">
+                <p class="stat-card-label">Due Today</p>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#fff7ed">
+                    <svg style="color:#f47920;width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v13H4V6a1 1 0 011-1z"/>
+                    </svg>
+                </div>
+            </div>
+            <p class="stat-card-value" style="color:#f47920">@dueTodayCount</p>
+            <p class="stat-card-note">@sprintDueTodayCount in the active sprint</p>
+        </div>
+
     </div>
 
     <!-- Active Sprint widget -->
@@ -95,6 +110,7 @@
         int sprintTotal      = ViewBag.SprintTotal      != null ? (int)ViewBag.SprintTotal      : 0;
         int sprintDone       = ViewBag.SprintDone       != null ? (int)ViewBag.SprintDone       : 0;
         int sprintInProgress = ViewBag.SprintInProgress != null ? (int)ViewBag.SprintInProgress : 0;
+        int sprintDueToday = sprintDueTodayCount;
         int sprintPct        = sprintTotal > 0 ? (int)Math.Round((double)sprintDone / sprintTotal * 100) : 0;
     }
     @if (activeSprint != null)
@@ -142,6 +158,10 @@
                         <div>
                             <p class="text-xl font-bold text-green-600">@sprintDone</p>
                             <p class="text-[11px] text-gray-400">Done</p>
+                        </div>
+                        <div>
+                            <p class="text-xl font-bold text-orange-500">@sprintDueToday</p>
+                            <p class="text-[11px] text-gray-400">Due Today</p>
                         </div>
                         <div>
                             <p class="text-xl font-bold @(sprintPct >= 80 ? "text-green-600" : sprintPct >= 50 ? "text-[#f47920]" : "text-gray-600")">@sprintPct%</p>

@@ -49,9 +49,10 @@
     static string StatusBadge(string? s) => s switch
     {
         "Done"        => "bg-green-100 text-green-700 border border-green-200",
+        "On hold"     => "bg-amber-100 text-amber-700 border border-amber-200",
+        "Rejected"    => "bg-red-100 text-red-700 border border-red-200",
         "On track"    => "bg-blue-100 text-blue-700 border border-blue-200",
         "Delayed"     => "bg-red-100 text-red-700 border border-red-200",
-        "On hold"     => "bg-gray-100 text-gray-600 border border-gray-200",
         "Testing"     => "bg-amber-100 text-amber-700 border border-amber-200",
         "Not Started" => "bg-purple-100 text-purple-700 border border-purple-200",
         _             => "bg-gray-100 text-gray-500 border border-gray-200"
@@ -59,7 +60,7 @@
 
     static bool IsOverdue(DateTime? expectedEnd, string? status)
     {
-        if (status is "Done" or "On hold") return false;
+        if (status is "Done" or "On hold" or "Rejected") return false;
         return expectedEnd.HasValue && expectedEnd.Value.Date < DateTime.Today;
     }
 
@@ -82,8 +83,19 @@
 
     static string WeightLabel(decimal? w) => w switch {
         null or 0 => "",
-        _         => $"{w:0.##}h"
+        _         => FormatEstimate(w.Value)
     };
+
+    static string FormatEstimate(decimal hours)
+    {
+        var totalMinutes = (int)Math.Round(hours * 60m, MidpointRounding.AwayFromZero);
+        var wholeHours = totalMinutes / 60;
+        var minutes = totalMinutes % 60;
+        if (wholeHours == 0) return $"{minutes}m";
+        return minutes == 0 ? $"{wholeHours}h" : $"{wholeHours}h {minutes}m";
+    }
+
+    static int SprintHue(int id) => (int)(((long)id * 137) % 360);
 }
 
 @{
@@ -174,6 +186,14 @@
                     Sprint Board
                 </a>
             </div>
+            @if (User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead")
+            {
+                <button type="button" onclick="impOpen()" title="Import tasks from CSV / Excel"
+                        class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    Import
+                </button>
+            }
             <a href="@exportUrl"
                class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -192,6 +212,202 @@
             </button>
         </div>
     </div>
+
+    @* ── Bulk task import (offcanvas) ── *@
+    @Html.AntiForgeryToken()
+    <datalist id="imp-members"></datalist>
+    <div id="imp-overlay" class="hidden fixed inset-0 bg-black/30 z-40" onclick="impClose()"></div>
+    <aside id="imp-drawer" class="fixed top-0 right-0 h-full w-full max-w-4xl bg-white shadow-2xl z-50 translate-x-full transition-transform duration-200 flex flex-col">
+        <div class="flex items-center gap-3 px-5 py-3.5 border-b border-gray-100 shrink-0">
+            <span class="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            </span>
+            <div class="min-w-0">
+                <h2 class="text-base font-semibold text-gray-900 leading-tight">Import tasks</h2>
+                <p class="text-[11px] text-gray-400 leading-tight">Upload a CSV / Excel file with <b>Task</b> and <b>Assignee</b> (username) columns</p>
+            </div>
+            <button onclick="impClose()" class="ml-auto p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto">
+            <!-- step 1: upload -->
+            <div id="imp-step-upload" class="p-6">
+                <label id="imp-drop" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)"
+                       class="block border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-colors">
+                    <input type="file" id="imp-file" accept=".csv,.xlsx" class="hidden" onchange="impUpload(this.files[0])">
+                    <svg class="w-10 h-10 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                    <p class="text-sm font-medium text-gray-700 mt-3">Click to choose a CSV or Excel (.xlsx) file</p>
+                    <p class="text-xs text-gray-400 mt-1">or drag &amp; drop it here</p>
+                </label>
+                <div class="mt-4 text-xs text-gray-500 leading-relaxed">
+                    <p class="font-semibold text-gray-600 mb-1">Columns (first row = header):</p>
+                    <p><span class="font-mono bg-gray-100 px-1 rounded">Task</span> (required) · <span class="font-mono bg-gray-100 px-1 rounded">Assignee</span> (username) · Priority · Due · Type · Estimate (hours, required; minimum 10 minutes, in 10-minute increments)</p>
+                    <p class="mt-1.5"><a href="#" onclick="impSample(event)" class="text-blue-600 hover:underline">Download a sample CSV</a></p>
+                </div>
+                <div id="imp-error" class="hidden mt-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+            </div>
+
+            <!-- step 2: rows -->
+            <div id="imp-step-rows" class="hidden">
+                <div class="px-5 py-2.5 border-b border-gray-100 flex items-center gap-2 text-sm sticky top-0 bg-white z-10">
+                    <span id="imp-file-name" class="font-medium text-gray-700 truncate"></span>
+                    <span id="imp-count" class="text-gray-400"></span>
+                    <button onclick="impReset()" class="ml-auto text-xs text-gray-500 hover:text-blue-600">↺ Choose another file</button>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                        <tr>
+                            <th class="text-left px-3 py-2 w-6">#</th>
+                            <th class="text-left px-2 py-2">Task</th>
+                            <th class="text-left px-2 py-2 w-40">Assignee</th>
+                            <th class="text-left px-2 py-2 w-24">Priority</th>
+                            <th class="text-left px-2 py-2 w-32">Due</th>
+                            <th class="text-left px-2 py-2 w-24">Type</th>
+                            <th class="text-left px-2 py-2 w-24">Status</th>
+                            <th class="w-8"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="imp-rows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="imp-footer" class="hidden border-t border-gray-100 px-5 py-3 flex items-center gap-3 shrink-0 bg-gray-50">
+            <div id="imp-progress" class="text-sm text-gray-500"></div>
+            <button id="imp-create-btn" onclick="impCreateAll()" class="ml-auto btn-accent inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg">
+                <span id="imp-create-label">Create tasks</span>
+            </button>
+        </div>
+    </aside>
+
+    <script>
+    function _formatEstimateHours(value) {
+        const totalMinutes = Math.max(0, Math.round((Number(value) || 0) * 60));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (!hours) return `${minutes}m`;
+        return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+    const IMP_PRIORITIES = ['', 'Low', 'Medium', 'High', 'Critical'];
+    const IMP_TYPES = ['Task', 'Bug', 'Story', 'Feature', 'Epic'];
+    const IMP_INCLS = 'w-full border border-gray-200 rounded px-2 py-1 text-[13px] focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-transparent disabled:border-transparent disabled:text-gray-500';
+    let _impMembersLoaded = false;
+    function _impEsc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function _impToken(){ return document.querySelector('input[name="__RequestVerificationToken"]').value; }
+    function _impDate(s){ if(!s) return ''; const d=new Date(s); return isNaN(d) ? '' : d.toISOString().slice(0,10); }
+
+    async function impOpen(){
+        document.getElementById('imp-overlay').classList.remove('hidden');
+        document.getElementById('imp-drawer').classList.remove('translate-x-full');
+        impReset();
+        if(!_impMembersLoaded){
+            _impMembersLoaded = true;
+            try {
+                const r = await fetch('/Tasks/TeamMembers'); const m = await r.json();
+                document.getElementById('imp-members').innerHTML = m.map(x=>`<option value="${_impEsc(x.username)}">${_impEsc(x.name)}</option>`).join('');
+            } catch {}
+        }
+    }
+    function impClose(){ document.getElementById('imp-overlay').classList.add('hidden'); document.getElementById('imp-drawer').classList.add('translate-x-full'); }
+    function impReset(){
+        document.getElementById('imp-step-upload').classList.remove('hidden');
+        document.getElementById('imp-step-rows').classList.add('hidden');
+        document.getElementById('imp-footer').classList.add('hidden');
+        document.getElementById('imp-error').classList.add('hidden');
+        document.getElementById('imp-file').value = '';
+        document.getElementById('imp-rows').innerHTML = '';
+        const btn=document.getElementById('imp-create-btn'); btn.disabled=false; btn.onclick=impCreateAll;
+    }
+    function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop').classList.add('border-blue-400','bg-blue-50/40'); }
+    function impDragLeave(e){ document.getElementById('imp-drop').classList.remove('border-blue-400','bg-blue-50/40'); }
+    function impDrop(e){ e.preventDefault(); impDragLeave(e); if(e.dataTransfer?.files?.length) impUpload(e.dataTransfer.files[0]); }
+
+    async function impUpload(file){
+        if(!file) return;
+        const err=document.getElementById('imp-error'); err.classList.add('hidden');
+        const fd=new FormData(); fd.append('file',file); fd.append('__RequestVerificationToken',_impToken());
+        const drop=document.getElementById('imp-drop'); drop.classList.add('opacity-50','pointer-events-none');
+        try {
+            const r=await fetch('/Tasks/ImportParse',{method:'POST',body:fd}); const d=await r.json();
+            if(!d.success){ err.textContent=d.error||'Could not read the file.'; err.classList.remove('hidden'); return; }
+            if(!d.rows.length){ err.textContent='No data rows found in the file.'; err.classList.remove('hidden'); return; }
+            document.getElementById('imp-file-name').textContent=file.name;
+            const tb=document.getElementById('imp-rows');
+            tb.innerHTML=d.rows.map((x,i)=>impRowHtml(x,i+1)).join('');
+            document.getElementById('imp-step-upload').classList.add('hidden');
+            document.getElementById('imp-step-rows').classList.remove('hidden');
+            document.getElementById('imp-footer').classList.remove('hidden');
+            _impUpdateCount();
+        } catch { err.textContent='Upload failed. Please try again.'; err.classList.remove('hidden'); }
+        finally { drop.classList.remove('opacity-50','pointer-events-none'); }
+    }
+
+    function impRowHtml(x, n){
+        const prio=IMP_PRIORITIES.map(p=>`<option ${((x.priority||'')===p)?'selected':''}>${p}</option>`).join('');
+        const type=IMP_TYPES.map(t=>`<option ${(((x.type||'Task').toLowerCase()===t.toLowerCase()))?'selected':''}>${t}</option>`).join('');
+        return `<tr class="border-b border-gray-50 align-middle">
+            <td class="px-3 py-1.5 text-gray-400 text-xs imp-num">${n}</td>
+            <td class="px-2 py-1.5"><input class="${IMP_INCLS}" data-f="task" value="${_impEsc(x.task)}"></td>
+            <td class="px-2 py-1.5"><input class="${IMP_INCLS}" list="imp-members" data-f="assignee" value="${_impEsc(x.assignee)}" placeholder="username"></td>
+            <td class="px-2 py-1.5"><select class="${IMP_INCLS}" data-f="priority">${prio}</select></td>
+            <td class="px-2 py-1.5"><input type="date" class="${IMP_INCLS}" data-f="due" value="${_impEsc(_impDate(x.due))}"></td>
+            <td class="px-2 py-1.5"><select class="${IMP_INCLS}" data-f="type">${type}</select></td>
+            <td class="px-2 py-1.5 text-xs whitespace-nowrap imp-status"><span class="text-gray-300">—</span></td>
+            <td class="px-2 py-1.5 text-center"><button type="button" onclick="impRemoveRow(this)" title="Remove row" class="text-gray-300 hover:text-red-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></td>
+        </tr>`;
+    }
+    function impRemoveRow(btn){ btn.closest('tr').remove(); _impUpdateCount(); }
+    function _impUpdateCount(){
+        const rows=document.querySelectorAll('#imp-rows tr');
+        rows.forEach((tr,i)=>{ const c=tr.querySelector('.imp-num'); if(c) c.textContent=i+1; });
+        const n=rows.length;
+        document.getElementById('imp-count').textContent=`· ${n} row${n===1?'':'s'}`;
+        document.getElementById('imp-create-label').textContent=`Create ${n} task${n===1?'':'s'}`;
+    }
+    function _impSetStatus(tr, status, error){
+        const cell=tr.querySelector('.imp-status');
+        if(status==='creating') cell.innerHTML='<span class="inline-flex items-center gap-1 text-blue-600"><svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>creating…</span>';
+        else if(status==='done'){ cell.innerHTML='<span class="text-green-600 font-medium">✓ created</span>'; tr.classList.add('bg-green-50/50'); tr.querySelectorAll('input,select,button').forEach(el=>el.disabled=true); }
+        else if(status==='error'){ cell.innerHTML=`<span class="text-red-600 font-medium cursor-help" title="${_impEsc(error||'')}">✗ ${_impEsc(error||'failed')}</span>`; tr.classList.add('bg-red-50/50'); }
+    }
+
+    async function impCreateAll(){
+        const btn=document.getElementById('imp-create-btn'); btn.disabled=true;
+        const trs=[...document.querySelectorAll('#imp-rows tr')].filter(tr => !tr.querySelector('.imp-status .text-green-600'));
+        let created=0, failed=0; const byAssignee={};
+        for(const tr of trs){
+            const get=f=>tr.querySelector(`[data-f="${f}"]`)?.value?.trim()||'';
+            if(!get('task')){ continue; }
+            _impSetStatus(tr,'creating');
+            await new Promise(res=>setTimeout(res,40));   // let the spinner paint
+            const fd=new FormData();
+            fd.append('Task',get('task')); fd.append('Assignee',get('assignee')); fd.append('Priority',get('priority'));
+            fd.append('Due',get('due')); fd.append('Type',get('type')); fd.append('Estimate',get('estimate')||'');
+            fd.append('__RequestVerificationToken',_impToken());
+            try {
+                const r=await fetch('/Tasks/ImportCreateRow',{method:'POST',body:fd}); const d=await r.json();
+                if(d.success){ _impSetStatus(tr,'done'); created++; if(d.assignee) byAssignee[d.assignee]=(byAssignee[d.assignee]||0)+1; }
+                else { _impSetStatus(tr,'error',d.error); failed++; }
+            } catch { _impSetStatus(tr,'error','Network error'); failed++; }
+            document.getElementById('imp-progress').textContent=`Processing… created ${created}, failed ${failed}`;
+        }
+        if(created>0){
+            const summary=Object.entries(byAssignee).map(([n,c])=>'@@'+n+' ('+c+')').join(', ');
+            const fd=new FormData(); fd.append('created',created); fd.append('assignees',summary); fd.append('__RequestVerificationToken',_impToken());
+            fetch('/Tasks/ImportNotify',{method:'POST',body:fd}).catch(()=>{});
+        }
+        document.getElementById('imp-progress').innerHTML=`<span class="text-green-600 font-medium">✓ Created ${created}</span>`+(failed?` · <span class="text-red-600">${failed} failed</span>`:'');
+        btn.disabled=false; document.getElementById('imp-create-label').textContent='Done — reload'; btn.onclick=()=>location.reload();
+    }
+    function impSample(e){
+        e.preventDefault();
+        const csv='Task,Assignee,Priority,Due,Type\nFix login redirect loop,piyumit,High,2026-10-01,Bug\nWrite API documentation,sachithk,Medium,,Task\n';
+        const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='tasks-sample.csv'; a.click();
+    }
+    </script>
 
     <!-- ── Filter Toggle ── -->
     <div class="flex items-center">
@@ -472,9 +688,9 @@
         int sp2 = Math.Max(1, Model.Page - 2);
         int ep2 = Math.Min(Model.TotalPages, Model.Page + 2);
 
-        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div class="relative bg-white border border-gray-200 rounded-xl overflow-visible">
             <!-- Table title bar: filtered-set totals (all pages, updates with filters) -->
-            <div class="flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 border-b border-gray-100 bg-gray-50/70">
+                <div class="flex items-center justify-between gap-3 flex-wrap px-4 py-2.5 border-b border-gray-100 bg-gray-50/70 rounded-t-xl">
                 <h2 class="text-sm font-semibold text-gray-700">
                     Tasks <span class="text-gray-400 font-normal">· @Model.TotalCount</span>
                 </h2>
@@ -487,52 +703,83 @@
                           title="Total actual hours logged across all filtered tasks">
                         Actual: @Model.TotalActualHours.ToString("0.##")h
                     </span>
+                    <details class="relative text-left">
+                        <summary class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 cursor-pointer list-none">
+                            <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                            Columns <span class="text-gray-400">▾</span>
+                        </summary>
+                        <div class="absolute right-0 z-50 mt-2 w-52 p-2 bg-white border border-gray-200 rounded-xl shadow-xl">
+                            <p class="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Show or hide columns</p>
+                            @foreach (var column in new[] {
+                                (Key: "type", Label: "Type"), (Key: "status", Label: "Status"),
+                                (Key: "client", Label: "Client"), (Key: "project", Label: "Project"),
+                                (Key: "sprint", Label: "Sprint"), (Key: "title", Label: "Title"),
+                                (Key: "priority", Label: "Priority"), (Key: "estimate", Label: "Estimate"),
+                                (Key: "actual", Label: "Actual"), (Key: "assignee", Label: "Assignee"),
+                                (Key: "due", Label: "Due Date"), (Key: "created", Label: "Created")
+                            })
+                            {
+                                <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                                    <input type="checkbox" checked data-table-column-toggle="@column.Key" class="w-4 h-4 rounded accent-blue-600">
+                                    @column.Label
+                                </label>
+                            }
+                            <button type="button" data-table-columns-reset class="w-full mt-1 px-2 py-1.5 text-left text-xs text-blue-600 hover:bg-blue-50 rounded-lg">Reset to defaults</button>
+                        </div>
+                    </details>
                 </div>
             </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm border-collapse">
+            <div class="overflow-x-auto rounded-b-xl">
+                <table data-task-table class="w-full min-w-[1200px] table-fixed text-sm border-collapse">
                     <thead>
                         <tr class="bg-[#0f2a3f] text-white text-xs">
-                            <th class="px-3 py-2.5 w-8">
-                                <input type="checkbox" id="bl-select-all" class="w-4 h-4 rounded cursor-pointer" onchange="bulkSelectAll(this)">
+                            <th class="px-3 py-2.5 w-8" title="Select tasks for bulk actions">
+                                <input type="checkbox" id="bl-select-all" class="w-4 h-4 rounded cursor-pointer" title="Select all tasks on this page" onchange="bulkSelectAll(this)">
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-20">Type</th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-28">
+                            <th data-table-column="type" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-20" title="Task or work item type">
+                                <a href="@SortUrl("type")" class="flex items-center gap-1 hover:text-blue-300 group">Type <span class="text-xs opacity-60">@SortIcon("type")</span></a>
+                            </th>
+                            <th data-table-column="status" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-28" title="Current workflow status">
                                 <a href="@SortUrl("status")" class="flex items-center gap-1 hover:text-blue-300 group">Status <span class="text-xs opacity-60">@SortIcon("status")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                            <th data-table-column="client" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Client associated with this task">
                                 <a href="@SortUrl("property")" class="flex items-center gap-1 hover:text-blue-300 group">Client <span class="text-xs opacity-60">@SortIcon("property")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                            <th data-table-column="project" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Project or module associated with this task">
                                 <a href="@SortUrl("project")" class="flex items-center gap-1 hover:text-blue-300 group">Project <span class="text-xs opacity-60">@SortIcon("project")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">Sprint</th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide">
+                            <th data-table-column="sprint" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-36" title="Sprint assigned to the task; tasks without a sprint are in the backlog">
+                                <a href="@SortUrl("sprint")" class="flex items-center gap-1 hover:text-blue-300 group">Sprint <span class="text-xs opacity-60">@SortIcon("sprint")</span></a>
+                            </th>
+                            <th data-table-column="title" class="text-left px-3 py-2.5 font-semibold tracking-wide w-[32rem]" title="Task title; click the row to open details">
                                 <a href="@SortUrl("goal")" class="flex items-center gap-1 hover:text-blue-300 group">Title <span class="text-xs opacity-60">@SortIcon("goal")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                            <th data-table-column="priority" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Task priority">
                                 <a href="@SortUrl("priority")" class="flex items-center gap-1 hover:text-blue-300 group">Priority <span class="text-xs opacity-60">@SortIcon("priority")</span></a>
                             </th>
-                            <th class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16">
+                            <th data-table-column="estimate" class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16" title="Estimated work in hours">
                                 <a href="@SortUrl("weight")" class="flex items-center justify-end gap-1 hover:text-blue-300 group">Est. <span class="text-xs opacity-60">@SortIcon("weight")</span></a>
                             </th>
-                            <th class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16">
+                            <th data-table-column="actual" class="text-right px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap w-16" title="Actual hours logged">
                                 <a href="@SortUrl("actual")" class="flex items-center justify-end gap-1 hover:text-blue-300 group">Actual <span class="text-xs opacity-60">@SortIcon("actual")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                            <th data-table-column="assignee" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Assigned team member or members">
                                 <a href="@SortUrl("owner")" class="flex items-center gap-1 hover:text-blue-300 group">Assignee <span class="text-xs opacity-60">@SortIcon("owner")</span></a>
                             </th>
-                            <th class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap">
+                            <th data-table-column="due" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Task due date">
+                                <a href="@SortUrl("dueDate")" class="flex items-center gap-1 hover:text-blue-300 group">Due Date <span class="text-xs opacity-60">@SortIcon("dueDate")</span></a>
+                            </th>
+                            <th data-table-column="created" class="text-left px-3 py-2.5 font-semibold tracking-wide whitespace-nowrap" title="Date the task was created">
                                 <a href="@SortUrl("created")" class="flex items-center gap-1 hover:text-blue-300 group">Created <span class="text-xs opacity-60">@SortIcon("created")</span></a>
                             </th>
-                            <th class="px-3 py-2.5 w-24 text-center font-semibold tracking-wide whitespace-nowrap">Actions</th>
+                            <th class="px-3 py-2.5 w-24 text-center font-semibold tracking-wide whitespace-nowrap" title="Open, edit, or delete the task">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (!Model.Tasks.Any())
                         {
                             <tr>
-                                <td colspan="13" class="text-center py-20 text-gray-400">
+                                    <td data-table-adjust-colspan colspan="14" class="text-center py-20 text-gray-400">
                                     <svg class="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                     </svg>
@@ -565,10 +812,10 @@
                                            onchange="bulkCheckChange(event)">
                                 </td>
 
-                                <td class="px-3 py-2 whitespace-nowrap">
-                                    <span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit @typeCls">@(task.ItemType ?? "Task")</span>
+                                <td data-table-column="type" class="px-3 py-2 whitespace-nowrap">
+                                    <span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit @typeCls" title="Type: @(task.ItemType ?? "Task")">@(task.ItemType ?? "Task")</span>
                                 </td>
-                                <td class="px-3 py-2 whitespace-nowrap" onclick="event.stopPropagation()">
+                                <td data-table-column="status" class="px-3 py-2 whitespace-nowrap" title="Status: @task.Status" onclick="event.stopPropagation()">
                                     <button type="button"
                                             data-task-id="@task.Id" data-cur-status="@task.Status" data-item-type="@task.ItemType"
                                             data-owner="@task.Owner" data-reporter="@task.Reporter" data-created-by="@task.CreatedBy"
@@ -579,22 +826,25 @@
                                     </button>
                                 </td>
 
-                                <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Property">@task.Property</td>
-                                <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="@task.Project">@task.Project</td>
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td data-table-column="client" class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="Client: @(task.Property ?? "—")">@task.Property</td>
+                                <td data-table-column="project" class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap max-w-[130px] truncate" title="Project: @(task.Project ?? "—")">@task.Project</td>
+                                <td data-table-column="sprint" class="px-3 py-2 whitespace-nowrap">
                                     @{ var tSprint = SprintNameFor(task.SprintId); }
                                     @if (!string.IsNullOrEmpty(tSprint))
                                     {
-                                        <span class="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 max-w-[120px] truncate" title="Sprint: @tSprint">⚡ @tSprint</span>
+                                        var sprintHue = SprintHue(task.SprintId!.Value);
+                                        <span class="inline-flex max-w-full items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border truncate"
+                                              style="background-color:hsl(@sprintHue 75% 93%);color:hsl(@sprintHue 55% 30%);border-color:hsl(@sprintHue 55% 82%)"
+                                              title="Sprint: @tSprint">@tSprint</span>
                                     }
                                     else
                                     {
-                                        <span class="text-[10px] text-gray-300">—</span>
+                                        <span class="inline-flex items-center text-[10px] font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200" title="Backlog; this task is not assigned to a sprint">Backlog</span>
                                     }
                                 </td>
 
-                                <td class="px-3 py-2">
-                                    <span class="text-sm text-gray-900 line-clamp-1">@task.Goal</span>
+                                <td data-table-column="title" class="px-3 py-2 w-[32rem]" title="@task.Goal">
+                                    <span class="block text-sm font-normal text-gray-900 leading-5 line-clamp-3">@task.Goal</span>
                                     @if (!string.IsNullOrEmpty(task.Labels))
                                     {
                                         <div class="flex gap-1 mt-0.5 flex-wrap">
@@ -604,18 +854,18 @@
                                     }
                                 </td>
 
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td data-table-column="priority" class="px-3 py-2 whitespace-nowrap">
                                     @if (!string.IsNullOrEmpty(task.Priority))
                                     { <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold @PriorityBadge(task.Priority)">@task.Priority</span> }
                                 </td>
 
-                                <td class="px-3 py-2 text-right whitespace-nowrap">
+                                <td data-table-column="estimate" class="px-3 py-2 text-right whitespace-nowrap">
                                     @if (task.Weight is > 0)
-                                    { <span class="text-xs font-medium text-cyan-600">@($"{task.Weight:0.##}")h</span> }
+                                    { <span class="text-xs font-medium text-cyan-600">@WeightLabel(task.Weight)</span> }
                                     else { <span class="text-gray-200 text-xs">—</span> }
                                 </td>
 
-                                <td class="px-3 py-2 text-right whitespace-nowrap">
+                                <td data-table-column="actual" class="px-3 py-2 text-right whitespace-nowrap">
                                     @if (task.ActualHours is > 0)
                                     {
                                         var over = task.Weight is > 0 && task.ActualHours > task.Weight;
@@ -624,7 +874,7 @@
                                     else { <span class="text-gray-200 text-xs">—</span> }
                                 </td>
 
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td data-table-column="assignee" class="px-3 py-2 whitespace-nowrap">
                                     @if (taskOwners.Count == 0)
                                     { <span class="text-gray-300 text-xs">—</span> }
                                     else
@@ -646,7 +896,17 @@
                                     }
                                 </td>
 
-                                <td class="px-3 py-2 text-xs whitespace-nowrap text-gray-400">
+                                <td data-table-column="due" class="px-3 py-2 text-xs whitespace-nowrap text-gray-400">
+                                    @if (task.EndDate.HasValue)
+                                    {
+                                        var dueToday = task.EndDate.Value.Date == DateTime.Today && !TaskStatusRules.IsDone(task);
+                                        <span class="@(dueToday ? "text-orange-600 font-medium" : "text-gray-600")" title="Due date: @task.EndDate.Value.ToString("yyyy-MM-dd")">
+                                            @task.EndDate.Value.ToString("dd MMM yy")@(dueToday ? " · Today" : "")
+                                        </span>
+                                    }
+                                    else { <span class="text-gray-300" title="No due date">—</span> }
+                                </td>
+                                <td data-table-column="created" class="px-3 py-2 text-xs whitespace-nowrap text-gray-400">
                                     @task.CreatedAt.ToString("dd MMM yy")
                                 </td>
 
@@ -720,6 +980,50 @@
         }
     }
 
+    <script>
+    (() => {
+        const table = document.querySelector('[data-task-table]');
+        if (!table) return;
+
+        const storageKey = 'task-table-hidden-columns-v1';
+        const controls = [...document.querySelectorAll('[data-table-column-toggle]')];
+        let hidden = [];
+        try {
+            const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            if (Array.isArray(saved)) hidden = saved.filter(value => typeof value === 'string');
+        } catch { }
+
+        const apply = () => {
+            for (const cell of table.querySelectorAll('[data-table-column]')) {
+                cell.hidden = hidden.includes(cell.dataset.tableColumn);
+            }
+            const visibleCount = table.querySelectorAll('thead th:not([data-table-column]), thead th[data-table-column]:not([hidden])').length;
+            for (const cell of table.querySelectorAll('[data-table-adjust-colspan]')) {
+                cell.colSpan = visibleCount;
+            }
+        };
+
+        for (const control of controls) {
+            control.checked = !hidden.includes(control.dataset.tableColumnToggle);
+            control.addEventListener('change', () => {
+                const key = control.dataset.tableColumnToggle;
+                hidden = control.checked ? hidden.filter(value => value !== key) : [...new Set([...hidden, key])];
+                try { localStorage.setItem(storageKey, JSON.stringify(hidden)); } catch { }
+                apply();
+            });
+        }
+
+        document.querySelector('[data-table-columns-reset]')?.addEventListener('click', () => {
+            hidden = [];
+            try { localStorage.removeItem(storageKey); } catch { }
+            for (const control of controls) control.checked = true;
+            apply();
+        });
+
+        apply();
+    })();
+    </script>
+
     @* Bulk action bar (fixed bottom, table view only) *@
     @{
         var allSprints = ViewBag.AllSprints as List<Sprint> ?? new List<Sprint>();
@@ -778,7 +1082,7 @@
     @* ════════════════════ KANBAN VIEW ════════════════════ *@
     @if (Model.ViewMode == "kanban")
     {
-        bool kIsAdmin    = User.IsInRole("Admin");
+        bool kIsAdmin    = User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead";
         string kCurDisplay = User.FindFirst("DisplayName")?.Value ?? "";
         <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="height:calc(100vh - 260px);min-height:400px">
             @for (int ci = 0; ci < Model.WorkStates.Count; ci++)
@@ -874,7 +1178,7 @@
                                                 }
                                             </div>
                                             <div class="flex items-center gap-1.5">
-                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@($"{kt.Weight:0.##}")h</span> }
+                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@WeightLabel(kt.Weight)</span> }
                                                 @if (kt.ActualHours is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium @(kt.Weight is > 0 && kt.ActualHours > kt.Weight ? "bg-red-50 text-red-500 border border-red-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200")" title="Actual">A:@($"{kt.ActualHours:0.##}")h</span> }
                                                 @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
@@ -937,7 +1241,7 @@
                                                 }
                                             </div>
                                             <div class="flex items-center gap-1.5">
-                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@($"{kt.Weight:0.##}")h</span> }
+                                                @if (kt.Weight is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium" title="Estimate">E:@WeightLabel(kt.Weight)</span> }
                                                 @if (kt.ActualHours is > 0) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium @(kt.Weight is > 0 && kt.ActualHours > kt.Weight ? "bg-red-50 text-red-500 border border-red-200" : "bg-emerald-50 text-emerald-600 border border-emerald-200")" title="Actual">A:@($"{kt.ActualHours:0.##}")h</span> }
                                                 @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-400")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
                                             </div>
@@ -1028,7 +1332,7 @@
                     </div>
 
                     @{
-                        bool tlIsAdmin    = User.IsInRole("Admin");
+                        bool tlIsAdmin    = User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead";
                         string tlCurDisp  = User.FindFirst("DisplayName")?.Value ?? "";
                     }
                     @if (!tlEntries.Any())
@@ -1238,7 +1542,7 @@
             var TL2_FROM = '@(tlFromStr)';
             var TL2_TO   = '@(tlToStr)';
             var TL2_MODE = '@(tlModeStr)';
-            var SC = {'New':'#8b5cf6','To Do':'#64748b','Active':'#0ea5e9','In Progress':'#094f70','Development Done':'#6366f1','In QA':'#a855f7','Resolved':'#f59e0b','Done':'#22c55e','Closed':'#94a3b8'};
+            var SC = {'New':'#8b5cf6','To Do':'#64748b','Active':'#0ea5e9','In Progress':'#094f70','Development Done':'#6366f1','In QA':'#a855f7','Resolved':'#f59e0b','Done':'#22c55e','Closed':'#94a3b8','On hold':'#f59e0b','Rejected':'#ef4444'};
             var DONE = {'Done':1,'Resolved':1,'Closed':1};
             function hex2rgba(hex,a){var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return 'rgba('+r+','+g+','+b+','+a+')';}
             function pd(s){if(!s)return null;var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;return new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10));}
@@ -1310,7 +1614,7 @@
                         var h=t.weight||1;if(h<0.5)h=0.5;
                         var end=Math.min(cum+h,cap);
                         bars.push({lf:cum/cap,rt:end/cap,task:t,seq:i+1,
-                                   tchip:(t.weight?(Math.round(t.weight*100)/100)+'h':'~1h')+(cum+h>cap?' · continues next week':'')});
+                                   tchip:(t.weight?_formatEstimateHours(t.weight):'~1h')+(cum+h>cap?' · continues next week':'')});
                         cum+=h;
                     }
                     return bars;
@@ -1334,7 +1638,7 @@
                         if(cur+mins>END&&cur>START){lane++;cur=START;}
                         var em=Math.min(cur+mins,END);
                         bars.push({lf:(cur-START)/TOTAL,rt:(em-START)/TOTAL,_lane:lane,seq:i+1,task:t,
-                                   tchip:fmtTime(cur)+' – '+fmtTime(Math.min(cur+mins,END))+' · '+(t.weight?((Math.round(t.weight*100)/100)+'h'):'~1h')});
+                                   tchip:fmtTime(cur)+' – '+fmtTime(Math.min(cur+mins,END))+' · '+(t.weight?_formatEstimateHours(t.weight):'~1h')});
                         cur+=mins;
                     }
                     return{owner:owner,bars:bars,rowH:Math.max(64,(lane+1)*62+8)};
@@ -1734,15 +2038,15 @@
             const sd = sprint?.startDate ? String(sprint.startDate).slice(0,10) : null;
             const ed = sprint?.endDate   ? String(sprint.endDate).slice(0,10)   : null;
             const dateRow = sprint && (sd||ed)
-                ? `<div class="flex justify-between mt-2 text-[10px] text-gray-400"><span>${sd||'—'} → ${ed||'—'}</span><span>${sprintItems.length} item${sprintItems.length!==1?'s':''} · ${pts}h</span></div>`
-                : sprint ? `<div class="text-right mt-2 text-[10px] text-gray-400">${sprintItems.length} items · ${pts}h</div>` : '';
+                ? `<div class="flex justify-between mt-2 text-[10px] text-gray-400"><span>${sd||'—'} → ${ed||'—'}</span><span>${sprintItems.length} item${sprintItems.length!==1?'s':''} · ${_formatEstimateHours(pts)}</span></div>`
+                : sprint ? `<div class="text-right mt-2 text-[10px] text-gray-400">${sprintItems.length} items · ${_formatEstimateHours(pts)}</div>` : '';
 
             const itemsHtml = sprintItems.length
                 ? sprintItems.map(t => `
                     <div class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group/pi border-b border-gray-50 last:border-0">
                         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${_blTypeCfg[t.itemType]?.cls||'bg-gray-100 text-gray-500'}">${_blTypeCfg[t.itemType]?.lbl||'—'}</span>
                         <span class="flex-1 text-xs text-gray-700 truncate" title="${_esc(t.goal||'')}">${_esc(t.goal||'—')}</span>
-                        ${t.weight ? `<span class="text-[10px] text-gray-400 shrink-0">${t.weight}h</span>` : ''}
+                        ${t.weight ? `<span class="text-[10px] text-gray-400 shrink-0">${_formatEstimateHours(t.weight)}</span>` : ''}
                         <button onclick="_blRemoveFromSprint(${t.id})" class="opacity-0 group-hover/pi:opacity-100 text-gray-400 hover:text-red-500 text-sm shrink-0 transition-all" title="Move to Backlog">↩</button>
                     </div>`).join('')
                 : `<div class="text-center py-8 text-xs text-gray-300 px-4">No items in this sprint<br>Drag rows here to assign</div>`;
@@ -2044,7 +2348,7 @@
             if (BOARD_COLS.length) return;
             const src = (typeof _wsData !== 'undefined' && _wsData && _wsData.length)
                 ? _wsData
-                : ['New','To Do','Active','In Progress','Resolved','Done','Closed'].map(n => ({ name: n, color: '#94a3b8' }));
+                : ['New','To Do','Active','In Progress','Development Done','In QA','Resolved','Done','Closed','Blocked','On hold','Rejected'].map(n => ({ name: n, color: '#94a3b8' }));
             BOARD_COLS = src.map(ws => ({ key: _bdSlug(ws.name), name: ws.name, color: ws.color || '#94a3b8' }));
         }
         // Statuses treated as terminal ("done") for the sprint progress bar / overdue styling.
@@ -2119,7 +2423,7 @@
                     return wanted.some(w => parts.includes(w));
                 });
             }
-            const _fmtH = v => { const n = Math.round(+(v) || 0); return `${n}h`; };
+            const _fmtH = v => _formatEstimateHours(v);
             const emptyHtml = `<div class="flex flex-col items-center justify-center py-10 text-gray-300 text-xs gap-1"><svg class="w-7 h-7 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>No items</div>`;
             wrap.innerHTML = BOARD_COLS.map(col => {
                 const cards = visible.filter(t => t.status === col.name);
@@ -2361,7 +2665,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 20 } },
-                               tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y}${useWeight ? 'h' : ''} remaining` } } },
+                               tooltip: { callbacks: { label: c => `${c.dataset.label}: ${useWeight ? _formatEstimateHours(c.parsed.y) : c.parsed.y} remaining` } } },
                     scales: {
                         x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { color: '#f1f5f9' } },
                         y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: '#f1f5f9' },
@@ -2416,9 +2720,9 @@ function _owAv(o, sz, ml) {
 }
 const CV_ADMIN  = @Html.Raw(User.IsInRole("Admin") ? "true" : "false");
 const CV_LEAD   = @Html.Raw(User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead" ? "true" : "false");
-// Mirrors the server's CanModifyAsync bypass (IsTeamAdmin = System Admin OR team-role TeamAdmin).
-// Used for the "edit any task" gate so Team Admins get the edit form, not just System Admins.
+// Roles that can edit any task within the active team. Deletion has a separate permission check.
 const CV_TEAM_ADMIN = @Html.Raw(User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value == "TeamAdmin" ? "true" : "false");
+const CV_TEAM_LEAD  = @Html.Raw(User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value is "TeamAdmin" or "TeamLead" ? "true" : "false");
 const CV_USERS  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
     Model.Owners.Select(o => o.Name).Where(n => !string.IsNullOrEmpty(n)).ToList(),
     jsonOpts));
@@ -2444,7 +2748,7 @@ const PARENT_TYPE = { Feature: 'Epic', Story: 'Feature', Task: 'Story', Bug: 'St
 
 // FORWARD-ONLY status flow (mirrors TaskStatusRules server-side). From any status you may
 // jump to ANY later status in the type's order (skips allowed, e.g. "To Do" → "Done") or to
-// "Blocked"; backward moves are rejected. Blocked resumes to any status. HARD rule for all roles.
+// "Blocked", "On hold", or "Rejected"; backward moves are rejected. Side-states resume to any status.
 const FLOW_ORDER = {
     Task:    ['To Do', 'In Progress', 'Development Done', 'In QA', 'Done'],
     Bug:     ['New', 'Active', 'Resolved', 'Closed'],
@@ -2457,10 +2761,10 @@ const FLOW_ORDER = {
 const ALLOWED_TRANSITIONS = (() => {
     const out = {};
     for (const [type, flow] of Object.entries(FLOW_ORDER)) {
-        const hasBlocked = type !== 'Epic';
         const m = {};
-        flow.forEach((s, i) => { m[s] = hasBlocked ? [...flow.slice(i + 1), 'Blocked'] : flow.slice(i + 1); });
-        if (hasBlocked) m['Blocked'] = flow.slice();
+        const sideStates = type === 'Epic' ? ['On hold', 'Rejected'] : ['Blocked', 'On hold', 'Rejected'];
+        flow.forEach((s, i) => { m[s] = [...flow.slice(i + 1), ...sideStates]; });
+        sideStates.forEach(s => { m[s] = flow.slice(); });
         out[type] = m;
     }
     return out;
@@ -2569,15 +2873,33 @@ function _allowedNext(itemType, from) {
             <textarea id="cf-goal" name="Goal" rows="3" required placeholder="Enter task title…"
                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         </div>
+        <div id="cf-quick-fields" class="space-y-4">
+            <section class="rounded-xl border border-gray-200 bg-white p-4">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-gray-800">Organization</h3>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">Optional</span>
+                </div>
+                <div id="cf-organization-fields" class="space-y-4"></div>
+            </section>
+            <div id="cf-core-fields" class="space-y-4"></div>
+        </div>
+        <details id="cf-more-options" class="group rounded-xl border border-gray-200 bg-white p-4">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-gray-800">
+                <span>More task details <span class="ml-1 text-xs font-normal text-gray-500">(optional)</span></span>
+                <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 011.06 0L10 10.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 8.28a.75.75 0 010-1.06z" clip-rule="evenodd"/></svg>
+            </summary>
+            <p class="mt-1 text-xs text-gray-500">Sprint, swimlane, labels, description, and attachments</p>
+            <div id="cf-more-options-body" class="mt-4 space-y-4"></div>
+        </details>
         <input type="hidden" id="cf-module-id"  name="ModuleId"  value="" />
         <input type="hidden" id="cf-client-id"  name="ClientId"  value="" />
         <input type="hidden" id="cf-item-type"  name="ItemType"  value="" />
         <input type="hidden" id="cf-parent-id"  name="ParentId"  value="" />
         <input type="hidden" id="cf-sprint-id"  name="SprintId"  value="" />
         <!-- Item Type + Parent -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div id="cf-classification-row" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1.5">Item Type</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Item Type <span id="cf-item-type-required" class="text-red-500">*</span></label>
                 <select id="cf-item-type-sel" onchange="onItemTypeChange(this.value)" data-searchable
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
@@ -2599,7 +2921,7 @@ function _allowedNext(itemType, from) {
                 </p>
             </div>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div id="cf-workspace-row" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Module</label>
                 <select id="cf-project" name="Project" data-searchable
@@ -2636,7 +2958,7 @@ function _allowedNext(itemType, from) {
                 <option value="">— Backlog —</option>
             </select>
         </div>
-        <div class="grid grid-cols-3 gap-4">
+        <div id="cf-assignment-row" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Assignee</label>
                 <input type="hidden" id="cf-owner" name="Owner" />
@@ -2689,22 +3011,22 @@ function _allowedNext(itemType, from) {
                 </select>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">Priority <span id="cf-priority-required" class="text-red-500">*</span></label>
                 <select id="cf-priority" name="Priority" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                     <option value="">— None —</option>
                     @foreach (var pr in TaskTracker.Models.ViewModels.TaskListViewModel.AllPriorities) { <option value="@pr">@pr</option> }
                 </select>
             </div>
         </div>
-        <div>
+        <div id="cf-swimlane-row">
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Swimlane</label>
             <select id="cf-swimlane" name="Swimlane" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                 <option value="">Default</option>
                 <option value="Expedite">⚡ Expedite</option>
             </select>
         </div>
-        <div class="grid grid-cols-3 gap-4">
-            <div>
+        <div id="cf-time-row" class="space-y-4">
+            <div id="cf-reporter-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Reporter</label>
                 <select id="cf-reporter-sel" name="Reporter" data-searchable
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
@@ -2715,19 +3037,32 @@ function _allowedNext(itemType, from) {
                     }
                 </select>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Estimate
-                </label>
-                <div class="flex gap-2">
-                <input id="cf-weight" name="Weight" type="number" min="0" max="999" step="0.5" placeholder="e.g. 8"
-                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
-                <select id="cf-estimate-unit" name="EstimateUnit" class="w-28 border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white">
-                    <option value="Hours">Hours</option>
-                    <option value="Points">Points</option>
-                </select>
+            <div id="cf-estimate-cell">
+                <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm font-semibold text-gray-800">Estimate <span id="cf-estimate-required" class="text-red-500">*</span></span>
+                        <span id="cf-estimate-summary" aria-live="polite" class="text-xs font-medium text-blue-700">Required · min 10m</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 mt-2" aria-label="Quick estimate choices">
+                        <button type="button" onclick="_setEstimatePreset(10)" class="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">10m</button>
+                        <button type="button" onclick="_setEstimatePreset(20)" class="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">20m</button>
+                        <button type="button" onclick="_setEstimatePreset(30)" class="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">30m</button>
+                        <button type="button" onclick="_setEstimatePreset(60)" class="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">1h</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <label class="text-xs font-medium text-gray-500">Hours
+                            <input id="cf-estimate-hour-part" type="number" min="0" max="999" step="1" value="0" aria-label="Estimate hours"
+                                   class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                        </label>
+                        <label class="text-xs font-medium text-gray-500">Minutes
+                            <input id="cf-estimate-minute-part" type="number" min="0" max="60" step="10" value="0" aria-label="Estimate minutes, in 10-minute steps"
+                                   class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                        </label>
+                    </div>
+                    <p class="mt-2 text-[11px] leading-4 text-gray-500">Minutes move by 10. At 60, an hour is added automatically.</p>
                 </div>
+                <input id="cf-weight-hours" name="Weight" type="hidden" />
+                <input id="cf-estimate-unit" name="EstimateUnit" type="hidden" value="Hours" />
             </div>
             <div id="cf-actual-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
@@ -2743,13 +3078,13 @@ function _allowedNext(itemType, from) {
                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
             </div>
         </div>
-        <div class="grid grid-cols-2 gap-4">
-            <div>
+        <div id="cf-due-label-row" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div id="cf-due-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Due Date</label>
                 <input id="cf-endDate-vis" name="EndDate" type="date"
                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-            <div>
+            <div id="cf-labels-cell">
                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Labels</label>
                 <input id="cf-labels" name="Labels" type="text" placeholder="e.g. auth, frontend, critical"
                        list="cf-labels-list"
@@ -2759,7 +3094,7 @@ function _allowedNext(itemType, from) {
                 <p class="text-[11px] text-gray-400 mt-1">Comma-separated. Type to see existing labels.</p>
             </div>
         </div>
-        <div>
+        <div id="cf-description-row">
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
             <textarea id="cf-notes" name="Notes" rows="3" placeholder="Additional context…"
                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
@@ -2834,9 +3169,10 @@ function _allowedNext(itemType, from) {
                 <label class="cursor-pointer text-xs text-[#094f70] hover:underline font-medium flex items-center gap-1">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                     Upload
-                    <input type="file" id="cf-att-file" class="hidden" onchange="uploadAttachment(this)" multiple />
+                    <input type="file" id="cf-att-file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.zip,.doc,.docx,.xls,.xlsx,.txt,.csv,.md,.rdl,.sql,.eml,.msg" class="hidden" onchange="uploadAttachment(this)" multiple />
                 </label>
             </div>
+            <p class="mb-2 text-xs leading-5 text-gray-500">Allowed: PDF, Word, Excel, ZIP, images, TXT, CSV, Markdown, RDL, SQL, and email files (.eml, .msg). Maximum 10 MB per file. Binary files must match their extension; rejected files show an error.</p>
             <div id="cf-att-list" class="space-y-1.5 text-xs"></div>
         </div>
         <!-- Pending attachments — shown for new tasks, staged before save -->
@@ -2850,9 +3186,11 @@ function _allowedNext(itemType, from) {
                 <label class="cursor-pointer text-xs text-[#094f70] hover:underline font-medium flex items-center gap-1">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                     Add files
-                    <input type="file" id="cf-pending-att-file" class="hidden" onchange="addPendingFiles(this)" multiple />
+                    <input type="file" id="cf-pending-att-file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.zip,.doc,.docx,.xls,.xlsx,.txt,.csv,.md,.rdl,.sql,.eml,.msg" class="hidden" onchange="addPendingFiles(this)" multiple />
                 </label>
             </div>
+            <p class="mb-2 text-xs leading-5 text-gray-500">Allowed: PDF, Word, Excel, ZIP, images, TXT, CSV, Markdown, RDL, SQL, and email files (.eml, .msg). Maximum 10 MB per file. Binary files must match their extension; rejected files show an error after the task is created.</p>
+            <div id="cf-pending-att-errors" class="hidden mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert" aria-live="polite"></div>
             <div id="cf-pending-att-list" class="space-y-1.5 text-xs"></div>
             <p class="text-[10px] text-gray-400 mt-2 italic">Files will be uploaded when the task is saved.</p>
         </div>
@@ -2951,6 +3289,7 @@ const panel    = document.getElementById('task-canvas');
 let _cvTaskId   = null;
 let _cvTask     = null;    // current task object open in canvas
 let _cvEditable = false;   // current canvas editable state
+let _canvasFieldsArranged = false;
 let _pendingFiles = [];    // files staged for upload when creating a new task
 let _templateChecklistSeeds = [];
 // tt-select.js (loaded via _Layout) handles all searchable selects via data-searchable attribute.
@@ -2969,8 +3308,12 @@ async function applyTaskTemplate(id) {
         document.getElementById('cf-item-type-sel').value = itemType;
         _updateStatusOptions(itemType, '');
         document.getElementById('cf-priority').value = t.priority || '';
-        document.getElementById('cf-weight').value = t.estimate ?? '';
-        document.getElementById('cf-estimate-unit').value = t.estimateUnit || 'Points';
+        const estimateMinutes = Math.round(Number(t.estimate || 0) * 60);
+        document.getElementById('cf-estimate-hour-part').value = String(Math.floor(estimateMinutes / 60));
+        document.getElementById('cf-estimate-minute-part').value = String(estimateMinutes % 60);
+        document.getElementById('cf-estimate-minute-part').step = estimateMinutes % 10 === 0 ? '10' : '5';
+        _syncEstimateHours();
+        document.getElementById('cf-estimate-unit').value = 'Hours';
         document.getElementById('cf-labels').value = t.labels || '';
         document.getElementById('cf-notes').value = t.notes || '';
         document.getElementById('cf-ac').value = t.acceptanceCriteria || '';
@@ -3169,6 +3512,10 @@ function _spRecalc() {
 async function openSplitDialog() {
     const t = _cvTask;
     if (!t) return;
+    if (String(t.status || '').trim().toLowerCase() === 'done') {
+        showToast('Done tasks cannot be split.', 'error');
+        return;
+    }
     _spEst = +(t.weight) || 0;
     _spAct = +(t.actualHours) || 0;
     // Destinations: Backlog + the open sprints already loaded in the drawer's sprint dropdown (excluding this task's own).
@@ -3193,7 +3540,7 @@ async function openSplitDialog() {
             </div>
             <div><label class="block text-xs font-medium text-gray-500 mb-1">Carry remainder to</label>
               <select id="sp-dest" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">${destOptions}</select></div>
-            <p class="text-[11px] text-gray-400">Est ${_spEst}h · actual ${_spAct}h. The estimate splits into <b>done</b> (${Math.max(0,(_spEst - remDefault)).toFixed(2)}h) + <b>remaining</b> — nothing is lost.</p>
+            <p class="text-[11px] text-gray-400">Est ${_formatEstimateHours(_spEst)} · actual ${_spAct}h. The estimate splits into <b>done</b> (${_formatEstimateHours(Math.max(0, _spEst - remDefault))}) + <b>remaining</b> (${_formatEstimateHours(remDefault)}) — nothing is lost.</p>
         </div>`,
         showCancelButton: true,
         confirmButtonText: 'Split task',
@@ -3221,9 +3568,21 @@ async function openSplitDialog() {
         const r = await fetch('/Tasks/Split', { method: 'POST', body: fd });
         const d = await r.json();
         if (d.success) {
-            await Swal.fire({ icon: 'success', title: 'Task split', text: 'A done slice was left behind and the remainder was carried forward.', timer: 2200, showConfirmButton: false });
-            closeCanvas();
-            location.reload();
+            const result = await Swal.fire({
+                icon: 'success',
+                title: 'Task split',
+                text: `Completed portion saved as task #${d.sliceId}. Open it to see its link to the remaining task.`,
+                showCancelButton: true,
+                confirmButtonText: 'Open completed task',
+                cancelButtonText: 'Back to board',
+                confirmButtonColor: '#0d9488'
+            });
+            if (result.isConfirmed && d.sliceId) {
+                await _openTaskById(d.sliceId);
+            } else {
+                closeCanvas();
+                location.reload();
+            }
         } else {
             Swal.fire({ icon: 'error', text: d.error || 'Could not split the task.' });
         }
@@ -3339,17 +3698,93 @@ function onItemTypeChange(val) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+function _syncEstimateHours() {
+    const hoursInput = document.getElementById('cf-estimate-hour-part');
+    const minutesInput = document.getElementById('cf-estimate-minute-part');
+    const hidden = document.getElementById('cf-weight-hours');
+    let hours = Number(hoursInput.value);
+    let minutes = Number(minutesInput.value);
+    if (Number.isInteger(minutes) && minutes >= 60) {
+        hours += Math.floor(minutes / 60);
+        minutes %= 60;
+        hoursInput.value = String(hours);
+        minutesInput.value = String(minutes);
+    }
+    const totalMinutes = hours * 60 + minutes;
+    const legacyUnchanged = _cvTask && totalMinutes === Math.round(Number(_cvTask.weight) * 60);
+    const valid = hoursInput.value.trim() !== '' && minutesInput.value.trim() !== ''
+        && Number.isInteger(hours) && hours >= 0 && hours <= 999
+        && Number.isInteger(minutes) && minutes >= 0 && minutes < 60
+        && (minutes % 10 === 0 || legacyUnchanged)
+        && totalMinutes >= 10 && totalMinutes <= 999 * 60;
+    const message = valid ? '' : 'Enter at least 10 minutes using whole hours and 10-minute increments.';
+    hoursInput.setCustomValidity(message);
+    minutesInput.setCustomValidity(message);
+    if (valid) hidden.value = (totalMinutes / 60).toFixed(6);
+    const summary = document.getElementById('cf-estimate-summary');
+    if (summary) {
+        if (totalMinutes >= 60) summary.textContent = `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 ? ` ${totalMinutes % 60}m` : ''}`;
+        else if (totalMinutes > 0) summary.textContent = `${totalMinutes}m`;
+        else summary.textContent = 'Required · min 10m';
+    }
+    return valid;
+}
+
+function _setEstimatePreset(totalMinutes) {
+    document.getElementById('cf-estimate-hour-part').value = String(Math.floor(totalMinutes / 60));
+    document.getElementById('cf-estimate-minute-part').value = String(totalMinutes % 60);
+    document.getElementById('cf-estimate-minute-part').step = '10';
+    _syncEstimateHours();
+}
+
+function _arrangeCanvasFields(task) {
+    if (!_canvasFieldsArranged) {
+        const quick = document.getElementById('cf-core-fields');
+        const organization = document.getElementById('cf-organization-fields');
+        const more = document.getElementById('cf-more-options-body');
+        const moveTo = (target, ids) => ids.forEach(id => {
+            const field = document.getElementById(id);
+            if (field) target.appendChild(field);
+        });
+        moveTo(organization, ['cf-classification-row', 'cf-workspace-row']);
+        moveTo(quick, ['cf-assignment-row', 'cf-estimate-cell', 'cf-due-cell']);
+        moveTo(more, [
+            'cf-sprint-row', 'cf-swimlane-row',
+            'cf-reporter-cell', 'cf-actual-cell', 'cf-remaining-cell', 'cf-labels-cell',
+            'cf-description-row', 'cf-ac-section', 'cf-attachments-section', 'cf-pending-att-section'
+        ]);
+        document.getElementById('cf-time-row')?.remove();
+        document.getElementById('cf-due-label-row')?.remove();
+        _canvasFieldsArranged = true;
+    }
+    const assignment = document.getElementById('cf-assignment-row');
+    assignment?.classList.toggle('sm:grid-cols-3', !!task);
+    assignment?.classList.toggle('sm:grid-cols-2', !task);
+    document.getElementById('cf-more-options').open = !!task;
+}
+
+document.getElementById('cf-estimate-hour-part')?.addEventListener('input', _syncEstimateHours);
+document.getElementById('cf-estimate-minute-part')?.addEventListener('input', _syncEstimateHours);
+
 function openCanvas(task) {
+    const isNewTask = !task;
+    document.getElementById('cf-item-type-required')?.classList.toggle('hidden', !isNewTask);
+    document.getElementById('cf-priority-required')?.classList.toggle('hidden', !isNewTask);
+    document.getElementById('cf-estimate-required')?.classList.toggle('hidden', !isNewTask);
+    document.getElementById('cf-estimate-hour-part').required = !task;
+    document.getElementById('cf-estimate-minute-part').required = !task;
+    document.getElementById('cf-estimate-unit').value = 'Hours';
     _destroyMde(); // must destroy before clearing field values
     const isNew   = !task;
     const _owners = (task?.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const _meLc   = (CV_ME || '').toLowerCase();
-    // Mirrors server-side CanModify: team admin / system admin, unowned, owner, reporter, or creator
-    const isEditable = isNew || CV_TEAM_ADMIN || _owners.length === 0 || _owners.includes(_meLc)
+    // Mirrors server-side edit access: team leads/admins, task owners, or creator.
+    const isEditable = isNew || CV_TEAM_LEAD || _owners.includes(_meLc)
         || (task?.reporter  || '').toLowerCase() === _meLc
         || (task?.createdBy || '').toLowerCase() === _meLc;
     _cvTaskId = task ? task.id : null;
     _cvTask   = task || null;
+    _arrangeCanvasFields(task);
 
     // Streamlined create: hide post-work fields (status is auto-set to the initial
     // status; actual/remaining hours are only meaningful once work is under way).
@@ -3358,10 +3793,14 @@ function openCanvas(task) {
 
     // Clear form fields
     ['cf-id','cf-goal','cf-owner',
-     'cf-status','cf-priority','cf-weight','cf-actual-hours',
+     'cf-status','cf-priority','cf-estimate-hour-part','cf-estimate-minute-part','cf-actual-hours',
      'cf-endDate-vis','cf-labels','cf-notes','cf-ac',
      'cf-item-type','cf-parent-id','cf-sprint-id','cf-swimlane']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('cf-estimate-hour-part').value = '0';
+    document.getElementById('cf-estimate-minute-part').value = '0';
+    document.getElementById('cf-estimate-minute-part').step = '10';
+    document.getElementById('cf-weight-hours').value = '';
     document.getElementById('cf-comment-text').value = '';
     document.getElementById('cf-module-id').value = '';
     document.getElementById('cf-client-id').value = '';
@@ -3391,8 +3830,11 @@ function openCanvas(task) {
         const reporterSel = document.getElementById('cf-reporter-sel');
         if (reporterSel) reporterSel.value = task.reporter || task.createdBy || '';
         document.getElementById('cf-endDate-vis').value      = task.endDate ? task.endDate.split('T')[0] : '';
-        document.getElementById('cf-weight').value           = task.weight       ?? '';
-        document.getElementById('cf-estimate-unit').value    = task.estimateUnit ?? 'Points';
+        const estimateMinutes = Math.round(Number(task.weight || 0) * 60);
+        document.getElementById('cf-estimate-hour-part').value = String(Math.floor(estimateMinutes / 60));
+        document.getElementById('cf-estimate-minute-part').value = String(estimateMinutes % 60);
+        if (estimateMinutes % 10 !== 0) document.getElementById('cf-estimate-minute-part').step = '5';
+        document.getElementById('cf-estimate-unit').value    = 'Hours';
         document.getElementById('cf-remaining-work-hours').value = task.remainingWorkHours ?? '';
         document.getElementById('cf-actual-hours').value    = task.actualHours  ?? '';
         document.getElementById('cf-labels').value           = task.labels  ?? '';
@@ -3443,7 +3885,8 @@ function openCanvas(task) {
 
     // Split button — existing, editable work items only (not Epics/Features, which are containers).
     const splitBtn = document.getElementById('canvas-split-btn');
-    const canSplit = !!task && isEditable && !['Epic','Feature'].includes(task.itemType || '');
+    const isDoneTask = String(task?.status || '').trim().toLowerCase() === 'done';
+    const canSplit = !!task && isEditable && !isDoneTask && !['Epic','Feature'].includes(task.itemType || '');
     splitBtn.classList.toggle('hidden', !canSplit);
     splitBtn.classList.toggle('flex', canSplit);
 
@@ -3486,6 +3929,7 @@ function openCanvas(task) {
     if (task) srJoinTask(task.id);
 
     // Open canvas immediately — dropdowns load in background
+    _syncEstimateHours();
     backdrop.classList.remove('opacity-0','pointer-events-none');
     backdrop.classList.add('opacity-100');
     panel.classList.remove('translate-x-full');
@@ -3510,7 +3954,7 @@ function _applyCanvasMode(isEditable, task) {
         form.classList.add('hidden');
         document.getElementById('canvas-view-goal').textContent = task.goal || '';
         const owners = (task.owner || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-        const canEdit = CV_TEAM_ADMIN || owners.includes((CV_ME || '').toLowerCase());
+        const canEdit = CV_TEAM_LEAD || owners.includes((CV_ME || '').toLowerCase());
         document.getElementById('canvas-edit-btn').classList.toggle('hidden', !canEdit);
     } else {
         // Edit / new: hide the card, show the form with fields enabled
@@ -3885,12 +4329,19 @@ async function _loadLinks(taskId) {
 function _renderLinkRow(l) {
     const displayType = l.isFrom ? l.linkType : (LINK_INVERSE[l.linkType] || l.linkType);
     const colorClass  = LINK_COLORS[displayType] || 'bg-gray-100 text-gray-600';
-    const typeLabel   = l.linkedTaskItemType ? `<span class="text-[10px] text-gray-400 font-medium">${_esc(l.linkedTaskItemType)}</span>` : '';
+    const relationLabel = l.linkType === 'Split'
+        ? (l.isFrom ? 'Mother task' : 'Completed split')
+        : l.linkedTaskItemType;
+    const typeLabel   = relationLabel ? `<span class="text-[10px] text-gray-400 font-medium">${_esc(relationLabel)}</span>` : '';
     return `<div class="flex items-center gap-2 group py-1 px-2 rounded-lg hover:bg-gray-50">
         <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${colorClass}">${_esc(displayType)}</span>
         <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
             ${typeLabel}
-            <span class="text-sm text-gray-700 truncate">#${l.linkedTaskId} ${_esc(l.linkedTaskGoal)}</span>
+            <button type="button" onclick="_openTaskById(${l.linkedTaskId})"
+                    class="text-sm text-left text-gray-700 hover:text-blue-600 hover:underline truncate"
+                    title="Open linked task">
+                #${l.linkedTaskId} ${_esc(l.linkedTaskGoal)}
+            </button>
         </div>
         <span class="text-[10px] text-gray-400 flex-shrink-0">${_esc(l.linkedTaskStatus)}</span>
         <button type="button" onclick="_removeLink(${l.id})"
@@ -4171,10 +4622,51 @@ async function _loadAttachments(taskId) {
     }
 }
 
+const _taskAttachmentExtensions = new Set([
+    '.pdf','.png','.jpg','.jpeg','.gif','.webp','.zip','.doc','.docx','.xls','.xlsx',
+    '.txt','.csv','.md','.rdl','.sql','.eml','.msg'
+]);
+const _taskAttachmentMaxBytes = 10 * 1024 * 1024;
+
+function _taskAttachmentError(file) {
+    if (!file || file.size === 0) return 'The file is empty.';
+    if (file.size > _taskAttachmentMaxBytes) return 'Files must be 10 MB or smaller.';
+    const dot = file.name.lastIndexOf('.');
+    const extension = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+    if (!_taskAttachmentExtensions.has(extension)) return 'This file type is not supported.';
+    return null;
+}
+
+function _showPendingAttachmentErrors(errors) {
+    const box = document.getElementById('cf-pending-att-errors');
+    if (!box) return;
+    box.replaceChildren();
+    if (!errors.length) { box.classList.add('hidden'); return; }
+    const heading = document.createElement('p');
+    heading.className = 'font-semibold mb-1';
+    heading.textContent = 'Some files were not added:';
+    box.appendChild(heading);
+    for (const error of errors) {
+        const row = document.createElement('p');
+        row.textContent = error;
+        box.appendChild(row);
+    }
+    box.classList.remove('hidden');
+}
+
 function addPendingFiles(input) {
     if (!input.files || !input.files.length) return;
-    for (const f of input.files) _pendingFiles.push(f);
+    const errors = [];
+    for (const file of input.files) {
+        const error = _taskAttachmentError(file);
+        if (error) { errors.push(`${file.name}: ${error}`); continue; }
+        const duplicate = _pendingFiles.some(existing => existing.name === file.name
+            && existing.size === file.size && existing.lastModified === file.lastModified);
+        if (duplicate) { errors.push(`${file.name}: already added.`); continue; }
+        _pendingFiles.push(file);
+    }
     input.value = '';  // reset so the same file can be re-added after removal
+    _showPendingAttachmentErrors(errors);
     _renderPendingFiles();
 }
 
@@ -4210,6 +4702,8 @@ async function uploadAttachment(input) {
     const attList = document.getElementById('cf-att-list');
     const token   = document.querySelector('[name=__RequestVerificationToken]')?.value ?? '';
     for (const file of input.files) {
+        const validationError = _taskAttachmentError(file);
+        if (validationError) { showToast(`${file.name}: ${validationError}`, 'error'); continue; }
         const fd = new FormData();
         fd.append('taskId', _cvTaskId);
         fd.append('file', file);
@@ -4277,7 +4771,22 @@ async function submitCanvas() {
     _mdeSync(); // sync EasyMDE editor values to underlying textareas before submit
 
     const form = document.getElementById('canvas-form');
+    _syncEstimateHours();
     if (!form.checkValidity()) { form.reportValidity(); return; }
+    if (!document.getElementById('cf-id').value) {
+        const itemTypeSelect = document.getElementById('cf-item-type-sel');
+        const prioritySelect = document.getElementById('cf-priority');
+        if (!itemTypeSelect.value) {
+            showToast('Select an item type before creating the task.', 'error');
+            itemTypeSelect.parentElement?.querySelector('button')?.focus();
+            return;
+        }
+        if (!prioritySelect.value) {
+            showToast('Select a priority before creating the task.', 'error');
+            prioritySelect.parentElement?.querySelector('button')?.focus();
+            return;
+        }
+    }
     // Req 4: cannot assign to sprint without an owner
     const _sprintVal  = document.getElementById('cf-sprint-id').value;
     const _ownerVal   = document.getElementById('cf-owner').value?.trim();
@@ -4301,6 +4810,7 @@ async function submitCanvas() {
         const j = await r.json();
         if (j.success) {
             const isEdit = !!document.getElementById('cf-id').value;
+            const attachmentWarnings = [];
             if (!isEdit && _templateChecklistSeeds.length > 0 && j.taskId) {
                 for (const text of _templateChecklistSeeds) {
                     try {
@@ -4317,15 +4827,20 @@ async function submitCanvas() {
                     fd.append('taskId', j.taskId);
                     fd.append('file', file);
                     fd.append('__RequestVerificationToken', tok);
-                    try { await fetch('/Tasks/UploadAttachment', { method: 'POST', body: fd }); }
-                    catch { /* best-effort: attachment failures don't block task creation */ }
+                    try {
+                        const uploadResponse = await fetch('/Tasks/UploadAttachment', { method: 'POST', body: fd });
+                        const uploadResult = await uploadResponse.json();
+                        if (!uploadResult.success)
+                            attachmentWarnings.push(`${file.name}: ${uploadResult.error || 'upload rejected'}`);
+                    } catch { attachmentWarnings.push(`${file.name}: upload failed`); }
                 }
                 _pendingFiles = [];
             }
-            if (j.capacityWarning)
-                sessionStorage.setItem('__toast', JSON.stringify({ msg: j.capacityWarning, type: 'warning' }));
-            else
-                sessionStorage.setItem('__toast', JSON.stringify({ msg: isEdit ? 'Task updated successfully.' : 'New task created.', type: 'success' }));
+            const uploadWarning = attachmentWarnings.length
+                ? `Some attachments were rejected: ${attachmentWarnings.slice(0, 3).join('; ')}` : '';
+            const notice = [j.capacityWarning, uploadWarning].filter(Boolean).join(' · ')
+                || (isEdit ? 'Task updated successfully.' : 'New task created.');
+            sessionStorage.setItem('__toast', JSON.stringify({ msg: notice, type: j.capacityWarning || uploadWarning ? 'warning' : 'success' }));
             sessionStorage.setItem('scrollY', window.scrollY);
             window.location.reload();
         } else if (j.openChildren) {
@@ -4490,7 +5005,7 @@ function _buildDetailHtml(t) {
         </div>`;
 
     const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}) : '—';
-    const pts  = t.weight ? (t.weight >= 8 ? 'XL' : t.weight >= 5 ? 'L' : t.weight >= 3 ? 'M' : 'S') + ` (${t.weight} pts)` : '—';
+    const estimate = t.weight ? _formatEstimateHours(t.weight) : '—';
     const cmtCnt = (typeof t.commentCount !== 'undefined') ? t.commentCount : '';
 
     const metaRows = [
@@ -4501,7 +5016,7 @@ function _buildDetailHtml(t) {
         ['Client',     t.property || '—'],
         ['Owners',     ownersHtml],
         ['Reporter',   t.reporter || '—'],
-        ['Story Pts',  pts],
+        ['Estimate',   estimate],
         ['Actual Hrs', t.actualHours ? t.actualHours + 'h' : null],
         ['Due Date',    fmt(t.endDate)],
         ['Target Date', fmt(t.targetDate)],
@@ -4510,7 +5025,7 @@ function _buildDetailHtml(t) {
     ].filter(([, v]) => v && v !== '—');
 
     const currentUser = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(User.FindFirst("DisplayName")?.Value ?? "", jsonOpts));
-    const canEdit = CV_TEAM_ADMIN
+    const canEdit = CV_TEAM_LEAD
         || !t.owner
         || ownerNames.includes(currentUser);
     const showClaim = !ownerNames.includes(currentUser)
@@ -4811,6 +5326,10 @@ window.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => { row.style.backgroundColor = ''; }, 2500);
             const taskData = row.dataset.task;
             if (taskData) openCanvas(JSON.parse(taskData));
+        } else if (typeof _openTaskById === 'function') {
+            // Row not in the current view (filtered to My Tasks, a board/calendar view, or another
+            // page) — fetch the task by id and open it directly so deep-links always work.
+            _openTaskById(hlId);
         }
         // Remove ?highlight from URL without reloading
         const url = new URL(window.location.href);

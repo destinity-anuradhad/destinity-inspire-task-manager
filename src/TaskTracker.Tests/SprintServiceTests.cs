@@ -20,8 +20,8 @@ public class SprintServiceTests
         db.Tasks.AddRange(done, open);
         await db.SaveChangesAsync();
 
-        var service = new SprintService(db);
-        var result = await service.CompleteAsync(source.Id, target.Id.ToString(), 1, "Admin");
+        var service = new SprintService(db, new NullChatService());
+        var result = await service.CompleteAsync(source.Id, target.Id.ToString(), null, 1, "Admin");
 
         Assert.True(result.Success, result.Error);
         Assert.Equal(1, result.Moved);
@@ -44,15 +44,15 @@ public class SprintServiceTests
         var sprint = new Sprint { Name = "Sprint", TeamId = 1, IsActive = true };
         db.Sprints.Add(sprint);
         await db.SaveChangesAsync();
-        var service = new SprintService(db);
+        var service = new SprintService(db, new NullChatService());
 
-        var sameTarget = await service.CompleteAsync(sprint.Id, sprint.Id.ToString(), 1, "Admin");
+        var sameTarget = await service.CompleteAsync(sprint.Id, sprint.Id.ToString(), null, 1, "Admin");
         Assert.False(sameTarget.Success);
         Assert.Contains("itself", sameTarget.Error, StringComparison.OrdinalIgnoreCase);
 
-        var complete = await service.CompleteAsync(sprint.Id, "backlog", 1, "Admin");
+        var complete = await service.CompleteAsync(sprint.Id, "backlog", null, 1, "Admin");
         Assert.True(complete.Success, complete.Error);
-        var repeat = await service.CompleteAsync(sprint.Id, "backlog", 1, "Admin");
+        var repeat = await service.CompleteAsync(sprint.Id, "backlog", null, 1, "Admin");
         Assert.False(repeat.Success);
         Assert.Contains("already", repeat.Error, StringComparison.OrdinalIgnoreCase);
     }
@@ -85,7 +85,7 @@ public class SprintServiceTests
             new TaskOwner { TaskId = shared.Id, UserId = kasun.Id });
         await db.SaveChangesAsync();
 
-        var result = await new SprintService(db).GetCapacityAsync(sprint.Id, 1);
+        var result = await new SprintService(db, new NullChatService()).GetCapacityAsync(sprint.Id, 1);
 
         Assert.NotNull(result);
         Assert.Equal(10, result.TotalAllocated);

@@ -18,6 +18,7 @@ public class TeamStat
     public int  Done        { get; set; }
     public int  Active      { get; set; }
     public int  Overdue     { get; set; }
+    public int  DueToday    { get; set; }
     public int  CompletePct { get; set; }
 }
 
@@ -28,6 +29,8 @@ public class PersonalDashboardData
     public int InProgress    { get; set; }
     public int Open          { get; set; }
     public int Overdue       { get; set; }
+    public int DueToday      { get; set; }
+    public int ActiveSprintDueToday { get; set; }
     public int CompletionPct { get; set; }
     public List<TaskItem> Pending      { get; set; } = [];
     public List<TaskItem> WorkingOn    { get; set; } = [];
@@ -47,6 +50,7 @@ public class TeamDashboardData
     public int Done       { get; set; }
     public int Overdue    { get; set; }
     public int InProgress { get; set; }
+    public int DueToday { get; set; }
     public string StatusLabels    { get; set; } = "[]";
     public string StatusValues    { get; set; } = "[]";
     public string ProjectLabels   { get; set; } = "[]";

@@ -106,6 +106,12 @@ public partial class TaskService
         query = (vm.Sort, vm.SortDir) switch {
             ("goal",       "asc")  => query.OrderBy(t => t.Goal),
             ("goal",       _)      => query.OrderByDescending(t => t.Goal),
+            ("type",       "asc")  => query.OrderBy(t => t.ItemType),
+            ("type",       _)      => query.OrderByDescending(t => t.ItemType),
+            ("sprint",     "asc")  => query.OrderBy(t => t.SprintId.HasValue)
+                                             .ThenBy(t => _db.Sprints.Where(s => s.Id == t.SprintId).Select(s => s.Name).FirstOrDefault()),
+            ("sprint",     _)      => query.OrderByDescending(t => t.SprintId.HasValue)
+                                             .ThenByDescending(t => _db.Sprints.Where(s => s.Id == t.SprintId).Select(s => s.Name).FirstOrDefault()),
             ("project",    "asc")  => query.OrderBy(t => t.Project),
             ("project",    _)      => query.OrderByDescending(t => t.Project),
             ("property",   "asc")  => query.OrderBy(t => t.Property),
@@ -118,6 +124,8 @@ public partial class TaskService
             ("status",     _)      => query.OrderByDescending(t => t.Status),
             ("targetDate", "asc")  => query.OrderBy(t => t.TargetDate),
             ("targetDate", _)      => query.OrderByDescending(t => t.TargetDate),
+            ("dueDate", "asc")     => query.OrderBy(t => t.EndDate),
+            ("dueDate", _)         => query.OrderByDescending(t => t.EndDate),
             ("created",    "asc")  => query.OrderBy(t => t.CreatedAt),
             ("created",    _)      => query.OrderByDescending(t => t.CreatedAt),
             ("weight",     "asc")  => query.OrderBy(t => t.Weight),

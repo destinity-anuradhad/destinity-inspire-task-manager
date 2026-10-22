@@ -10,7 +10,7 @@ public static class FileSignatureValidator
 {
     // Text formats carry no binary signature; they're low-risk and always served as downloads.
     private static readonly HashSet<string> TextExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".txt", ".csv", ".md" };
+        new(StringComparer.OrdinalIgnoreCase) { ".txt", ".csv", ".md", ".rdl", ".sql", ".eml" };
 
     private static readonly Dictionary<string, byte[][]> Signatures = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -25,6 +25,7 @@ public static class FileSignatureValidator
         [".xlsx"] = [[0x50, 0x4B, 0x03, 0x04]],
         [".doc"]  = [[0xD0, 0xCF, 0x11, 0xE0]],                                   // OLE2 compound
         [".xls"]  = [[0xD0, 0xCF, 0x11, 0xE0]],
+        [".msg"]  = [[0xD0, 0xCF, 0x11, 0xE0]],                                   // Outlook message (OLE2)
     };
 
     /// <summary>Whether the extension is one the system accepts at all.</summary>
