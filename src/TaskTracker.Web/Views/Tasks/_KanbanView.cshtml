@@ -1,0 +1,180 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+@{
+    var ownerColorMap = Model.Owners.ToDictionary(
+        o => o.Name, o => o.Color ?? "#094f70", StringComparer.OrdinalIgnoreCase);
+    var ownerImageMap = Model.Owners
+        .Where(o => !string.IsNullOrEmpty(o.ImagePath))
+        .ToDictionary(o => o.Name, o => o.ImagePath!, StringComparer.OrdinalIgnoreCase);
+}
+
+    @if (Model.ViewMode == "kanban")
+    {
+        bool kIsAdmin    = User.IsInRole("Admin");
+        string kCurDisplay = User.FindFirst("DisplayName")?.Value ?? "";
+        <div class="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1" style="height:calc(100vh - 260px);min-height:400px">
+            @for (int ci = 0; ci < Model.WorkStates.Count; ci++)
+            {
+                var colWs     = Model.WorkStates[ci];
+                var colSt     = colWs.Name;
+                var colClr    = colWs.Color;
+                var colTs     = Model.Tasks.Where(t => t.Status == colSt).ToList();
+                var expTs     = colTs.Where(t => t.Swimlane == "Expedite").ToList();
+                var defTs     = colTs.Where(t => (t.Swimlane ?? "") != "Expedite").ToList();
+                var colStJs   = colSt.Replace("'", "\\'");
+                var wipLimit  = colWs.WipLimit;
+                var wipOver   = wipLimit.HasValue && colTs.Count >= wipLimit.Value;
+                var wipNear   = wipLimit.HasValue && !wipOver && colTs.Count >= (int)Math.Ceiling(wipLimit.Value * 0.8);
+                var wipBadge  = wipOver  ? "bg-red-100 text-red-700"
+                               : wipNear ? "bg-amber-100 text-amber-700"
+                                         : "bg-gray-100 text-gray-500";
+                var wipText   = wipLimit.HasValue ? $"{colTs.Count} / {wipLimit}" : colTs.Count.ToString();
+                var wipTitle  = wipLimit.HasValue ? (wipOver ? "WIP limit exceeded!" : $"WIP: {colTs.Count} / {wipLimit}") : "";
+                <div data-kanban-col data-col-name="@colSt" data-wip-limit="@(wipLimit?.ToString() ?? "")"
+                     class="kanban-col flex-shrink-0 w-72 bg-gray-50 rounded-xl border @(wipOver ? "border-red-300" : "border-gray-200") overflow-hidden flex flex-col h-full transition-all duration-200">
+                    <div class="kanban-col-header flex items-center justify-between px-4 py-3 border-b @(wipOver ? "border-red-200 bg-red-50/30" : "border-gray-200 bg-white") min-w-0">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:@colClr"></div>
+                            <span class="kanban-col-title text-sm font-semibold text-gray-800 truncate">@colSt</span>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <span class="kanban-count text-xs font-bold rounded-full px-2 py-0.5 @wipBadge" title="@wipTitle">@wipText</span>
+                            <button onclick="toggleKanbanCol(this)" title="Collapse column"
+                                    class="p-1 text-gray-300 hover:text-gray-500 rounded transition-colors">
+                                <svg class="w-3.5 h-3.5 kanban-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="kanban-col-collapsed hidden flex-1 flex items-center justify-center cursor-pointer" onclick="toggleKanbanCol(this.previousElementSibling.querySelector('button'))">
+                        <span class="text-xs font-semibold text-gray-500 tracking-wide" style="writing-mode:vertical-rl;transform:rotate(180deg)">@colSt</span>
+                    </div>
+                    <div class="kanban-col-body overflow-y-auto flex-1 rounded-b-xl transition-all duration-150">
+                        <!-- Expedite swimlane -->
+                        <div class="px-2 pt-2 pb-1">
+                            <div class="flex items-center gap-1 mb-1 select-none">
+                                <svg class="w-3 h-3 text-orange-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                <span class="text-[10px] font-bold text-orange-500 uppercase tracking-wide">Expedite</span>
+                                <span class="swimlane-exp-count ml-auto text-[10px] font-semibold bg-orange-100 text-orange-600 rounded-full px-1.5">@expTs.Count</span>
+                            </div>
+                            <div class="swimlane-drop min-h-7 space-y-2 rounded-lg border-l-2 border-orange-200 pl-1.5 pb-1"
+                                 data-col-status="@colSt" data-swimlane="Expedite"
+                                 ondragover="event.preventDefault();this.classList.add('ring-2','ring-inset','ring-orange-300','bg-orange-50/30')"
+                                 ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('ring-2','ring-inset','ring-orange-300','bg-orange-50/30')"
+                                 ondrop="handleKanbanDrop(event,this,'@Html.Raw(colStJs)','Expedite')">
+                                <div class="kanban-empty text-center py-1.5 text-gray-500 text-[10px] @(expTs.Any() ? "hidden" : "")">Drop here</div>
+                                @foreach (var kt in expTs)
+                                {
+                                    var kj  = TaskDataJson(kt);
+                                    var kov = IsOverdue(kt.EndDate, kt.Status);
+                                    var kCanEdit = kIsAdmin || string.IsNullOrWhiteSpace(kt.Owner)
+                                                   || SplitOwners(kt.Owner).Any(o => string.Equals(o, kCurDisplay, StringComparison.OrdinalIgnoreCase))
+                                                   || string.Equals(kt.Reporter, kCurDisplay, StringComparison.OrdinalIgnoreCase)
+                                                   || string.Equals(kt.CreatedBy, kCurDisplay, StringComparison.OrdinalIgnoreCase);
+                                    <div draggable="true" data-task-id="@kt.Id" data-swimlane="Expedite"
+                                         ondragstart="handleKanbanDragStart(event)" ondragend="handleKanbanDragEnd(event)"
+                                         data-task="@kj" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                         tabindex="0" role="button" aria-label="@kt.Goal"
+                                         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCanvas(JSON.parse(this.dataset.task));}"
+                                         class="kanban-card bg-white rounded-lg border @(kov ? "border-red-200 bg-red-50/20" : "border-gray-200") p-3 hover:border-blue-300 hover:shadow-sm transition-all @(kCanEdit ? "cursor-grab" : "cursor-pointer") select-none">
+                                        <div class="flex items-start justify-between gap-1 mb-1.5">
+                                            @if (!string.IsNullOrEmpty(kt.Priority)) { <span class="text-xs font-bold px-1.5 py-0.5 rounded @PriorityBadge(kt.Priority)">@kt.Priority</span> }
+                                            @if (kov) { <span class="text-xs text-red-500 ml-auto" title="Overdue">⚠</span> }
+                                        </div>
+                                        <p class="text-sm text-gray-900 font-medium line-clamp-2 mb-1.5 leading-snug pointer-events-none">@kt.Goal</p>
+                                        @if (!string.IsNullOrEmpty(kt.Labels))
+                                        {
+                                            <div class="flex flex-wrap gap-1 mb-1.5 pointer-events-none">
+                                                @foreach (var lbl in kt.Labels.Split(',').Select(l => l.Trim()).Where(l => l.Length > 0).Take(3))
+                                                { <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-medium">@lbl</span> }
+                                            </div>
+                                        }
+                                        <div class="flex flex-wrap gap-1 mb-2">
+                                            @if (!string.IsNullOrEmpty(kt.Project))  { <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 max-w-[110px] truncate cursor-pointer hover:bg-blue-100" title="Filter by module: @kt.Project" data-val="@kt.Project" onclick="quickFilterModule(this.dataset.val,event)">@kt.Project</span> }
+                                            @if (!string.IsNullOrEmpty(kt.Property)) { <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 max-w-[110px] truncate cursor-pointer hover:bg-purple-100" title="Filter by client: @kt.Property" data-val="@kt.Property" onclick="quickFilterClient(this.dataset.val,event)">@kt.Property</span> }
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs pointer-events-none">
+                                            <div class="flex flex-wrap gap-1">
+                                                @{ var kOwners = SplitOwners(kt.Owner).ToList(); }
+                                                @if (!kOwners.Any()) { <span class="text-gray-500">—</span> }
+                                                else {
+                                                    @foreach (var ko in kOwners.Take(3)) { @Html.Raw(AvatarEl(ko, ownerColorMap, ownerImageMap)) }
+                                                    @if (kOwners.Count > 3) { <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-500 border border-white">+@(kOwners.Count-3)</span> }
+                                                }
+                                            </div>
+                                            <div class="flex items-center gap-1.5">
+                                                @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
+                                                @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-500")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="mx-3 border-t border-gray-200"></div>
+                        <!-- Default swimlane -->
+                        <div class="px-2 pt-1.5 pb-2">
+                            <div class="flex items-center gap-1 mb-1 select-none">
+                                <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Default</span>
+                                <span class="swimlane-def-count ml-auto text-[10px] font-semibold bg-gray-100 text-gray-500 rounded-full px-1.5">@defTs.Count</span>
+                            </div>
+                            <div class="swimlane-drop min-h-12 space-y-2 rounded-lg"
+                                 data-col-status="@colSt" data-swimlane="Default"
+                                 ondragover="event.preventDefault();this.classList.add('ring-2','ring-inset','ring-blue-400','bg-blue-50/40')"
+                                 ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('ring-2','ring-inset','ring-blue-400','bg-blue-50/40')"
+                                 ondrop="handleKanbanDrop(event,this,'@Html.Raw(colStJs)','Default')">
+                                <div class="kanban-empty text-center py-6 text-gray-500 text-xs @(defTs.Any() ? "hidden" : "")">Drop tasks here</div>
+                                @foreach (var kt in defTs)
+                                {
+                                    var kj  = TaskDataJson(kt);
+                                    var kov = IsOverdue(kt.EndDate, kt.Status);
+                                    var kCanEdit = kIsAdmin || string.IsNullOrWhiteSpace(kt.Owner)
+                                                   || SplitOwners(kt.Owner).Any(o => string.Equals(o, kCurDisplay, StringComparison.OrdinalIgnoreCase))
+                                                   || string.Equals(kt.Reporter, kCurDisplay, StringComparison.OrdinalIgnoreCase)
+                                                   || string.Equals(kt.CreatedBy, kCurDisplay, StringComparison.OrdinalIgnoreCase);
+                                    <div draggable="true" data-task-id="@kt.Id" data-swimlane="Default"
+                                         ondragstart="handleKanbanDragStart(event)" ondragend="handleKanbanDragEnd(event)"
+                                         data-task="@kj" onclick="openCanvas(JSON.parse(this.dataset.task))"
+                                         tabindex="0" role="button" aria-label="@kt.Goal"
+                                         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCanvas(JSON.parse(this.dataset.task));}"
+                                         class="kanban-card bg-white rounded-lg border @(kov ? "border-red-200 bg-red-50/20" : "border-gray-200") p-3 hover:border-blue-300 hover:shadow-sm transition-all @(kCanEdit ? "cursor-grab" : "cursor-pointer") select-none">
+                                        <div class="flex items-start justify-between gap-1 mb-1.5">
+                                            @if (!string.IsNullOrEmpty(kt.Priority)) { <span class="text-xs font-bold px-1.5 py-0.5 rounded @PriorityBadge(kt.Priority)">@kt.Priority</span> }
+                                            @if (kov) { <span class="text-xs text-red-500 ml-auto" title="Overdue">⚠</span> }
+                                        </div>
+                                        <p class="text-sm text-gray-900 font-medium line-clamp-2 mb-1.5 leading-snug pointer-events-none">@kt.Goal</p>
+                                        @if (!string.IsNullOrEmpty(kt.Labels))
+                                        {
+                                            <div class="flex flex-wrap gap-1 mb-1.5 pointer-events-none">
+                                                @foreach (var lbl in kt.Labels.Split(',').Select(l => l.Trim()).Where(l => l.Length > 0).Take(3))
+                                                { <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 font-medium">@lbl</span> }
+                                            </div>
+                                        }
+                                        <div class="flex flex-wrap gap-1 mb-2">
+                                            @if (!string.IsNullOrEmpty(kt.Project))  { <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 max-w-[110px] truncate cursor-pointer hover:bg-blue-100" title="Filter by module: @kt.Project" data-val="@kt.Project" onclick="quickFilterModule(this.dataset.val,event)">@kt.Project</span> }
+                                            @if (!string.IsNullOrEmpty(kt.Property)) { <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 max-w-[110px] truncate cursor-pointer hover:bg-purple-100" title="Filter by client: @kt.Property" data-val="@kt.Property" onclick="quickFilterClient(this.dataset.val,event)">@kt.Property</span> }
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs pointer-events-none">
+                                            <div class="flex flex-wrap gap-1">
+                                                @{ var kOwners = SplitOwners(kt.Owner).ToList(); }
+                                                @if (!kOwners.Any()) { <span class="text-gray-500">—</span> }
+                                                else {
+                                                    @foreach (var ko in kOwners.Take(3)) { @Html.Raw(AvatarEl(ko, ownerColorMap, ownerImageMap)) }
+                                                    @if (kOwners.Count > 3) { <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold bg-gray-100 text-gray-500 border border-white">+@(kOwners.Count-3)</span> }
+                                                }
+                                            </div>
+                                            <div class="flex items-center gap-1.5">
+                                                @if (!string.IsNullOrEmpty(WeightLabel(kt.Weight))) { <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-200 text-[10px] font-medium"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>@WeightLabel(kt.Weight)</span> }
+                                                @if (kt.EndDate.HasValue) { <span class="@(kov ? "text-red-500 font-medium" : "text-gray-500")">@kt.EndDate.Value.ToString("yyyy-MM-dd")</span> }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+        <p class="text-xs text-gray-500 text-center">Drag cards between swimlane zones or columns &nbsp;·&nbsp; Click to edit &nbsp;·&nbsp; @Model.TotalCount tasks</p>
+    }

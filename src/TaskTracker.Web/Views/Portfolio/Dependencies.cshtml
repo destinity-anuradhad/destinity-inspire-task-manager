@@ -1,0 +1,75 @@
+@using TaskTracker.Services
+@model CrossTeamDependencyReport
+@{
+    ViewData["Title"] = "Cross-team dependencies";
+    var isSysAdmin = ViewBag.IsSysAdmin as bool? ?? false;
+}
+
+<div class="max-w-5xl mx-auto mt-10 px-4 pb-16">
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-gray-900">Cross-team dependencies</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            Blocking dependencies that cross team boundaries@(isSysAdmin ? " (all teams)" : $" involving {ViewBag.ActiveTeam}").
+        </p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mb-6">
+        <div class="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold text-gray-900">@Model.Total</div>
+            <div class="text-xs text-gray-500 mt-1">Cross-team dependencies</div>
+        </div>
+        <div class="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold text-red-600">@Model.AtRisk</div>
+            <div class="text-xs text-gray-500 mt-1">At risk (blocker still open)</div>
+        </div>
+    </div>
+
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <p class="text-sm font-semibold text-gray-800">Dependencies</p>
+        </div>
+        @if (Model.Edges.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No cross-team dependencies.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Blocked (waiting)</th>
+                            <th class="px-4 py-3 font-medium">Blocked by</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in Model.Edges)
+                        {
+                            <tr class="border-b border-gray-50">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-gray-900">#@e.BlockedTaskId @e.BlockedGoal</div>
+                                    <div class="text-xs text-gray-400">@e.BlockedTeamName · @e.BlockedStatus</div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="text-gray-700">#@e.BlockerTaskId @e.BlockerGoal</div>
+                                    <div class="text-xs text-gray-400">@e.BlockerTeamName · @e.BlockerItemType</div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    @if (e.IsAtRisk)
+                                    {
+                                        <span class="inline-block bg-red-50 text-red-700 rounded-full px-2 py-0.5 text-xs font-medium">Blocked · @e.BlockerStatus</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-block bg-green-50 text-green-700 rounded-full px-2 py-0.5 text-xs font-medium">Cleared</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

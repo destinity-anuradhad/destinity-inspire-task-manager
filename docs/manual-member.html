@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Member Manual — Task Tracker</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 860px; margin: 0 auto; background: #fff; padding: 48px 56px; min-height: 100vh; }
+  .cover { border-bottom: 3px solid #059669; padding-bottom: 32px; margin-bottom: 40px; }
+  .role-badge { display: inline-block; background: #059669; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; margin-bottom: 12px; }
+  .cover h1 { font-size: 28px; font-weight: 700; color: #059669; }
+  .cover p { color: #64748b; margin-top: 4px; font-size: 14px; }
+  h2 { font-size: 18px; font-weight: 700; color: #059669; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+  h3 { font-size: 15px; font-weight: 600; color: #1e293b; margin: 20px 0 8px; }
+  p { margin-bottom: 10px; }
+  ul, ol { padding-left: 22px; margin-bottom: 10px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+  th { background: #f0fdf4; color: #14532d; font-weight: 600; text-align: left; padding: 8px 12px; border: 1px solid #e2e8f0; }
+  td { padding: 7px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  blockquote { border-left: 3px solid #059669; background: #f0fdf4; padding: 10px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: 14px; color: #14532d; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 13px; font-family: "Consolas", monospace; color: #059669; }
+  strong { font-weight: 600; }
+  .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px; margin-bottom: 36px; }
+  .toc h3 { margin-top: 0; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+  .toc ol { margin: 0; }
+  .toc li { font-size: 14px; margin-bottom: 2px; }
+  .toc a { color: #059669; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .tip { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 14px; color: #14532d; }
+  .tip strong { color: #059669; }
+  @media print { body { background: #fff; } .page { padding: 20px; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="role-badge">Member</div>
+    <h1>Task Tracker — User Manual</h1>
+    <p>Team Destinity Inspire &nbsp;|&nbsp; Scienter Technologies PTE LTD</p>
+  </div>
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#role">Your Role</a></li>
+      <li><a href="#login">Logging In</a></li>
+      <li><a href="#switch">Switching Teams</a></li>
+      <li><a href="#nav">Navigation</a></li>
+      <li><a href="#tasks">Tasks</a></li>
+      <li><a href="#sprints">Sprints (View Only)</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#charts">Charts</a></li>
+      <li><a href="#activity">Activity Log</a></li>
+      <li><a href="#profile">Profile &amp; Notifications</a></li>
+      <li><a href="#quickref">Quick Reference</a></li>
+      <li><a href="#statuses">Common Status Values</a></li>
+    </ol>
+  </div>
+
+  <h2 id="role">1. Your Role</h2>
+  <p>As a <strong>Member</strong>, you work on tasks assigned to you and your team. You can create tasks, update your own work, and collaborate with your teammates. You do not manage users, sprints, or team settings.</p>
+
+  <h2 id="login">2. Logging In</h2>
+  <ol>
+    <li>Open the app in your browser.</li>
+    <li>Enter your <strong>username</strong> and <strong>password</strong>.</li>
+    <li>Complete the reCAPTCHA check.</li>
+    <li>Click <strong>Login</strong>.</li>
+  </ol>
+  <p>If you belong to only one team, you are taken directly to the dashboard. If you belong to multiple teams, you will be prompted to select a team.</p>
+
+  <h2 id="switch">3. Switching Teams</h2>
+  <p>If you are a member of more than one team, click the team name in the top navigation bar. A dropdown shows your available teams. Click any team to switch.</p>
+
+  <h2 id="nav">4. Navigation</h2>
+  <table>
+    <tr><th>Item</th><th>Purpose</th></tr>
+    <tr><td><strong>Dashboard</strong></td><td>Your personal task stats</td></tr>
+    <tr><td><strong>Tasks</strong></td><td>Your team's task list</td></tr>
+    <tr><td><strong>Sprints</strong></td><td>View current and upcoming sprints</td></tr>
+    <tr><td><strong>Charts</strong></td><td>Visual analytics for your team</td></tr>
+    <tr><td><strong>Activity</strong></td><td>Team activity log</td></tr>
+  </table>
+
+  <h2 id="tasks">5. Tasks</h2>
+
+  <h3>Viewing Tasks</h3>
+  <table>
+    <tr><th>View</th><th>Use it for</th></tr>
+    <tr><td><strong>Table</strong></td><td>Full sortable list</td></tr>
+    <tr><td><strong>Board</strong></td><td>Status columns</td></tr>
+    <tr><td><strong>Kanban</strong></td><td>Swimlane workflow</td></tr>
+    <tr><td><strong>Calendar</strong></td><td>Tasks by target date</td></tr>
+    <tr><td><strong>Backlog</strong></td><td>Unplanned tasks</td></tr>
+    <tr><td><strong>Team</strong></td><td>Who is working on what</td></tr>
+  </table>
+
+  <h3>Filtering</h3>
+  <p>Click <strong>Show filters</strong> to open the filter bar. Filter by keyword, module, client, owner, status, priority, or date range.</p>
+
+  <h3>Creating a Task</h3>
+  <ol>
+    <li>Click <strong>New Task</strong>.</li>
+    <li>Required: <strong>Goal</strong> (task title) and <strong>Project</strong> (module).</li>
+    <li>Add other details: Owner, Priority, Status, Client, Target Date, Sprint, Item Type, Notes, Acceptance Criteria, Labels.</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Updating a Task</h3>
+  <p>Click any task to open it. Update the status, add notes, change dates, or reassign it. Click <strong>Save</strong> when done.</p>
+
+  <div class="tip">
+    <strong>Tip:</strong> When you start working on a task, change the status to <strong>Active</strong>. When finished, change it to <strong>Done</strong> (or <strong>Resolved</strong> for bugs/features). This keeps charts and sprint tracking accurate for your whole team.
+  </div>
+
+  <h3>Deleting a Task</h3>
+  <p>Open a task and click <strong>Delete</strong>. Deleted tasks go to the Recycle Bin. To restore a deleted task, ask your Team Lead, Team Admin, or SysAdmin.</p>
+
+  <h3>Bulk Operations</h3>
+  <p>Select multiple tasks via checkboxes: Change Status, Change Owner, Assign Sprint, Change Priority, Delete.</p>
+
+  <h2 id="sprints">6. Sprints (View Only)</h2>
+  <p>Open <strong>Sprints</strong> to see:</p>
+  <ul>
+    <li>The current active sprint and its goal</li>
+    <li>Which tasks are in the sprint</li>
+    <li>Sprint start and end dates</li>
+    <li>Each sprint's completion progress</li>
+  </ul>
+  <p>Sprint management is handled by your Team Admin or SysAdmin.</p>
+
+  <h2 id="dashboard">7. Dashboard</h2>
+
+  <h3>My Dashboard</h3>
+  <p>Your personal task summary:</p>
+  <ul>
+    <li><strong>Total</strong> — all tasks assigned to you</li>
+    <li><strong>Done</strong> — completed tasks</li>
+    <li><strong>In Progress</strong> — tasks actively being worked on</li>
+    <li><strong>Open</strong> — tasks not yet started</li>
+    <li><strong>Overdue</strong> — tasks past their target date</li>
+  </ul>
+  <p>Also shows recent activity and a breakdown by project.</p>
+
+  <h3>Team Dashboard</h3>
+  <p>Click <strong>Team Performance</strong> (top right) to see the full team's status distribution, owner workload, and project breakdown.</p>
+
+  <h2 id="charts">8. Charts</h2>
+  <ul>
+    <li>Velocity per sprint</li>
+    <li>Status and priority distribution</li>
+    <li>Owner workload</li>
+    <li>Project and property breakdown</li>
+  </ul>
+
+  <h2 id="activity">9. Activity Log</h2>
+  <p>A log of all recent changes in your team — who changed what, on which task, and when.</p>
+
+  <h2 id="profile">10. Profile &amp; Notifications</h2>
+  <p>Access via the avatar/name in the top-right corner.</p>
+
+  <h3>Updating Your Profile</h3>
+  <ul>
+    <li><strong>Display Name</strong> — how your name appears on tasks</li>
+    <li><strong>Email</strong> — required to receive email notifications</li>
+    <li><strong>Job Title / Department</strong> — optional</li>
+    <li><strong>Avatar</strong> — profile picture or initials colour</li>
+  </ul>
+
+  <h3>Changing Your Password</h3>
+  <ol>
+    <li>Go to your profile.</li>
+    <li>Enter your current password.</li>
+    <li>Enter your new password (minimum 8 characters).</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Notification Preferences</h3>
+  <ul>
+    <li>Notify me when a task is assigned to me</li>
+    <li>Notify me when a comment is added to a task I own or watch</li>
+    <li>Notify me when a task I own becomes blocked</li>
+  </ul>
+  <p>The <strong>bell icon</strong> (🔔) in the top navigation bar shows unread notifications.</p>
+
+  <h2 id="quickref">11. Quick Reference</h2>
+  <table>
+    <tr><th>What you want to do</th><th>Where to go</th></tr>
+    <tr><td>See my tasks</td><td>Tasks → filter by Owner = me</td></tr>
+    <tr><td>Update a task's status</td><td>Click task → change Status → Save</td></tr>
+    <tr><td>Create a new task</td><td>Tasks → New Task</td></tr>
+    <tr><td>See the current sprint</td><td>Sprints</td></tr>
+    <tr><td>Check team progress</td><td>Dashboard → Team Performance</td></tr>
+    <tr><td>Update my profile</td><td>Top-right avatar → Profile</td></tr>
+    <tr><td>Change my password</td><td>Top-right avatar → Profile → Change Password</td></tr>
+    <tr><td>Turn off notifications</td><td>Top-right avatar → Profile → Notifications</td></tr>
+  </table>
+
+  <h2 id="statuses">12. Common Status Values</h2>
+  <table>
+    <tr><th>Status</th><th>Meaning</th></tr>
+    <tr><td><strong>New</strong></td><td>Created, not yet started</td></tr>
+    <tr><td><strong>To Do</strong></td><td>Planned, ready to start</td></tr>
+    <tr><td><strong>Active / In Progress</strong></td><td>Currently being worked on</td></tr>
+    <tr><td><strong>On Hold</strong></td><td>Paused, waiting for something</td></tr>
+    <tr><td><strong>Blocked</strong></td><td>Cannot proceed — unresolved dependency or issue</td></tr>
+    <tr><td><strong>Done</strong></td><td>Completed (for Tasks)</td></tr>
+    <tr><td><strong>Resolved</strong></td><td>Completed (for Bugs, Stories, Features)</td></tr>
+    <tr><td><strong>Closed</strong></td><td>Verified and closed</td></tr>
+    <tr><td><strong>Cancelled</strong></td><td>Will not be done</td></tr>
+  </table>
+
+  <blockquote>Update your task status regularly — it helps your team lead and team admin see accurate progress in the dashboard and charts.</blockquote>
+
+</div>
+</body>
+</html>

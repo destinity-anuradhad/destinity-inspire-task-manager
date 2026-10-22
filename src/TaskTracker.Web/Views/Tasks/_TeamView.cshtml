@@ -1,0 +1,200 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+
+    @if (Model.ViewMode == "team")
+    {
+        string tlFromStr = ViewBag.TlFrom as string ?? "";
+        string tlToStr   = ViewBag.TlTo   as string ?? "";
+        string tlModeStr = ViewBag.TlMode as string ?? "week";
+        <style>
+        .tl2-wrap{min-width:600px;font-family:inherit}
+        .tl2-hd{display:flex;border-bottom:2px solid #e5e7eb;position:sticky;top:0;background:#f9fafb;z-index:8}
+        .tl2-name-hd{width:170px;min-width:170px;padding:8px 12px;font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.06em;border-right:1px solid #e5e7eb;flex-shrink:0}
+        .tl2-days-hd{display:flex;flex:1}
+        .tl2-col-hd{flex:1;text-align:center;padding:4px 2px;font-size:10.5px;color:#6b7280;border-right:1px solid #e5e7eb;line-height:1.35}
+        .tl2-col-now-hd{background:#eff6ff;color:#1d4ed8;font-weight:700}
+        .tl2-row{display:flex;border-bottom:1px solid #f1f5f9;min-height:40px}
+        .tl2-row:hover{background:#fafbfd}
+        .tl2-name-cell{width:170px;min-width:170px;padding:8px 10px;display:flex;align-items:center;gap:8px;border-right:1px solid #e5e7eb;flex-shrink:0}
+        .tl2-days-cell{flex:1;position:relative;overflow:hidden}
+        .tl2-col-div{position:absolute;top:0;bottom:0;border-right:1px solid #f0f0f0}
+        .tl2-col-div-today{background:rgba(219,234,254,.25)}
+        .tl2-col-div-hr{border-right:1px solid #d1d5db!important}
+        .tl2-bar{position:absolute;border-radius:7px;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.1);display:flex;flex-direction:column;justify-content:center;padding:0 9px;cursor:pointer;overflow:hidden;transition:box-shadow .12s,transform .12s;border:1px solid rgba(0,0,0,.07)}
+        .tl2-bar:hover{box-shadow:0 4px 12px rgba(0,0,0,.18);transform:translateY(-1px);z-index:5}
+        .tl2-bar-strip{position:absolute;top:0;left:0;right:0;height:4px;border-radius:7px 7px 0 0}
+        .tl2-bar-txt{color:#1e293b;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;margin-top:4px}
+        .tl2-bar-pills{display:flex;gap:4px;margin-top:4px;overflow:hidden}
+        .tl2-pill{display:inline-flex;align-items:center;padding:0 7px;height:16px;border-radius:99px;font-size:9.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;flex-shrink:0}
+        .tl2-av{width:28px;height:28px;border-radius:8px;background:#094f70;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .tl2-nm{font-size:12px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .tl2-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#d1d5db;font-style:italic}
+        .tl2-now-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:6;pointer-events:none}
+        .tl2-filter input[type=date]{border:1px solid #d1d5db;border-radius:8px;padding:4px 10px;font-size:12px;height:32px;color:#374151}
+        .tl2-filter input[type=date]:focus{outline:none;border-color:#094f70}
+        .tl2-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;height:32px;border:1px solid transparent;text-decoration:none;transition:all .15s}
+        .tl2-btn-apply{background:#094f70;color:#fff}.tl2-btn-apply:hover{background:#063a54}
+        .tl2-btn-week{background:#fff;border-color:#094f70;color:#094f70}.tl2-btn-week:hover{background:#eff8ff}
+        .tl2-btn-active{background:#eff6ff;border-color:#1d4ed8;color:#1d4ed8}
+        .tl2-btn-today{background:#f1f5f9;border-color:#e2e8f0;color:#374151}.tl2-btn-today:hover{background:#e2e8f0}
+        </style>
+
+        <div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <div class="tl2-filter flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-semibold text-gray-700 flex items-center gap-2 mr-1">
+                    <svg class="w-4 h-4 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Team Timeline
+                </span>
+                <input type="date" id="tl2-from" value="@(tlModeStr != "today" ? tlFromStr : "")" />
+                <span class="text-gray-500 text-sm">to</span>
+                <input type="date" id="tl2-to" value="@(tlModeStr != "today" ? tlToStr : "")" />
+                <button class="tl2-btn tl2-btn-apply" onclick="tl2Apply()">Apply</button>
+                @{
+                    var weekUrl = Url.Action("Index", new { view="team", search=Model.Search, project=Model.Project, property=Model.Property, owner=Model.Owner, status=Model.Status, priority=Model.Priority, pageSize=Model.PageSize }) ?? "/Tasks?view=team";
+                    string dateBadge;
+                    if (tlModeStr == "today") { dateBadge = DateTime.Today.ToString("dddd, d MMMM yyyy"); }
+                    else if (DateTime.TryParse(tlFromStr, out var tfd2) && DateTime.TryParse(tlToStr, out var ttd2)) {
+                        bool isFullMonth = tfd2.Day == 1 && ttd2 == tfd2.AddMonths(1).AddDays(-1);
+                        dateBadge = isFullMonth ? tfd2.ToString("MMMM yyyy") : tfd2.ToString("d MMM") + " – " + ttd2.ToString("d MMM yyyy");
+                    } else { dateBadge = tlFromStr + " – " + tlToStr; }
+                }
+                <a href="@weekUrl" class="tl2-btn @(tlModeStr=="week"?"tl2-btn-active":"tl2-btn-week")">This Week</a>
+                <a href="/Tasks?view=team&tlmode=today" class="tl2-btn @(tlModeStr=="today"?"tl2-btn-active":"tl2-btn-today")">
+                    <svg style="width:13px;height:13px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Today
+                </a>
+                <span class="ml-2 text-xs font-medium px-2 py-0.5 rounded-full @(tlModeStr=="today"?"bg-amber-100 text-amber-700":"bg-blue-50 text-blue-700")">
+                    @dateBadge
+                </span>
+            </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div class="flex items-center gap-4 flex-wrap px-4 py-2 border-b border-gray-100">
+                @foreach (var (lbl2, clr2) in new[]{("New","#8b5cf6"),("To Do","#64748b"),("Active","#0ea5e9"),("In Progress","#094f70"),("Resolved","#f59e0b"),("Done","#22c55e"),("Closed","#94a3b8")})
+                {
+                    <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280">
+                        <span style="width:10px;height:10px;border-radius:3px;background:@clr2;flex-shrink:0"></span>@lbl2
+                    </span>
+                }
+                @if (tlModeStr == "today")
+                {
+                    <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b7280;margin-left:auto">
+                        <span style="width:2px;height:12px;background:#ef4444;border-radius:1px;flex-shrink:0"></span>Now
+                    </span>
+                }
+            </div>
+            <div style="overflow-x:auto;padding-bottom:8px">
+                <div id="tl2-scroll" style="min-height:160px"></div>
+            </div>
+        </div>
+
+        <script>
+        (function () {
+            var TL2_TASKS         = @Html.Raw(ViewBag.TlTasks          as string ?? "[]");
+            var TL2_OWNERS        = @Html.Raw(ViewBag.TlOwners         as string ?? "[]");
+            var TL2_PROJ_COLORS   = @Html.Raw(ViewBag.TlProjectColors  as string ?? "{}");
+            var TL2_PROP_COLORS   = @Html.Raw(ViewBag.TlPropertyColors as string ?? "{}");
+            var TL2_FROM = '@(tlFromStr)';
+            var TL2_TO   = '@(tlToStr)';
+            var TL2_MODE = '@(tlModeStr)';
+            var SC = {'New':'#8b5cf6','To Do':'#64748b','Active':'#0ea5e9','In Progress':'#094f70','Resolved':'#f59e0b','Done':'#22c55e','Closed':'#94a3b8'};
+            var DONE = {'Done':1,'Resolved':1,'Closed':1};
+            function hex2rgba(hex,a){var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return 'rgba('+r+','+g+','+b+','+a+')';}
+            function pd(s){if(!s)return null;var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;return new Date(parseInt(m[1],10),parseInt(m[2],10)-1,parseInt(m[3],10));}
+            function sameDay(a,b){return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+            function fmtDay(d){var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return '<strong>'+dn[d.getDay()]+'<\/strong><br>'+d.getDate()+' '+mo[d.getMonth()];}
+            function fmtTime(tot){var h=Math.floor(tot/60),mn=tot%60,ap=h<12?'AM':'PM',hh=h%12||12;return hh+':'+(mn<10?'0':'')+mn+' '+ap;}
+            function ownerMatch(to,o){var p=(to||'').split(',');for(var i=0;i<p.length;i++){if(p[i].trim().toLowerCase()===o.toLowerCase())return true;}return false;}
+            function assignLanes(bars){var ends=[];for(var i=0;i<bars.length;i++){var b=bars[i],pl=false;for(var j=0;j<ends.length;j++){if(b.lf>=ends[j]+0.004){b._lane=j;ends[j]=b.rt;pl=true;break;}}if(!pl){b._lane=ends.length;ends.push(b.rt);}}return ends.length||0;}
+            function buildRows(fn){return TL2_OWNERS.map(function(owner){var bars=fn(owner).filter(function(x){return x!=null;});bars.sort(function(a,b){return a.lf-b.lf;});var nl=bars.length?assignLanes(bars):0;return{owner:owner,bars:bars,rowH:Math.max(64,nl*62+8)};});}
+            function renderGrid(cols,getCI,rows){
+                var n=cols.length,today=new Date();today.setHours(0,0,0,0);
+                var html='<div class="tl2-wrap"><div class="tl2-hd"><div class="tl2-name-hd">DEVELOPER<\/div><div class="tl2-days-hd">';
+                for(var i=0;i<n;i++){var ci=getCI(cols[i],today);html+='<div class="tl2-col-hd'+(ci.isNow?' tl2-col-now-hd':'')+'">'+ ci.label+'<\/div>';}
+                html+='<\/div><\/div>';
+                for(var r=0;r<rows.length;r++){
+                    var row=rows[r];
+                    var owImg = CV_IMAGES && CV_IMAGES[row.owner];
+                    var avEl = owImg
+                        ? '<img src="'+owImg.replace(/"/g,'&quot;')+'" class="tl2-av" style="object-fit:cover;border-radius:8px;" />'
+                        : (function(){ var ini=(row.owner.split(/\s+/).map(function(w){return w.charAt(0)||'';}).join('').substring(0,2).toUpperCase())||'?'; return '<div class="tl2-av">'+ini+'<\/div>'; })();
+                    html+='<div class="tl2-row" style="height:'+row.rowH+'px">';
+                    html+='<div class="tl2-name-cell">'+avEl+'<span class="tl2-nm">'+row.owner+'<\/span><\/div>';
+                    html+='<div class="tl2-days-cell">';
+                    for(var c=0;c<n;c++){var ci2=getCI(cols[c],today);html+='<div class="tl2-col-div'+(ci2.isNow?' tl2-col-div-today':'')+(ci2.isHour?' tl2-col-div-hr':'')+'" style="left:'+(c/n*100)+'%;width:'+(1/n*100)+'%"><\/div>';}
+                    if(row.bars.length===0)html+='<div class="tl2-empty">no tasks<\/div>';
+                    for(var bi=0;bi<row.bars.length;bi++){
+                        var bar=row.bars[bi];
+                        var sclr=SC[bar.task.status]||'#094f70';
+                        var top=4+bar._lane*62;
+                        var w=Math.max(bar.rt-bar.lf,0.012)*100;
+                        var tip=bar.task.goal+(bar.tchip?' | '+bar.tchip:'')+(bar.task.property?' | '+bar.task.property:'')+(bar.task.project?' | '+bar.task.project:'');
+                        var taskJson2=JSON.stringify(bar.task).replace(/"/g,'&quot;');
+                        html+='<div class="tl2-bar" style="left:'+(bar.lf*100)+'%;width:'+w+'%;top:'+top+'px;height:56px;" title="'+tip.replace(/"/g,'&quot;')+'" data-task="'+taskJson2+'" onclick="openCanvas(JSON.parse(this.dataset.task))">';
+                        html+='<div class="tl2-bar-strip" style="background:'+sclr+'"><\/div>';
+                        html+='<span class="tl2-bar-txt">'+(bar.seq?bar.seq+'. ':'')+bar.task.goal+'<\/span>';
+                        var ph='';
+                        if(bar.tchip)ph+='<span class="tl2-pill" style="background:'+hex2rgba(sclr,0.13)+';color:'+sclr+';max-width:160px">'+bar.tchip+'<\/span>';
+                        if(bar.task.property){var pc=TL2_PROP_COLORS[bar.task.property]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(pc,0.12)+';color:'+pc+'">'+bar.task.property+'<\/span>';}
+                        if(bar.task.project){var jc=TL2_PROJ_COLORS[bar.task.project]||'#6b7280';ph+='<span class="tl2-pill" style="background:'+hex2rgba(jc,0.12)+';color:'+jc+'">'+bar.task.project+'<\/span>';}
+                        if(ph)html+='<div class="tl2-bar-pills">'+ph+'<\/div>';
+                        html+='<\/div>';
+                    }
+                    html+='<\/div><\/div>';
+                }
+                html+='<\/div>';
+                document.getElementById('tl2-scroll').innerHTML=html;
+            }
+            function renderWeek(){
+                var from=pd(TL2_FROM),to=pd(TL2_TO);if(!from||!to)return;
+                var days=[],d=new Date(from.getTime());while(d<=to){days.push(new Date(d.getTime()));d.setDate(d.getDate()+1);}
+                var totalMs=to.getTime()+86400000-from.getTime();
+                var DAYH=9,nDays=days.length,cap=nDays*DAYH;
+                var today=new Date();today.setHours(0,0,0,0);
+                var startCum=0;
+                for(var di=0;di<nDays;di++){if(sameDay(days[di],today)){startCum=di*DAYH;break;}}
+                var rows=buildRows(function(owner){
+                    var bars=TL2_TASKS.filter(function(t){return ownerMatch(t.owner,owner)&&(t.startDate||t.endDate);}).map(function(t){var ts=pd(t.startDate)||pd(t.endDate),te=pd(t.endDate)||pd(t.startDate);if(!ts||!te)return null;var bs=Math.max(ts.getTime(),from.getTime()),be=Math.min(te.getTime()+86400000,to.getTime()+86400000);if(bs>=be)return null;return{lf:(bs-from.getTime())/totalMs,rt:(be-from.getTime())/totalMs,task:t};}).filter(function(x){return x!=null;});
+                    var open=TL2_TASKS.filter(function(t){return ownerMatch(t.owner,owner)&&!DONE[t.status]&&!t.startDate&&!t.endDate;});
+                    open.sort(function(a,b){return a.id-b.id;});
+                    var cum=startCum;
+                    for(var i=0;i<open.length;i++){
+                        var t=open[i];
+                        if(cum>=cap-0.001)cum=startCum;
+                        var h=t.weight||1;if(h<0.5)h=0.5;
+                        var end=Math.min(cum+h,cap);
+                        bars.push({lf:cum/cap,rt:end/cap,task:t,seq:i+1,
+                                   tchip:(t.weight?_formatEstimateHours(t.weight):'~1h')+(cum+h>cap?' · continues next week':'')});
+                        cum+=h;
+                    }
+                    return bars;
+                });
+                renderGrid(days,function(day,tod){return{label:fmtDay(day),isNow:sameDay(day,tod),isHour:false};},rows);
+            }
+            function renderDay(){
+                var START=510,END=1050,SLOT=30,TOTAL=540;
+                var slots=[],m=START;while(m<END){slots.push(m);m+=SLOT;}
+                var now=new Date(),nowMin=now.getHours()*60+now.getMinutes();
+                var rows=TL2_OWNERS.map(function(owner){
+                    var open=TL2_TASKS.filter(function(t){return ownerMatch(t.owner,owner)&&!DONE[t.status];});
+                    open.sort(function(a,b){return a.id-b.id;});
+                    var bars=[],cur=START,lane=0;
+                    for(var i=0;i<open.length;i++){
+                        var t=open[i];
+                        var mins=Math.round((t.weight||1)*60);if(mins<30)mins=30;
+                        if(cur+mins>END&&cur>START){lane++;cur=START;}
+                        var em=Math.min(cur+mins,END);
+                        bars.push({lf:(cur-START)/TOTAL,rt:(em-START)/TOTAL,_lane:lane,seq:i+1,task:t,
+                                   tchip:fmtTime(cur)+' – '+fmtTime(Math.min(cur+mins,END))+' · '+(t.weight?_formatEstimateHours(t.weight):'~1h')});
+                        cur+=mins;
+                    }
+                    return{owner:owner,bars:bars,rowH:Math.max(64,(lane+1)*62+8)};
+                });
+                renderGrid(slots,function(slotMin){return{label:fmtTime(slotMin),isNow:(nowMin>=slotMin&&nowMin<slotMin+SLOT),isHour:(slotMin%60===0)};},rows);
+                if(nowMin>=START&&nowMin<=END){var pct=(nowMin-START)/TOTAL*100;var cells=document.querySelectorAll('.tl2-days-cell');for(var ti=0;ti<cells.length;ti++){var ln=document.createElement('div');ln.className='tl2-now-line';ln.style.left=pct+'%';cells[ti].appendChild(ln);}}
+            }
+            window.tl2Apply=function(){var f=document.getElementById('tl2-from').value,t=document.getElementById('tl2-to').value;if(f&&t)window.location='/Tasks?view=team&tlfrom='+f+'&tlto='+t;};
+            if(TL2_MODE==='today')renderDay();else renderWeek();
+        })();
+        </script>
+    }

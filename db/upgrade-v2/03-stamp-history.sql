@@ -1,0 +1,45 @@
+/* ============================================================================
+   03-stamp-history.sql   —  run on _v2 AFTER 02-deploy-schema.ps1
+   Marks every migration as applied so the app's startup MigrateAsync() is a no-op.
+   Idempotent: only inserts MigrationIds not already present.
+   ============================================================================ */
+SET NOCOUNT ON;
+IF OBJECT_ID('__EFMigrationsHistory') IS NULL
+  CREATE TABLE [__EFMigrationsHistory] ([MigrationId] nvarchar(150) NOT NULL CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY, [ProductVersion] nvarchar(32) NOT NULL);
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260630094913_InitialCreate') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260630094913_InitialCreate',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260630094959_AddUserEmailNotifications') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260630094959_AddUserEmailNotifications',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260630110000_AddLabelsAndAcceptanceCriteria') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260630110000_AddLabelsAndAcceptanceCriteria',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260701120000_AddTaskAttachments') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260701120000_AddTaskAttachments',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260701130000_AddWipLimitToWorkStates') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260701130000_AddWipLimitToWorkStates',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260701130001_AddSwimlaneToTasks') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260701130001_AddSwimlaneToTasks',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260810072319_AddItemTypesToWorkStates') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260810072319_AddItemTypesToWorkStates',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260810110637_AddActualHoursToTasks') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260810110637_AddActualHoursToTasks',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260811000001_AddSprintHoursLog') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260811000001_AddSprintHoursLog',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260812115920_RemoveTaskOwners') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260812115920_RemoveTaskOwners',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260817032043_NormalizationPhase1_TaskOwners') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260817032043_NormalizationPhase1_TaskOwners',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260831000000_RepairTeamLeadConstraint') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260831000000_RepairTeamLeadConstraint',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260831000100_BackfillVerifiedLegacyTaskOwners') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260831000100_BackfillVerifiedLegacyTaskOwners',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901000000_AddUserSessionVersion') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901000000_AddUserSessionVersion',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901042508_AddVersionedWorkflowModel') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901042508_AddVersionedWorkflowModel',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901082341_AddImmutableSprintHistory') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901082341_AddImmutableSprintHistory',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901083457_AddAppendOnlyTimeEntries') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901083457_AddAppendOnlyTimeEntries',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901095933_AddEstimateUnits') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901095933_AddEstimateUnits',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901103000_AddUserTimeOff') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901103000_AddUserTimeOff',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901111927_AddDurableEmailOutbox') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901111927_AddDurableEmailOutbox',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901113614_MakeProjectsFirstClass') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901113614_MakeProjectsFirstClass',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901121801_LinkTasksToGovernedProjects') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901121801_LinkTasksToGovernedProjects',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901123003_AddProjectReleases') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901123003_AddProjectReleases',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901123814_AddTaskChecklists') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901123814_AddTaskChecklists',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901124918_AddTaskTemplates') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901124918_AddTaskTemplates',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901132434_AddRecurringTaskDefinitions') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901132434_AddRecurringTaskDefinitions',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901133156_AddRecurringTaskRuns') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901133156_AddRecurringTaskRuns',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260901133439_AddGovernedCustomFields') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260901133439_AddGovernedCustomFields',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260902085914_AddApiClients') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260902085914_AddApiClients',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260902092902_AddWebhooks') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260902092902_AddWebhooks',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260902094313_AddImportJobs') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260902094313_AddImportJobs',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260902105307_AddApiIdempotency') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260902105307_AddApiIdempotency',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260903051402_AddAutomationRules') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260903051402_AddAutomationRules',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260903060055_AddSlaPolicies') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260903060055_AddSlaPolicies',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260907000000_AddInQaWorkState') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260907000000_AddInQaWorkState',N'10.0.9');
+IF NOT EXISTS(SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId]=N'20260907065456_DropTaskModuleClientFks') INSERT [__EFMigrationsHistory]([MigrationId],[ProductVersion]) VALUES(N'20260907065456_DropTaskModuleClientFks',N'10.0.9');
+PRINT 'History stamped to current version.';

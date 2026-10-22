@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Role Comparison — Task Tracker</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.5; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 1060px; margin: 0 auto; background: #fff; padding: 48px 56px; min-height: 100vh; }
+
+  .cover { border-bottom: 3px solid #334155; padding-bottom: 28px; margin-bottom: 36px; }
+  .cover h1 { font-size: 26px; font-weight: 700; color: #1e293b; }
+  .cover p { color: #64748b; margin-top: 4px; font-size: 14px; }
+
+  /* Role badge strip */
+  .badges { display: flex; gap: 10px; margin-bottom: 36px; flex-wrap: wrap; }
+  .badge { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; }
+  .badge .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .badge-sa  { background: #eff6ff; color: #1d4ed8; }
+  .badge-sa  .dot { background: #1d4ed8; }
+  .badge-ta  { background: #ecfeff; color: #0e7490; }
+  .badge-ta  .dot { background: #0e7490; }
+  .badge-tl  { background: #f5f3ff; color: #7c3aed; }
+  .badge-tl  .dot { background: #7c3aed; }
+  .badge-mb  { background: #f0fdf4; color: #059669; }
+  .badge-mb  .dot { background: #059669; }
+
+  h2 { font-size: 16px; font-weight: 700; color: #334155; margin: 36px 0 14px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+
+  /* Comparison table */
+  .cmp { width: 100%; border-collapse: collapse; margin-bottom: 28px; font-size: 13px; }
+  .cmp thead th { padding: 10px 14px; border: 1px solid #e2e8f0; font-weight: 700; text-align: center; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+  .cmp thead th.feat { text-align: left; background: #f8fafc; color: #475569; width: 30%; }
+  .cmp thead th.sa  { background: #eff6ff; color: #1d4ed8; }
+  .cmp thead th.ta  { background: #ecfeff; color: #0e7490; }
+  .cmp thead th.tl  { background: #f5f3ff; color: #7c3aed; }
+  .cmp thead th.mb  { background: #f0fdf4; color: #059669; }
+
+  .cmp tbody tr:nth-child(even) td { background: #fafafa; }
+  .cmp tbody tr:hover td { background: #f1f5f9; }
+  .cmp td { padding: 8px 14px; border: 1px solid #e2e8f0; vertical-align: middle; }
+  .cmp td.feat { font-weight: 500; color: #334155; }
+  .cmp td.val  { text-align: center; }
+
+  /* Section header rows */
+  .cmp tr.section td { background: #f1f5f9 !important; font-weight: 700; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 6px 14px; }
+
+  /* Icons */
+  .y  { color: #16a34a; font-size: 16px; }
+  .n  { color: #dc2626; font-size: 16px; }
+  .p  { color: #d97706; font-size: 13px; font-weight: 600; }   /* partial */
+
+  /* Summary cards */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 36px; }
+  .card { border-radius: 10px; padding: 18px 16px; }
+  .card-sa { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .card-ta { background: #ecfeff; border: 1px solid #a5f3fc; }
+  .card-tl { background: #f5f3ff; border: 1px solid #ddd6fe; }
+  .card-mb { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .card h3 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .card-sa h3 { color: #1d4ed8; }
+  .card-ta h3 { color: #0e7490; }
+  .card-tl h3 { color: #7c3aed; }
+  .card-mb h3 { color: #059669; }
+  .card ul { padding-left: 16px; list-style: disc; }
+  .card li { font-size: 12px; color: #334155; margin-bottom: 3px; }
+
+  .legend { display: flex; gap: 20px; margin-bottom: 20px; font-size: 12px; color: #64748b; align-items: center; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+
+  @media (max-width: 700px) {
+    .page { padding: 20px; }
+    .cards { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media print { body { background: #fff; } .page { padding: 20px; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <h1>Role Permissions Comparison</h1>
+    <p>Team Destinity Inspire &nbsp;|&nbsp; Task Tracker &nbsp;|&nbsp; Scienter Technologies PTE LTD</p>
+  </div>
+
+  <!-- Role badges -->
+  <div class="badges">
+    <div class="badge badge-sa"><div class="dot"></div>System Administrator</div>
+    <div class="badge badge-ta"><div class="dot"></div>Team Admin</div>
+    <div class="badge badge-tl"><div class="dot"></div>Team Lead</div>
+    <div class="badge badge-mb"><div class="dot"></div>Member</div>
+  </div>
+
+  <!-- Summary cards -->
+  <h2>Role Summaries</h2>
+  <div class="cards">
+    <div class="card card-sa">
+      <h3>System Administrator</h3>
+      <ul>
+        <li>Full system access</li>
+        <li>Manage all users &amp; teams</li>
+        <li>Global View across all teams</li>
+        <li>Restore / purge recycle bin</li>
+        <li>Create &amp; deactivate teams</li>
+        <li>Assign any role including SysAdmin</li>
+      </ul>
+    </div>
+    <div class="card card-ta">
+      <h3>Team Admin</h3>
+      <ul>
+        <li>Manage own team only</li>
+        <li>Add / remove members</li>
+        <li>Create Member &amp; Lead users</li>
+        <li>Full sprint management</li>
+        <li>View recycle bin (no restore)</li>
+        <li>No access to Master Files</li>
+      </ul>
+    </div>
+    <div class="card card-tl">
+      <h3>Team Lead</h3>
+      <ul>
+        <li>Create &amp; manage all tasks</li>
+        <li>Create Member-level users only</li>
+        <li>View sprints (no management)</li>
+        <li>No team settings access</li>
+        <li>No recycle bin access</li>
+        <li>No role changes</li>
+      </ul>
+    </div>
+    <div class="card card-mb">
+      <h3>Member</h3>
+      <ul>
+        <li>Create &amp; update tasks</li>
+        <li>View sprints only</li>
+        <li>No user management</li>
+        <li>No team settings</li>
+        <li>No recycle bin access</li>
+        <li>Profile &amp; notifications only</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Detailed permission matrix -->
+  <h2>Permission Matrix</h2>
+
+  <div class="legend">
+    <span><span class="y">✓</span> Full access</span>
+    <span><span class="n">✗</span> No access</span>
+    <span><span class="p">~</span> Partial / limited</span>
+  </div>
+
+  <table class="cmp">
+    <thead>
+      <tr>
+        <th class="feat">Feature / Action</th>
+        <th class="sa">SysAdmin</th>
+        <th class="ta">Team Admin</th>
+        <th class="tl">Team Lead</th>
+        <th class="mb">Member</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <!-- SCOPE -->
+      <tr class="section"><td colspan="5">Scope &amp; View</td></tr>
+      <tr>
+        <td class="feat">Global View (all teams)</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">View own team's data</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">View other teams' data</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">All-Teams Dashboard</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+
+      <!-- SYSTEM USER MANAGEMENT -->
+      <tr class="section"><td colspan="5">System User Management (Master Files)</td></tr>
+      <tr>
+        <td class="feat">View all system users</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Create a system user</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Edit user details / system role</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Assign SysAdmin role</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+
+      <!-- TEAM MANAGEMENT -->
+      <tr class="section"><td colspan="5">Team Management</td></tr>
+      <tr>
+        <td class="feat">View all teams list</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Create a new team</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Deactivate / reactivate a team</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Edit team name / colour</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Add existing user to team</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Create new user into team</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="p">~ Member / Lead only</span></td>
+        <td class="val"><span class="p">~ Member only</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Change a member's team role</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Remove a member from team</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+
+      <!-- SPRINTS -->
+      <tr class="section"><td colspan="5">Sprints</td></tr>
+      <tr>
+        <td class="feat">View sprints</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Create / edit sprints</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Set active sprint</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Complete / delete sprints</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Manage sprint capacity</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+
+      <!-- TASKS -->
+      <tr class="section"><td colspan="5">Tasks</td></tr>
+      <tr>
+        <td class="feat">View team tasks</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Create tasks</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Edit any task</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Delete tasks</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Bulk task operations</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">All task views (Table/Board/Kanban/Calendar/Backlog/Team)</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Export tasks to CSV</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+
+      <!-- RECYCLE BIN -->
+      <tr class="section"><td colspan="5">Recycle Bin</td></tr>
+      <tr>
+        <td class="feat">View deleted tasks</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Restore deleted tasks</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Permanently delete / empty bin</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+
+      <!-- DASHBOARD & CHARTS -->
+      <tr class="section"><td colspan="5">Dashboard &amp; Charts</td></tr>
+      <tr>
+        <td class="feat">Personal dashboard</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Team performance dashboard</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">All-teams dashboard</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+        <td class="val"><span class="n">✗</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Charts (velocity, status, priority, workload)</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+
+      <!-- ACTIVITY & PROFILE -->
+      <tr class="section"><td colspan="5">Activity &amp; Profile</td></tr>
+      <tr>
+        <td class="feat">View activity log</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Update own profile</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Change own password</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+      <tr>
+        <td class="feat">Manage notification preferences</td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+        <td class="val"><span class="y">✓</span></td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <!-- Escalation guide -->
+  <h2>Who to Contact for Restricted Actions</h2>
+  <table class="cmp">
+    <thead>
+      <tr>
+        <th class="feat">If you need to…</th>
+        <th class="feat" style="width:35%">Contact</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Create or deactivate a team</td><td>System Administrator</td></tr>
+      <tr><td>Create a user or change system role</td><td>System Administrator</td></tr>
+      <tr><td>Restore or permanently delete a task</td><td>System Administrator</td></tr>
+      <tr><td>View the all-teams dashboard</td><td>System Administrator</td></tr>
+      <tr><td>Add / remove a team member</td><td>Team Admin or System Administrator</td></tr>
+      <tr><td>Create or complete a sprint</td><td>Team Admin or System Administrator</td></tr>
+      <tr><td>Edit team name / colour</td><td>Team Admin or System Administrator</td></tr>
+      <tr><td>Change another member's team role</td><td>Team Admin or System Administrator</td></tr>
+      <tr><td>Add a new Member to the team</td><td>Team Lead, Team Admin, or System Administrator</td></tr>
+    </tbody>
+  </table>
+
+</div>
+</body>
+</html>

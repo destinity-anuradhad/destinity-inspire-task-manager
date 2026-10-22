@@ -1,0 +1,155 @@
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using TaskTracker.Hubs;
+using TaskTracker.Services;
+
+namespace TaskTracker.Tests.Helpers;
+
+// ── SignalR stubs ─────────────────────────────────────────────────────────────
+
+internal sealed class NullTaskHubContext : IHubContext<TaskHub>
+{
+    public IHubClients Clients { get; } = new NullHubClients();
+    public IGroupManager Groups { get; } = new NullGroupManager();
+}
+
+internal sealed class NullHubClients : IHubClients
+{
+    private static readonly IClientProxy _p = new NullClientProxy();
+    public IClientProxy All => _p;
+    public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => _p;
+    public IClientProxy Client(string connectionId) => _p;
+    public IClientProxy Clients(IReadOnlyList<string> connectionIds) => _p;
+    public IClientProxy Group(string groupName) => _p;
+    public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => _p;
+    public IClientProxy Groups(IReadOnlyList<string> groupNames) => _p;
+    public IClientProxy User(string userId) => _p;
+    public IClientProxy Users(IReadOnlyList<string> userIds) => _p;
+}
+
+internal sealed class NullClientProxy : IClientProxy
+{
+    public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+}
+
+internal sealed class NullGroupManager : IGroupManager
+{
+    public Task AddToGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task RemoveFromGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+// ── Email stub ────────────────────────────────────────────────────────────────
+
+internal sealed class NullEmailService : IEmailService
+{
+    public Task<EmailDeliveryResult> SendAsync(string toEmail, string toName, string subject, string htmlBody)
+        => Task.FromResult(new EmailDeliveryResult(true));
+}
+
+internal sealed class NullEmailQueue : IEmailQueue
+{
+    public Task EnqueueAsync(EmailQueueItem item, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task<TaskTracker.Models.EmailOutboxMessage?> ClaimNextAsync(CancellationToken ct = default)
+        => Task.FromResult<TaskTracker.Models.EmailOutboxMessage?>(null);
+    public Task MarkSentAsync(long id, CancellationToken ct = default) => Task.CompletedTask;
+    public Task MarkFailedAsync(long id, string? error, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<List<TaskTracker.Models.EmailOutboxMessage>> GetRecentAsync(int maxCount = 100, CancellationToken ct = default)
+        => Task.FromResult(new List<TaskTracker.Models.EmailOutboxMessage>());
+    public Task<bool> ReplayAsync(long id, CancellationToken ct = default) => Task.FromResult(false);
+}
+
+// ── Webhook stub ────────────────────────────────────────────────────────────
+
+internal sealed class NullWebhookService : IWebhookService
+{
+    public Task<IReadOnlyList<WebhookSubscriptionSummary>> ListAsync(int? teamId, bool includeGlobal, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<WebhookSubscriptionSummary>>([]);
+    public Task<WebhookCreateResult> CreateAsync(WebhookCreateRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<bool> SetActiveAsync(int id, bool active, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<bool> DeleteAsync(int id, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task PublishAsync(int? teamId, string eventType, object data, string? actor, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<IReadOnlyList<WebhookDeliverySummary>> GetRecentDeliveriesAsync(int? teamId, bool includeGlobal, int maxCount = 100, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<WebhookDeliverySummary>>([]);
+    public Task<bool> ReplayAsync(long deliveryId, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<WebhookDispatch?> ClaimNextAsync(CancellationToken ct = default) => Task.FromResult<WebhookDispatch?>(null);
+    public Task MarkDeliveredAsync(long id, int statusCode, CancellationToken ct = default) => Task.CompletedTask;
+    public Task MarkFailedAsync(long id, int? statusCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+// ── Automation stub ───────────────────────────────────────────────────────────
+
+internal sealed class NullAutomationService : IAutomationService
+{
+    public Task<IReadOnlyList<AutomationRuleSummary>> ListAsync(int? teamId, bool includeGlobal, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AutomationRuleSummary>>([]);
+    public Task<TaskTracker.Models.AutomationRule> CreateAsync(AutomationRuleInput input, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<bool> SetEnabledAsync(int id, bool enabled, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<bool> DeleteAsync(int id, int? teamId, bool isSysAdmin, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<IReadOnlyList<AutomationRunSummary>> GetRecentRunsAsync(int? teamId, bool includeGlobal, int maxCount = 100, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AutomationRunSummary>>([]);
+    public Task RunForEventAsync(TaskTracker.Models.TaskItem task, string eventType, UserCtx ctx, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<int> RunScheduledAsync(CancellationToken ct = default) => Task.FromResult(0);
+    public Task<AutomationPreviewResult> PreviewAsync(int ruleId, int taskId, int? teamId, bool isSysAdmin, CancellationToken ct = default)
+        => Task.FromResult(new AutomationPreviewResult(false, false, false, null, null, ""));
+}
+
+internal sealed class NullChatService : IChatService
+{
+    public Task<IReadOnlyList<ChatMessageDto>> GetMessagesAsync(int teamId, int? beforeId, int take, int? forUserId = null)
+        => Task.FromResult<IReadOnlyList<ChatMessageDto>>([]);
+    public Task<int> CreateMessageAsync(int teamId, int? userId, string senderName, string? body)
+        => Task.FromResult(0);
+    public Task<ChatMessageDto> FinalizeAndBroadcastAsync(int messageId, int teamId, IReadOnlyList<ChatIncomingAttachment> attachments)
+        => Task.FromResult(new ChatMessageDto());
+    public Task<ChatAttachmentFile?> GetAttachmentAsync(int attachmentId, int teamId)
+        => Task.FromResult<ChatAttachmentFile?>(null);
+    public Task<(bool Ok, string? Error)> DeleteMessageAsync(int messageId, int teamId, int? userId, bool isTeamAdmin)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<(bool Ok, string? Error)> EditMessageAsync(int messageId, int teamId, int userId, string newBody)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<(bool Ok, string? Error)> ToggleReactionAsync(int messageId, int teamId, int userId, string emoji)
+        => Task.FromResult<(bool, string?)>((false, null));
+    public Task<IReadOnlyList<string>> GetMemberNamesAsync(int teamId)
+        => Task.FromResult<IReadOnlyList<string>>([]);
+    public Task<IReadOnlyList<ChatFileDto>> GetTeamAttachmentsAsync(int teamId, int take = 120)
+        => Task.FromResult<IReadOnlyList<ChatFileDto>>([]);
+    public Task PostEventAsync(int teamId, int? actorUserId, string actorName, string body, object? meta = null)
+        => Task.CompletedTask;
+}
+
+// ── Factory helpers ───────────────────────────────────────────────────────────
+
+internal static class ServiceFactory
+{
+    public static TaskService CreateTaskService(TaskTracker.Data.AppDbContext db)
+    {
+        var config = new ConfigurationBuilder().Build();
+        var cache  = new MemoryCache(new MemoryCacheOptions());
+        return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), new NullAutomationService(), new NullChatService());
+    }
+
+    public static AutomationService CreateAutomationService(TaskTracker.Data.AppDbContext db)
+        => new AutomationService(db, NullLogger<AutomationService>.Instance);
+
+    // Wires a real automation engine into the task write path so end-to-end firing can be asserted.
+    public static TaskService CreateTaskService(TaskTracker.Data.AppDbContext db, IAutomationService automations)
+    {
+        var config = new ConfigurationBuilder().Build();
+        var cache  = new MemoryCache(new MemoryCacheOptions());
+        return new TaskService(db, config, new NullTaskHubContext(), new NullEmailQueue(),
+            NullLogger<TaskService>.Instance, cache, new NullWebhookService(), automations, new NullChatService());
+    }
+
+    public static ActivityService CreateActivityService(TaskTracker.Data.AppDbContext db)
+        => new ActivityService(db);
+
+    public static UserService CreateUserService(TaskTracker.Data.AppDbContext db)
+        => new UserService(db);
+}

@@ -1,0 +1,219 @@
+@model IReadOnlyList<WebhookSubscriptionSummary>
+@{
+    ViewData["Title"] = "Webhooks";
+    var isSysAdmin = ViewBag.IsSysAdmin as bool? ?? false;
+    var events = ViewBag.AvailableEvents as IReadOnlyList<string> ?? new List<string>();
+    var deliveries = ViewBag.Deliveries as IReadOnlyList<WebhookDeliverySummary> ?? new List<WebhookDeliverySummary>();
+    var newSecret = TempData["NewWebhookSecret"] as string;
+    var newName = TempData["NewWebhookName"] as string;
+    string Badge(string status) => status switch {
+        "Delivered" => "bg-green-50 text-green-600",
+        "Pending" or "Processing" => "bg-amber-50 text-amber-600",
+        "DeadLetter" => "bg-red-50 text-red-600",
+        "Canceled" => "bg-gray-100 text-gray-500",
+        _ => "bg-gray-100 text-gray-500"
+    };
+}
+
+<div class="max-w-5xl mx-auto mt-10 px-4 pb-16">
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-gray-900">Webhooks</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            Receive signed HTTP callbacks on task events@(isSysAdmin ? " (all teams)" : $" for {ViewBag.ActiveTeam}").
+        </p>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+
+    @if (!string.IsNullOrEmpty(newSecret))
+    {
+        <div class="mb-6 p-5 bg-amber-50 border border-amber-300 rounded-2xl">
+            <p class="text-sm font-semibold text-amber-900 mb-1">Signing secret for “@newName”</p>
+            <p class="text-xs text-amber-700 mb-3">Shown once. Store it in your receiver to verify the <code class="font-mono">X-TaskTracker-Signature</code> header.</p>
+            <div class="flex items-center gap-2">
+                <code id="secretValue" class="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-800 break-all">@newSecret</code>
+                <button type="button" onclick="copySecret()" class="px-4 py-2 text-sm btn-primary rounded-lg font-semibold whitespace-nowrap">Copy</button>
+            </div>
+        </div>
+    }
+
+    <!-- Create -->
+    <form method="post" action="/Webhooks/Create" class="bg-white border border-gray-200 rounded-2xl p-6 mb-8 space-y-5">
+        @Html.AntiForgeryToken()
+        <p class="text-sm font-semibold text-gray-800">Add an endpoint</p>
+        <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input type="text" name="name" required maxlength="200" placeholder="e.g. Slack notifier"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Payload URL</label>
+                <input type="url" name="url" required maxlength="2048" placeholder="https://example.com/hooks/tasks"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Events</label>
+            <div class="grid sm:grid-cols-2 gap-2">
+                @foreach (var ev in events)
+                {
+                    <label class="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" name="events" value="@ev" class="h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                        <span class="text-sm font-mono text-gray-700">@ev</span>
+                    </label>
+                }
+            </div>
+        </div>
+        <div class="flex justify-end">
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold">Add webhook</button>
+        </div>
+    </form>
+
+    <!-- Subscriptions -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-8">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50"><p class="text-sm font-semibold text-gray-800">Endpoints</p></div>
+        @if (Model.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No webhooks yet.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Name / URL</th>
+                            <th class="px-4 py-3 font-medium">Events</th>
+                            <th class="px-4 py-3 font-medium">Last</th>
+                            <th class="px-4 py-3 font-medium">State</th>
+                            <th class="px-4 py-3 font-medium"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in Model)
+                        {
+                            <tr class="border-b border-gray-50 @(s.IsActive ? "" : "opacity-60")">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-gray-900">@s.Name</div>
+                                    <div class="text-xs text-gray-400 font-mono break-all">@s.Url</div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var ev in WebhookEvents.Parse(s.EventTypes))
+                                        {
+                                            <span class="inline-block bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 text-[11px] font-mono">@ev</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-gray-500">
+                                    @if (s.LastDeliveryAt != null)
+                                    {
+                                        <span class="inline-block rounded-full px-2 py-0.5 font-medium @Badge(s.LastStatus ?? "")">@s.LastStatus</span>
+                                        <div class="mt-0.5">@s.LastDeliveryAt?.ToString("yyyy-MM-dd HH:mm")</div>
+                                    }
+                                    else { <span>—</span> }
+                                </td>
+                                <td class="px-4 py-3">
+                                    <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium @(s.IsActive ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-500")">
+                                        @(s.IsActive ? "Active" : "Paused")
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <form method="post" action="/Webhooks/ToggleActive" class="inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@s.Id" />
+                                        <input type="hidden" name="active" value="@((!s.IsActive).ToString().ToLower())" />
+                                        <button type="submit" class="text-xs text-[#094f70] hover:underline font-medium">@(s.IsActive ? "Pause" : "Enable")</button>
+                                    </form>
+                                    <form method="post" action="/Webhooks/Delete" class="inline ml-3"
+                                          onsubmit="return confirm('Delete this webhook? Pending deliveries will stop.');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@s.Id" />
+                                        <button type="submit" class="text-xs text-red-600 hover:underline font-medium">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Recent deliveries -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50"><p class="text-sm font-semibold text-gray-800">Recent deliveries</p></div>
+        @if (deliveries.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No deliveries yet.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Event</th>
+                            <th class="px-4 py-3 font-medium">Endpoint</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                            <th class="px-4 py-3 font-medium">Attempts</th>
+                            <th class="px-4 py-3 font-medium">Response</th>
+                            <th class="px-4 py-3 font-medium">When</th>
+                            <th class="px-4 py-3 font-medium"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in deliveries)
+                        {
+                            <tr class="border-b border-gray-50">
+                                <td class="px-6 py-3 font-mono text-xs text-gray-700">@d.EventType</td>
+                                <td class="px-4 py-3 text-gray-600">@d.SubscriptionName</td>
+                                <td class="px-4 py-3">
+                                    <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium @Badge(d.Status)">@d.Status</span>
+                                </td>
+                                <td class="px-4 py-3 text-gray-500">@d.AttemptCount</td>
+                                <td class="px-4 py-3 text-xs text-gray-500">
+                                    @(d.ResponseStatusCode?.ToString() ?? "—")
+                                    @if (!string.IsNullOrEmpty(d.LastError))
+                                    {
+                                        <span class="block text-red-500 truncate max-w-[220px]" title="@d.LastError">@d.LastError</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-xs text-gray-500">@d.CreatedAt.ToString("MM-dd HH:mm")</td>
+                                <td class="px-4 py-3 text-right">
+                                    @if (d.Status is "DeadLetter" or "Canceled")
+                                    {
+                                        <form method="post" action="/Webhooks/Replay" class="inline">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="deliveryId" value="@d.Id" />
+                                            <button type="submit" class="text-xs text-[#094f70] hover:underline font-medium">Replay</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<script>
+    function copySecret() {
+        const el = document.getElementById('secretValue');
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+            const btn = event.target; const original = btn.textContent;
+            btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = original; }, 1500);
+        });
+    }
+</script>

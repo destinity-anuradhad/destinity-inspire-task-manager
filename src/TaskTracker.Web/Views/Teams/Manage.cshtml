@@ -1,0 +1,255 @@
+@model TaskTracker.Models.Team
+@using TaskTracker.Services
+@{
+    ViewData["Title"] = $"Manage · {Model.Name}";
+    var members    = ViewBag.Members    as List<MemberItem> ?? [];
+    var nonMembers = ViewBag.NonMembers as List<TaskTracker.Models.AppUser> ?? [];
+    var isSysAdmin     = (bool)(ViewBag.IsSysAdmin ?? false);
+    var callerTeamRole = ViewBag.CallerTeamRole as string ?? "Member";
+    var canCreateUsers = isSysAdmin || callerTeamRole is "TeamAdmin" or "TeamLead";
+
+    string RoleBadge(string role) => role switch {
+        "TeamAdmin" => "bg-purple-100 text-purple-700 border-purple-200",
+        "TeamLead"  => "bg-blue-100 text-blue-700 border-blue-200",
+        _           => "bg-gray-100 text-gray-600 border-gray-200",
+    };
+    string Initials(string name) => string.Join("", name.Split(' ').Take(2).Select(w => w.Length > 0 ? w[0].ToString().ToUpper() : ""));
+}
+
+<div class="page-hd">
+    <div class="page-hd-left">
+        <h1>@Model.Name</h1>
+        <p>
+            <a href="/Teams" class="hover:underline">Teams</a>
+            <span class="mx-1">›</span>
+            Team Settings
+        </p>
+    </div>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3">
+
+    <!-- Team Info -->
+    <div class="bg-white rounded-2xl border border-gray-200 p-6">
+        <div class="h-16 rounded-xl mb-4" style="background:@Model.Color;"></div>
+        <h2 class="font-bold text-gray-900 text-lg mb-1">@Model.Name</h2>
+        @if (!string.IsNullOrEmpty(Model.Description))
+        {
+            <p class="text-sm text-gray-500 mb-4">@Model.Description</p>
+        }
+        <p class="text-xs text-gray-400 mb-6">Created @Model.CreatedAt.ToString("dd MMM yyyy")@(!string.IsNullOrEmpty(Model.CreatedBy) ? $" by {Model.CreatedBy}" : "")</p>
+
+        <form method="post" action="/Teams/Edit" class="space-y-3">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@Model.Id"/>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                <input name="name" value="@Model.Name" required
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <input name="description" value="@Model.Description"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Color</label>
+                <input type="color" name="color" value="@Model.Color"
+                       class="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer p-0.5"/>
+            </div>
+            <button type="submit"
+                    class="w-full py-2.5 rounded-lg text-sm font-semibold text-white mt-2"
+                    style="background:#094f70;">
+                Save Changes
+            </button>
+        </form>
+
+        @if (isSysAdmin)
+        {
+            <div class="border-t border-gray-100 mt-4 pt-4">
+                <form method="post" action="/Teams/ToggleActive"
+                      onsubmit="return confirm('@(Model.IsActive ? "Deactivate" : "Activate") this team?')">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="id" value="@Model.Id"/>
+                    <button type="submit"
+                            class="w-full py-2 rounded-lg text-xs font-semibold border transition-colors @(Model.IsActive ? "border-red-200 text-red-600 hover:bg-red-50" : "border-green-200 text-green-600 hover:bg-green-50")">
+                        @(Model.IsActive ? "Deactivate Team" : "Activate Team")
+                    </button>
+                </form>
+            </div>
+        }
+    </div>
+
+    <!-- Members -->
+    <div class="lg:col-span-2 space-y-4">
+
+        <!-- Add member -->
+        @if (nonMembers.Any())
+        {
+            <div class="bg-white rounded-2xl border border-gray-200 p-5">
+                <h3 class="font-semibold text-gray-900 mb-4 text-sm">Add Member</h3>
+                <form method="post" action="/Teams/AddMember" class="flex gap-3 flex-wrap">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="teamId" value="@Model.Id"/>
+                    <select name="userId" class="flex-1 min-w-[160px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]">
+                        @foreach (var u in nonMembers)
+                        {
+                            <option value="@u.Id">@u.DisplayName (@u.Username)</option>
+                        }
+                    </select>
+                    <select name="teamRole" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]">
+                        <option value="Member">Member</option>
+                        <option value="TeamLead">Team Lead</option>
+                        <option value="TeamAdmin">Team Admin</option>
+                    </select>
+                    <button type="submit"
+                            class="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                            style="background:#094f70;">
+                        Add
+                    </button>
+                </form>
+            </div>
+        }
+
+        <!-- Create new user -->
+        @if (canCreateUsers)
+        {
+            <div class="bg-white rounded-2xl border border-gray-200 p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-gray-900 text-sm">Create New User</h3>
+                    <button type="button" onclick="document.getElementById('cuForm').classList.toggle('hidden')"
+                            class="text-xs text-[#094f70] hover:underline font-medium">Show / Hide</button>
+                </div>
+                <div id="cuForm" class="hidden">
+                    <form method="post" action="/Teams/CreateUser" class="space-y-3">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="teamId" value="@Model.Id"/>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Full Name <span class="text-red-400">*</span></label>
+                                <input type="text" name="displayName" required placeholder="e.g. Kaviya S."
+                                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Username <span class="text-red-400">*</span></label>
+                                <input type="text" name="username" required placeholder="e.g. kaviyas"
+                                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Email <span class="text-gray-300">(optional)</span></label>
+                                <input type="email" name="userEmail" placeholder="user@example.com"
+                                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Password <span class="text-red-400">*</span></label>
+                                <input type="password" name="password" required placeholder="Min. 8 chars"
+                                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70]"/>
+                            </div>
+                        </div>
+                        <div class="flex items-end gap-3">
+                            <div class="flex-1">
+                                <label class="block text-xs text-gray-500 mb-1">Team Role</label>
+                                <select name="teamRole"
+                                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#094f70] bg-white">
+                                    @if (isSysAdmin || callerTeamRole == "TeamAdmin")
+                                    {
+                                        <option value="Member">Member</option>
+                                        <option value="TeamLead">Team Lead</option>
+                                    }
+                                    @if (isSysAdmin)
+                                    {
+                                        <option value="TeamAdmin">Team Admin</option>
+                                    }
+                                    @if (callerTeamRole == "TeamLead" && !isSysAdmin)
+                                    {
+                                        <option value="Member" selected>Member</option>
+                                    }
+                                </select>
+                            </div>
+                            <button type="submit"
+                                    class="px-5 py-2 rounded-lg text-sm font-semibold text-white flex-shrink-0"
+                                    style="background:#094f70;">
+                                Create &amp; Add
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+
+        <!-- Member list -->
+        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900 text-sm">Members (@members.Count)</h3>
+            </div>
+            @if (!members.Any())
+            {
+                <div class="py-12 text-center text-gray-400 text-sm">No members yet.</div>
+            }
+            else
+            {
+                <div class="divide-y divide-gray-50">
+                    @foreach (var m in members)
+                    {
+                        <div class="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50/50">
+                            @if (!string.IsNullOrEmpty(m.ImagePath))
+                            {
+                                <img src="@m.ImagePath" class="w-9 h-9 rounded-full object-cover flex-shrink-0"/>
+                            }
+                            else
+                            {
+                                <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                                     style="background:@(m.Color ?? "#3b82f6")">@Initials(m.DisplayName)</div>
+                            }
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-gray-900 truncate">@m.DisplayName</p>
+                                <p class="text-xs text-gray-400">@m.Username · Joined @m.JoinedAt.ToString("dd MMM yyyy")</p>
+                            </div>
+                            @if (m.SystemRole == "Admin")
+                            {
+                                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">SysAdmin</span>
+                            }
+                            @{
+                                var canEditMember = isSysAdmin || m.SystemRole != "Admin";
+                            }
+                            <!-- Role change — locked for SysAdmin rows unless viewer is SysAdmin -->
+                            @if (canEditMember)
+                            {
+                                <form method="post" action="/Teams/UpdateRole" class="flex-shrink-0">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="teamId" value="@Model.Id"/>
+                                    <input type="hidden" name="userId" value="@m.UserId"/>
+                                    <select name="teamRole" onchange="this.form.submit()"
+                                            class="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#094f70] @RoleBadge(m.TeamRole)">
+                                        @Html.Raw($"<option value='Member'{(m.TeamRole=="Member" ? " selected" : "")}>Member</option>")
+                                        @Html.Raw($"<option value='TeamLead'{(m.TeamRole=="TeamLead" ? " selected" : "")}>Team Lead</option>")
+                                        @Html.Raw($"<option value='TeamAdmin'{(m.TeamRole=="TeamAdmin" ? " selected" : "")}>Team Admin</option>")
+                                    </select>
+                                </form>
+                                <!-- Remove -->
+                                <form method="post" action="/Teams/RemoveMember"
+                                      onsubmit="return confirm('Remove @m.DisplayName from this team?')">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="teamId" value="@Model.Id"/>
+                                    <input type="hidden" name="userId" value="@m.UserId"/>
+                                    <button type="submit"
+                                            class="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            }
+                            else
+                            {
+                                <span class="text-[10px] text-gray-400 italic px-2">protected</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>

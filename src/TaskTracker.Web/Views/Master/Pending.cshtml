@@ -1,0 +1,118 @@
+@model List<TaskTracker.Models.AppUser>
+@{
+    ViewData["Title"] = "Pending Approvals";
+    var teamNames = ViewBag.TeamNames as Dictionary<int, string> ?? new();
+    string Initials(string name) => string.Join("", name.Split(' ').Take(2).Select(w => w.Length > 0 ? w[0].ToString().ToUpper() : ""));
+}
+
+<div class="flex items-center justify-between mb-6">
+    <div>
+        <h1 class="text-xl font-bold text-gray-900">Pending Approvals</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Review and approve new user registration requests</p>
+    </div>
+    <a href="/Master" class="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        Master Files
+    </a>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="bg-white rounded-2xl border border-gray-200 py-20 text-center">
+        <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+            <svg class="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+        </div>
+        <p class="text-gray-500 font-medium">No pending registrations</p>
+        <p class="text-sm text-gray-400 mt-1">All registration requests have been reviewed.</p>
+    </div>
+}
+else
+{
+    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-amber-50 flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+            <span class="text-sm font-semibold text-amber-800">@Model.Count pending request@(Model.Count == 1 ? "" : "s")</span>
+        </div>
+
+        <div class="divide-y divide-gray-50">
+            @foreach (var u in Model)
+            {
+                var teamName = u.RequestedTeamId.HasValue && teamNames.ContainsKey(u.RequestedTeamId.Value)
+                    ? teamNames[u.RequestedTeamId.Value] : null;
+
+                <div class="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-5">
+                    <!-- Avatar -->
+                    <div class="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                         style="background:#094f70">@Initials(u.DisplayName)</div>
+
+                    <!-- Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex flex-wrap items-center gap-2 mb-0.5">
+                            <p class="text-sm font-semibold text-gray-900">@u.DisplayName</p>
+                            <span class="text-xs text-gray-400">@@</span>
+                            <p class="text-sm text-gray-500">@u.Username</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+                            @if (!string.IsNullOrEmpty(u.Email))
+                            {
+                                <span class="flex items-center gap-1">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    @u.Email
+                                </span>
+                            }
+                            @if (teamName != null)
+                            {
+                                <span class="flex items-center gap-1">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    </svg>
+                                    Requested: @teamName
+                                </span>
+                            }
+                            <span>Registered @u.CreatedAt.ToString("dd MMM yyyy, HH:mm")</span>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <form method="post" action="/Master/Approve"
+                              onsubmit="return confirm('Approve @u.DisplayName and add them to @(teamName ?? "no team")?')">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@u.Id"/>
+                            <button type="submit"
+                                    class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
+                                    style="background:#094f70"
+                                    onmouseover="this.style.background='#063d57'"
+                                    onmouseout="this.style.background='#094f70'">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Approve
+                            </button>
+                        </form>
+                        <form method="post" action="/Master/Reject"
+                              onsubmit="return confirm('Reject @u.DisplayName\'s registration request?')">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@u.Id"/>
+                            <button type="submit"
+                                    class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                Reject
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}

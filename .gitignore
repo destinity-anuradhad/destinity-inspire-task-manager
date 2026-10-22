@@ -1,3 +1,12 @@
+# Local dev secrets — never commit real values
+src/TaskTracker.Web/appsettings.Development.json
+
+# Local agent metadata and runtime-uploaded user content
+.claude/
+src/TaskTracker.Web/wwwroot/uploads/
+# Attachments now live outside the web root (default App_Data/attachments)
+src/TaskTracker.Web/App_Data/
+
 # .NET build output
 bin/
 obj/
@@ -6,9 +15,13 @@ obj/
 .vs/
 *.userprefs
 
-# Publish output
+# Publish output (incl. versioned publish-vX.Y.Z folders — build artifacts, not source)
 publish/
+publish-*/
 out/
+
+# Security audit that names live credentials — do not publish
+docs/audit-report.html
 
 # Runtime / logs
 *.log
@@ -30,20 +43,31 @@ Thumbs.db
 .nuget/
 
 # Third-party frontend libraries (restored via libman/npm)
-webapp/wwwroot/lib/
+src/TaskTracker.Web/wwwroot/lib/
 
 # EF migrations snapshot duplicates (keep migrations folder)
 # Uncomment if you want to exclude: **/Migrations/
 
-# Node / Vite / React (separate project — not part of the .NET app)
+# Legacy Vite/React frontend root files (no longer in repo)
 node_modules/
 dist/
-src/
 server/
 public/
 index.html
 vite.config.js
 eslint.config.js
-package.json
-package-lock.json
-README.md
+
+
+# Web project npm (keep package.json tracked; ignore generated/installed files)
+src/TaskTracker.Web/node_modules/
+src/TaskTracker.Web/package-lock.json
+src/TaskTracker.Web/wwwroot/css/app.css
+
+# Scratch / dead weight directories (data research, playwright test rig)
+data/
+test/
+tools/*
+!tools/phase0/
+!tools/phase0/*.sql
+!tools/loadtest/
+!tools/loadtest/*

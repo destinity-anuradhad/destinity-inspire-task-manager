@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Administrator Manual — Task Tracker</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; background: #f8fafc; }
+  .page { max-width: 860px; margin: 0 auto; background: #fff; padding: 48px 56px; min-height: 100vh; }
+  .cover { border-bottom: 3px solid #0f4c81; padding-bottom: 32px; margin-bottom: 40px; }
+  .role-badge { display: inline-block; background: #0f4c81; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; margin-bottom: 12px; }
+  .cover h1 { font-size: 28px; font-weight: 700; color: #0f4c81; }
+  .cover p { color: #64748b; margin-top: 4px; font-size: 14px; }
+  h2 { font-size: 18px; font-weight: 700; color: #0f4c81; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+  h3 { font-size: 15px; font-weight: 600; color: #1e293b; margin: 20px 0 8px; }
+  p { margin-bottom: 10px; }
+  ul, ol { padding-left: 22px; margin-bottom: 10px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+  th { background: #f1f5f9; color: #475569; font-weight: 600; text-align: left; padding: 8px 12px; border: 1px solid #e2e8f0; }
+  td { padding: 7px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  blockquote { border-left: 3px solid #0f4c81; background: #eff6ff; padding: 10px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: 14px; color: #1e3a5f; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 13px; font-family: "Consolas", monospace; color: #0f4c81; }
+  strong { font-weight: 600; }
+  .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px; margin-bottom: 36px; }
+  .toc h3 { margin-top: 0; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+  .toc ol { margin: 0; }
+  .toc li { font-size: 14px; margin-bottom: 2px; }
+  .toc a { color: #0f4c81; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  @media print { body { background: #fff; } .page { padding: 20px; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="role-badge">System Administrator</div>
+    <h1>Task Tracker — User Manual</h1>
+    <p>Team Destinity Inspire &nbsp;|&nbsp; Scienter Technologies PTE LTD</p>
+  </div>
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#role">Your Role</a></li>
+      <li><a href="#login">Logging In</a></li>
+      <li><a href="#views">Global View vs. Team View</a></li>
+      <li><a href="#nav">Navigation</a></li>
+      <li><a href="#master">Master Files</a></li>
+      <li><a href="#teams">Team Management</a></li>
+      <li><a href="#tasks">Tasks</a></li>
+      <li><a href="#sprints">Sprints</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#charts">Charts</a></li>
+      <li><a href="#activity">Activity Log</a></li>
+      <li><a href="#profile">Profile &amp; Notifications</a></li>
+      <li><a href="#quickref">Quick Reference</a></li>
+    </ol>
+  </div>
+
+  <h2 id="role">1. Your Role</h2>
+  <p>As a <strong>System Administrator (SysAdmin)</strong>, you have unrestricted access to the entire application. You manage users, teams, and system settings. You can view and act on data across all teams simultaneously (Global View) or switch into any individual team to work alongside its members.</p>
+
+  <h2 id="login">2. Logging In</h2>
+  <ol>
+    <li>Open the app in your browser.</li>
+    <li>Enter your <strong>username</strong> and <strong>password</strong>.</li>
+    <li>Complete the reCAPTCHA check.</li>
+    <li>Click <strong>Login</strong>.</li>
+  </ol>
+  <p>If this is your first login with a system-assigned password, you will be prompted to set a new password immediately before proceeding.</p>
+
+  <h2 id="views">3. Global View vs. Team View</h2>
+  <p>After login you are placed in <strong>Global View</strong> — you see tasks and data across all teams simultaneously.</p>
+  <p>To switch into a specific team, click your name/team indicator in the top navigation bar and select a team from the dropdown. The page you are on stays open; only the data scope changes.</p>
+  <p>To return to Global View, open the same dropdown and select <strong>Global View</strong>.</p>
+  <blockquote><strong>Tip:</strong> Use Global View for system-level tasks (user management, team creation). Switch into a team when you want to work on tasks or sprints alongside that team.</blockquote>
+
+  <h2 id="nav">4. Navigation</h2>
+  <table>
+    <tr><th>Item</th><th>Purpose</th></tr>
+    <tr><td><strong>Dashboard</strong></td><td>Personal task stats and, in team view, team performance</td></tr>
+    <tr><td><strong>Tasks</strong></td><td>Full task list with all views and filters</td></tr>
+    <tr><td><strong>Sprints</strong></td><td>Sprint planning and management</td></tr>
+    <tr><td><strong>Charts</strong></td><td>Visual analytics for the current scope</td></tr>
+    <tr><td><strong>Teams</strong></td><td>Manage all teams (SysAdmin only)</td></tr>
+    <tr><td><strong>Master</strong></td><td>User accounts and system settings (SysAdmin only)</td></tr>
+    <tr><td><strong>Activity</strong></td><td>System-wide activity log</td></tr>
+    <tr><td><strong>Recycle Bin</strong></td><td>Deleted tasks — restore or permanently remove</td></tr>
+  </table>
+
+  <h2 id="master">5. Master Files (<code>/Master</code>)</h2>
+  <p>Master Files is your primary user management area.</p>
+
+  <h3>Viewing Users</h3>
+  <p>All registered users are listed with their display name, username, email, system role (SysAdmin or Member), status (Active / Pending / Rejected), and current team assignments.</p>
+
+  <h3>Creating a New User</h3>
+  <ol>
+    <li>Click <strong>New User</strong> (top right).</li>
+    <li>Fill in:
+      <ul>
+        <li><strong>Full Name</strong> — displayed throughout the app</li>
+        <li><strong>Username</strong> — used for login (lowercase, unique)</li>
+        <li><strong>Email</strong> — optional; required for email notifications</li>
+        <li><strong>Password</strong> — minimum 8 characters</li>
+        <li><strong>System Role</strong> — Member (default) or SysAdmin</li>
+        <li><strong>Assign to Team</strong> — optionally place the user in a team immediately</li>
+        <li><strong>Avatar Color</strong> — pick a colour for the user's initials avatar</li>
+      </ul>
+    </li>
+    <li>Click <strong>Create User</strong>.</li>
+  </ol>
+  <p>The account is created as Active immediately — no approval step.</p>
+
+  <h3>Editing a User</h3>
+  <p>Click the <strong>edit icon</strong> (pencil) on any user row. You can change: display name, username, system role (Member ↔ SysAdmin), and avatar colour.</p>
+
+  <h2 id="teams">6. Team Management (<code>/Teams</code>)</h2>
+  <p>The Teams list is visible only to SysAdmins.</p>
+
+  <h3>Creating a Team</h3>
+  <ol>
+    <li>Go to <strong>Teams</strong>.</li>
+    <li>Click <strong>New Team</strong>.</li>
+    <li>Enter the team name, optional description, and brand colour.</li>
+    <li>Click <strong>Create</strong>. You are taken to the Manage page for the new team.</li>
+  </ol>
+
+  <h3>Managing a Team (<code>/Teams/Manage/{id}</code>)</h3>
+  <p>From any team's Manage page you can:</p>
+  <ul>
+    <li><strong>Edit team details</strong> — name, description, colour (left panel).</li>
+    <li><strong>Add existing users</strong> — select any active system user and assign a team role (Member, Team Lead, or Team Admin).</li>
+    <li><strong>Create a new user directly into the team</strong> — expand "Create New User", fill in details, and the user is created system-wide and added to this team in one step.</li>
+    <li><strong>Change member roles</strong> — use the role dropdown next to any member name.</li>
+    <li><strong>Remove members</strong> — click the × button next to a member.</li>
+    <li><strong>Deactivate / Reactivate a team</strong> — "Deactivate Team" button at the bottom of the team info panel. Deactivated teams are hidden from team selection.</li>
+  </ul>
+
+  <h2 id="tasks">7. Tasks</h2>
+
+  <h3>Viewing Tasks</h3>
+  <table>
+    <tr><th>View</th><th>Best for</th></tr>
+    <tr><td><strong>Table</strong></td><td>Sorting and scanning all tasks</td></tr>
+    <tr><td><strong>Board</strong></td><td>Status columns (Kanban-style)</td></tr>
+    <tr><td><strong>Kanban</strong></td><td>Swimlane-based workflow</td></tr>
+    <tr><td><strong>Calendar</strong></td><td>Deadline-oriented scheduling</td></tr>
+    <tr><td><strong>Backlog</strong></td><td>Sprint planning</td></tr>
+    <tr><td><strong>Team</strong></td><td>Who is working on what</td></tr>
+  </table>
+
+  <h3>Filtering Tasks</h3>
+  <p>Click <strong>Show filters</strong> to open the filter bar. Filter by keyword, module, client, owner, status, priority, or date range. Filters remain active while you navigate between views.</p>
+
+  <h3>Creating a Task</h3>
+  <ol>
+    <li>Click <strong>New Task</strong>.</li>
+    <li>Required: <strong>Goal</strong> and <strong>Project</strong>.</li>
+    <li>Optional: Client, Priority, Owner(s), Target Date, Start Date, Sprint, Item Type, Parent Task, Weight, Labels, Notes, Acceptance Criteria, Reporter.</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Deleting and Restoring Tasks</h3>
+  <ul>
+    <li>To delete: open the task canvas and click <strong>Delete</strong>, or use checkbox + <strong>Bulk Delete</strong>.</li>
+    <li>Deleted tasks go to the <strong>Recycle Bin</strong>.</li>
+    <li>In the Recycle Bin you can <strong>Restore</strong>, <strong>Permanently Delete</strong>, or <strong>Empty the Bin</strong>.</li>
+  </ul>
+  <blockquote>Only SysAdmins can restore or permanently delete from the Recycle Bin.</blockquote>
+
+  <h3>Bulk Operations</h3>
+  <p>Check multiple tasks to access: Change Status, Change Owner, Assign to Sprint, Change Priority, Delete.</p>
+
+  <h2 id="sprints">8. Sprints</h2>
+  <ul>
+    <li><strong>Create</strong> — name, start date, end date, optional goal.</li>
+    <li><strong>Set Active</strong> — only one sprint can be active at a time.</li>
+    <li><strong>Complete Sprint</strong> — closes the sprint; incomplete tasks move to backlog.</li>
+    <li><strong>Manage Capacity</strong> — set daily capacity per team member.</li>
+    <li><strong>Delete Sprint</strong> — permanently removes the sprint record.</li>
+  </ul>
+
+  <h2 id="dashboard">9. Dashboard</h2>
+
+  <h3>My Dashboard</h3>
+  <p>Personal task statistics: total, done, in progress, open, overdue tasks, and recent activity.</p>
+
+  <h3>Team Dashboard</h3>
+  <p>When in a team view, click <strong>Team Performance</strong> to see team-level stats: status distribution, project breakdown, owner workload, recent activity.</p>
+
+  <h3>All Teams Dashboard (<code>/Dashboard/Teams</code>)</h3>
+  <p>Available only in Global View. Shows a high-level performance summary across all teams.</p>
+
+  <h2 id="charts">10. Charts</h2>
+  <ul>
+    <li>Task velocity over sprints</li>
+    <li>Status distribution pie chart</li>
+    <li>Priority breakdown</li>
+    <li>Owner workload</li>
+    <li>Project and property distribution</li>
+  </ul>
+
+  <h2 id="activity">11. Activity Log</h2>
+  <p>Full audit trail of all changes: who did what, when, on which task. Filterable by date and action type.</p>
+
+  <h2 id="profile">12. Profile &amp; Notifications</h2>
+  <p>Go to your <strong>avatar/name</strong> in the top-right to access your profile.</p>
+  <ul>
+    <li><strong>Email</strong> — update your email address (used for notifications).</li>
+    <li><strong>Change Password</strong> — enter current password and set a new one (min 8 characters).</li>
+    <li><strong>Notification Preferences</strong> — enable/disable: assigned tasks, comments, blocked tasks.</li>
+  </ul>
+  <p>The <strong>notification bell</strong> (🔔) in the top bar shows unread notifications. Click to view and mark as read.</p>
+
+  <h2 id="quickref">13. Quick Reference — SysAdmin Exclusive Actions</h2>
+  <table>
+    <tr><th>Action</th><th>Location</th></tr>
+    <tr><td>Create / edit users</td><td>Master Files</td></tr>
+    <tr><td>Create / deactivate teams</td><td>Teams</td></tr>
+    <tr><td>View all teams</td><td>Teams</td></tr>
+    <tr><td>Restore deleted tasks</td><td>Recycle Bin</td></tr>
+    <tr><td>Permanently delete tasks</td><td>Recycle Bin</td></tr>
+    <tr><td>Empty recycle bin</td><td>Recycle Bin</td></tr>
+    <tr><td>Switch to Global View</td><td>Team switcher (top nav)</td></tr>
+    <tr><td>View all-teams dashboard</td><td>Dashboard → Teams (Global View)</td></tr>
+  </table>
+
+</div>
+</body>
+</html>

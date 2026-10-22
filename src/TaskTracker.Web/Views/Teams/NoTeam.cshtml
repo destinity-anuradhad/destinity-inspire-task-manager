@@ -1,0 +1,33 @@
+@{ Layout = null; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>No Team – Team Destinity Inspire</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/brand.css"/>
+</head>
+<body class="min-h-screen flex items-center justify-center" style="background:#f1f5f9;">
+<div class="text-center max-w-sm mx-auto px-6">
+    <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-6">
+        <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+    </div>
+    <h1 class="text-xl font-bold text-gray-900 mb-2">No Team Assigned</h1>
+    <p class="text-gray-500 text-sm mb-8">
+        You haven't been added to any team yet.<br/>
+        Please contact your System Administrator.
+    </p>
+    <form method="post" action="/Account/Logout">
+        @Html.AntiForgeryToken()
+        <button type="submit"
+                class="px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-colors"
+                style="background:#094f70;">
+            Sign Out
+        </button>
+    </form>
+</div>
+</body>
+</html>

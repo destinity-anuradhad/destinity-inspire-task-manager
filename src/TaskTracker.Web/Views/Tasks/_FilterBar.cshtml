@@ -1,0 +1,239 @@
+@model TaskTracker.Models.ViewModels.TaskListViewModel
+@using TaskTracker.Models.ViewModels
+@{
+    var myDisplayName = User.FindFirst("DisplayName")?.Value ?? User.Identity?.Name ?? "";
+    string ViewUrl(string v) => Url.Action("Index", new {
+        search=Model.Search, project=Model.Project, property=Model.Property,
+        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        dateFrom=Model.DateFrom, dateTo=Model.DateTo,
+        pageSize=Model.PageSize, view=v, calYear=Model.CalYear, calMonth=Model.CalMonth
+    }) ?? "#";
+    string exportUrl = Url.Action("Export", new {
+        search=Model.Search, project=Model.Project, property=Model.Property,
+        owner=Model.Owner, status=Model.Status, priority=Model.Priority,
+        dateFrom=Model.DateFrom, dateTo=Model.DateTo
+    }) ?? "#";
+}
+
+    <!-- ── Header ── -->
+    <div class="page-hd">
+        <div class="page-hd-left">
+            <h1>Tasks</h1>
+            <p>@Model.TotalCount task@(Model.TotalCount != 1 ? "s" : "") total</p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex rounded-lg border border-gray-200 bg-white overflow-hidden text-sm">
+                <a href="@ViewUrl("table")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 transition-colors @(Model.ViewMode=="table"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 6h18M3 14h18M3 18h18"/></svg>
+                    Table
+                </a>
+                <a href="@ViewUrl("kanban")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-x border-gray-200 transition-colors @(Model.ViewMode=="kanban"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+                    Kanban
+                </a>
+                <a href="@ViewUrl("calendar")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 transition-colors @(Model.ViewMode=="calendar"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h7M3 12h11M3 16h8M12 8h9M16 12h5M13 16h8"/></svg>
+                    Timeline
+                </a>
+                <a href="@ViewUrl("team")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-l border-gray-200 transition-colors @(Model.ViewMode=="team"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Team
+                </a>
+                <a href="@ViewUrl("backlog")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-l border-gray-200 transition-colors @(Model.ViewMode=="backlog"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10M4 18h6"/></svg>
+                    Backlog
+                </a>
+                <a href="@ViewUrl("board")"
+                   class="flex items-center gap-1.5 px-3 py-1.5 border-l border-gray-200 transition-colors @(Model.ViewMode=="board"?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-50")">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+                    Sprint Board
+                </a>
+            </div>
+            <a href="@exportUrl"
+               class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                CSV
+            </a>
+            <a href="/Tasks/RecycleBin"
+               class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-500 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+               title="Recycle Bin">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Bin
+            </a>
+            <button onclick="openCanvas(null)"
+                    class="inline-flex items-center gap-2 btn-accent text-sm px-4 py-1.5 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Task
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ── Filter Toggle ── -->
+    <div class="flex items-center">
+        <button id="filter-toggle-btn" onclick="toggleFilterBar()"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/></svg>
+            <span id="filter-toggle-label">Show filters</span>
+        </button>
+    </div>
+
+    <!-- ── Filter Bar ── -->
+    <div id="filter-bar-wrap" class="hidden">
+    <form method="get" action="/Tasks" class="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap gap-2 items-end">
+        <input type="hidden" name="view"     value="@Model.ViewMode" />
+        <input type="hidden" name="sort"     value="@Model.Sort" />
+        <input type="hidden" name="sortDir"  value="@Model.SortDir" />
+        <input type="hidden" name="calYear"  value="@Model.CalYear" />
+        <input type="hidden" name="calMonth" value="@Model.CalMonth" />
+        <div class="min-w-36">
+            <label for="filter-project" class="block text-xs font-medium text-gray-500 mb-1">Module</label>
+            <select id="filter-project" name="project" data-searchable asp-items="@(new SelectList(Model.Projects,"Name","Name",Model.Project))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Modules</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label for="filter-property" class="block text-xs font-medium text-gray-500 mb-1">Client</label>
+            <select id="filter-property" name="property" data-searchable asp-items="@(new SelectList(Model.Properties,"Name","Name",Model.Property))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Clients</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label for="filter-owner" class="block text-xs font-medium text-gray-500 mb-1">Assignee</label>
+            <select id="filter-owner" name="owner" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <option value="">All assignees</option>
+                @foreach (var o in Model.Owners)
+                {
+                    var sel = o.Name == Model.Owner ? "selected" : null;
+                    <option value="@o.Name" selected="@sel">@o.Name</option>
+                }
+            </select>
+        </div>
+        <div class="min-w-32">
+            <label for="filter-status" class="block text-xs font-medium text-gray-500 mb-1">Status</label>
+            <select id="filter-status" name="status" data-searchable class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Status</option>
+                @foreach (var ws in Model.WorkStates)
+                {
+                    <option value="@ws.Name" selected="@(Model.Status == ws.Name ? "selected" : null)">@ws.Name</option>
+                }
+            </select>
+        </div>
+        <div class="min-w-28">
+            <label for="filter-priority" class="block text-xs font-medium text-gray-500 mb-1">Priority</label>
+            <select id="filter-priority" name="priority" asp-items="@(new SelectList(TaskListViewModel.AllPriorities.Select(p=>new SelectListItem(p,p)),"Value","Text",Model.Priority))"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">All Priority</option>
+            </select>
+        </div>
+        <div class="min-w-36">
+            <label for="filter-dateFrom" class="block text-xs font-medium text-gray-500 mb-1">Target Date From</label>
+            <input id="filter-dateFrom" type="date" name="dateFrom" value="@Model.DateFrom"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div class="min-w-36">
+            <label for="filter-dateTo" class="block text-xs font-medium text-gray-500 mb-1">Target Date To</label>
+            <input id="filter-dateTo" type="date" name="dateTo" value="@Model.DateTo"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <input type="hidden" name="pageSize" value="@Model.PageSize" />
+        <div class="flex gap-2">
+            <button type="submit" class="btn-primary text-sm font-medium px-4 py-1.5 rounded-lg">Filter</button>
+            <a href="@Url.Action("Index", new { owner=myDisplayName, search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="@(Model.Owner == myDisplayName ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">My Tasks</a>
+            <a href="@Url.Action("Index", new { owner="", search=Model.Search, project=Model.Project, property=Model.Property, status=Model.Status, priority=Model.Priority, dateFrom=Model.DateFrom, dateTo=Model.DateTo, pageSize=Model.PageSize, view=Model.ViewMode, calYear=Model.CalYear, calMonth=Model.CalMonth })"
+               class="@(string.IsNullOrEmpty(Model.Owner) ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-gray-100 hover:bg-gray-200 text-gray-700") text-sm font-medium px-4 py-1.5 rounded-lg transition-colors">All Tasks</a>
+            <button type="button" onclick="saveCurrentQuery()"
+                    class="inline-flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                    title="Save current filters as a named query">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                </svg>
+                Save as Query
+            </button>
+        </div>
+    </form>
+
+    </div>
+
+    <script>
+    function quickFilterClient(name, e) {
+        if (e) e.stopPropagation();
+        const p = new URLSearchParams(location.search);
+        p.set('property', name); p.set('page', '1');
+        location.href = '/Tasks?' + p.toString();
+    }
+    function quickFilterModule(name, e) {
+        if (e) e.stopPropagation();
+        const p = new URLSearchParams(location.search);
+        p.set('project', name); p.set('page', '1');
+        location.href = '/Tasks?' + p.toString();
+    }
+    function toggleFilterBar() {
+        const wrap  = document.getElementById('filter-bar-wrap');
+        const label = document.getElementById('filter-toggle-label');
+        const open  = wrap.classList.toggle('hidden');
+        label.textContent = open ? 'Show filters' : 'Hide filters';
+    }
+    // Auto-open if any filter param is active
+    (function() {
+        const p = new URLSearchParams(location.search);
+        const active = ['project','property','owner','status','priority','dateFrom','dateTo'].some(k => p.get(k));
+        if (active) {
+            document.getElementById('filter-bar-wrap').classList.remove('hidden');
+            document.getElementById('filter-toggle-label').textContent = 'Hide filters';
+        }
+    })();
+
+    async function saveCurrentQuery() {
+        const { value: val } = await Swal.fire({
+            title: 'Save as Query',
+            html: `<input id="sq-name" class="swal2-input" placeholder="Query name e.g. My Open P0 Tasks" style="margin-bottom:8px">
+                   <input id="sq-desc" class="swal2-input" placeholder="Description (optional)" style="margin-bottom:8px">
+                   <label style="display:flex;align-items:center;gap:8px;font-size:.875rem;color:#374151;padding:4px 16px 0;cursor:pointer">
+                       <input type="checkbox" id="sq-shared" style="width:16px;height:16px;cursor:pointer"> Share with team
+                   </label>`,
+            showCancelButton: true,
+            confirmButtonText: 'Save',
+            focusConfirm: false,
+            preConfirm: () => {
+                const n = (document.getElementById('sq-name').value || '').trim();
+                if (!n) { Swal.showValidationMessage('Query name is required'); return false; }
+                return { name: n, description: (document.getElementById('sq-desc').value||'').trim(), isShared: document.getElementById('sq-shared').checked };
+            }
+        });
+        if (!val) return;
+
+        const p = new URLSearchParams(location.search);
+        const filters = JSON.stringify({
+            search:   p.get('search')   || '',
+            project:  p.get('project')  || '',
+            property: p.get('property') || '',
+            owner:    p.get('owner')    || '',
+            status:   p.get('status')   || '',
+            priority: p.get('priority') || '',
+            dateFrom: p.get('dateFrom') || '',
+            dateTo:   p.get('dateTo')   || '',
+        });
+
+        const fd = new FormData();
+        fd.append('name',        val.name);
+        fd.append('description', val.description);
+        fd.append('isShared',    val.isShared);
+        fd.append('filters',     filters);
+        fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]')?.value || '');
+
+        const r = await fetch('/Queries/Save', { method:'POST', body:fd });
+        const d = await r.json();
+        if (d.success) showToast('Query saved!', 'success');
+        else showToast(d.error || 'Could not save query.', 'error');
+    }
+    </script>

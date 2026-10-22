@@ -1,0 +1,127 @@
+@using TaskTracker.Services
+@{
+    Layout = null;
+    var memberships  = ViewBag.Memberships  as List<TeamPickItem> ?? [];
+    var allTeams     = ViewBag.AllTeams     as List<TaskTracker.Models.Team>      ?? [];
+    var memberCounts = ViewBag.MemberCounts as Dictionary<int,int>                ?? [];
+    var isSysAdmin   = (bool)(ViewBag.IsSysAdmin ?? false);
+
+    string RoleBadge(string role) => role switch {
+        "TeamAdmin" => "bg-purple-100 text-purple-700",
+        "TeamLead"  => "bg-blue-100 text-blue-700",
+        _           => "bg-gray-100 text-gray-600",
+    };
+    string RoleLabel(string role) => role switch {
+        "TeamAdmin" => "Team Admin",
+        "TeamLead"  => "Team Lead",
+        _           => "Member",
+    };
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+    <title>Select Team – Team Destinity Inspire</title>
+    <link rel="icon" type="image/x-icon" href="/assets/img/destinity-inspire.ico"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/brand.css"/>
+</head>
+<body class="min-h-screen flex items-center justify-center" style="background:#f1f5f9;">
+
+<div class="w-full max-w-3xl mx-auto px-4 py-12">
+
+    <!-- Header -->
+    <div class="text-center mb-10">
+        <img src="/assets/img/destinity-inspire.svg" alt="" class="h-12 mx-auto mb-4 opacity-80"
+             onerror="this.style.display='none'"/>
+        <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Select Your Team</h1>
+        <p class="text-gray-500 text-sm mt-1">Choose the team you want to work in</p>
+    </div>
+
+    <!-- SysAdmin: Global View card first -->
+    @if (isSysAdmin)
+    {
+        <div class="mb-4">
+            <form method="post" action="/Teams/SwitchGlobal">
+                @Html.AntiForgeryToken()
+                <button type="submit"
+                        class="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#094f70] hover:bg-blue-50/30 transition-all group text-left">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                         style="background:#f1f5f9;">
+                        <svg class="w-6 h-6 text-gray-400 group-hover:text-[#094f70]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-gray-700 group-hover:text-[#094f70]">Global View</p>
+                        <p class="text-xs text-gray-400">See all teams · System Administrator</p>
+                    </div>
+                    <span class="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">SysAdmin</span>
+                </button>
+            </form>
+        </div>
+        @if (allTeams.Any())
+        {
+            <p class="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3 px-1">All Teams</p>
+        }
+    }
+
+    <!-- Team cards -->
+    <div class="grid gap-3">
+        @{
+            // Combine member teams + admin-visible teams, deduplicate
+            var shown = memberships.Select(m => m.Team.Id).ToHashSet();
+            var cards = memberships
+                .Select(m => (Team: m.Team, Role: m.TeamRole, IsMember: true))
+                .ToList();
+            if (isSysAdmin)
+                cards.AddRange(allTeams.Where(t => !shown.Contains(t.Id))
+                    .Select(t => (Team: t, Role: "TeamAdmin", IsMember: false)));
+        }
+        @foreach (var card in cards)
+        {
+            <form method="post" action="/Teams/Switch">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="teamId" value="@card.Team.Id"/>
+                <button type="submit"
+                        class="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border border-gray-200 hover:border-[#094f70]/40 hover:shadow-md transition-all group text-left">
+                    <div class="w-12 h-12 rounded-xl flex-shrink-0"
+                         style="background:@card.Team.Color;"></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-gray-900 group-hover:text-[#094f70] truncate">@card.Team.Name</p>
+                        @if (!string.IsNullOrEmpty(card.Team.Description))
+                        {
+                            <p class="text-xs text-gray-400 truncate">@card.Team.Description</p>
+                        }
+                        <p class="text-xs text-gray-400 mt-0.5">
+                            @(memberCounts.TryGetValue(card.Team.Id, out var mc) ? mc : 0) member@(mc == 1 ? "" : "s")
+                        </p>
+                    </div>
+                    <div class="flex flex-col items-end gap-2">
+                        <span class="text-xs font-semibold px-2.5 py-1 rounded-full @RoleBadge(card.Role)">
+                            @RoleLabel(card.Role)
+                        </span>
+                        @if (!card.IsMember && isSysAdmin)
+                        {
+                            <span class="text-[10px] text-gray-400">not a member</span>
+                        }
+                    </div>
+                </button>
+            </form>
+        }
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-10">
+        <form method="post" action="/Account/Logout">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                Sign out
+            </button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

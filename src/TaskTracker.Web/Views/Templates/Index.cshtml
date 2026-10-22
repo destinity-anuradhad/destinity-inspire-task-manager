@@ -1,0 +1,39 @@
+@model List<TaskTracker.Models.TaskTemplate>
+@{
+    ViewData["Title"] = "Task Templates";
+    var canManage = User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value == "TeamAdmin";
+}
+@functions {
+    static string EstimateLabel(decimal? value)
+    {
+        if (!value.HasValue || value.Value <= 0) return "No estimate";
+        var totalMinutes = (int)Math.Round(value.Value * 60m, MidpointRounding.AwayFromZero);
+        var hours = totalMinutes / 60;
+        var minutes = totalMinutes % 60;
+        return hours == 0 ? $"{minutes}m" : minutes == 0 ? $"{hours}h" : $"{hours}h {minutes}m";
+    }
+}
+<div class="max-w-6xl mx-auto space-y-5">
+    <div class="page-hd"><div class="page-hd-left"><h1>Task Templates</h1><p>Reusable task defaults and checklist seeds</p></div></div>
+    @if (TempData["Success"] != null) { <p class="text-sm text-green-700">@TempData["Success"]</p> }
+    @if (TempData["Error"] != null) { <p class="text-sm text-red-700">@TempData["Error"]</p> }
+    @if (canManage)
+    {
+        <form method="post" action="/Templates/Save" class="bg-white border border-gray-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            @Html.AntiForgeryToken()
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Template name</label><input name="name" required maxlength="200" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Work item type</label><select name="itemType" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">@foreach (var type in new[] { "Task", "Bug", "Story" }) { <option value="@type">@type</option> }</select></div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Priority</label><select name="priority" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"><option value="">None</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></div>
+            <div><label class="block text-xs font-medium text-gray-500 mb-1">Estimate (hours)</label><input name="estimate" type="number" min="0.166667" step="0.000001" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" /><p class="mt-1 text-xs text-gray-500">Required. Minimum 10 minutes; use 10-minute increments (10 min = 0.166667 hours).</p></div>
+            <div class="md:col-span-2"><label class="block text-xs font-medium text-gray-500 mb-1">Labels</label><input name="labels" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. release, operations" /></div>
+            <div class="md:col-span-3"><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea name="notes" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"></textarea></div>
+            <div class="md:col-span-3"><label class="block text-xs font-medium text-gray-500 mb-1">Checklist seeds <span class="text-gray-400">(one per line)</span></label><textarea name="checklistText" rows="3" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Take backup&#10;Run smoke tests"></textarea></div>
+            <div><button class="btn-primary text-sm px-5 py-2 rounded-lg">Create Template</button></div>
+        </form>
+    }
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    @foreach (var template in Model)
+    { <div class="bg-white border border-gray-200 rounded-xl p-5"><div class="flex justify-between gap-3"><div><h2 class="font-semibold text-gray-800">@template.Name</h2><p class="text-xs text-gray-500 mt-1">@template.ItemType · @EstimateLabel(template.Estimate)</p></div>@if (canManage) { <form method="post" action="/Templates/Delete">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@template.Id" /><button class="text-xs text-red-600 font-semibold">Delete</button></form> }</div>@if (!string.IsNullOrWhiteSpace(template.Notes)) { <p class="text-sm text-gray-600 mt-3">@template.Notes</p> }@if (!string.IsNullOrWhiteSpace(template.Labels)) { <p class="text-xs text-blue-700 mt-3">@template.Labels</p> }</div> }
+    </div>
+    @if (Model.Count == 0) { <p class="text-sm text-gray-500">No templates for this team yet.</p> }
+</div>

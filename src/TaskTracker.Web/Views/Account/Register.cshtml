@@ -1,0 +1,157 @@
+@{
+    Layout = null;
+    var teams = ViewBag.Teams as List<TaskTracker.Models.Team> ?? [];
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Account – Task Manager</title>
+    <link rel="icon" type="image/x-icon" href="/assets/img/destinity-inspire.ico" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/brand.css" />
+</head>
+<body class="min-h-screen flex items-center justify-center bg-gray-50 py-10 px-4">
+
+    <div class="w-full max-w-md">
+
+        <!-- Logo -->
+        <div class="flex justify-center mb-6">
+            <a href="/Account/Login" class="flex items-center gap-3">
+                <img src="/assets/img/destinity-inspire.svg" alt="Destinity" class="h-10 w-auto"
+                     onerror="this.style.display='none'" />
+            </a>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+
+            @if (ViewBag.Submitted == true)
+            {
+                <!-- Success state -->
+                <div class="text-center py-4">
+                    <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-xl font-bold text-gray-900 mb-2">Registration Submitted!</h2>
+                    <p class="text-sm text-gray-500 mb-6">
+                        Your account is pending approval from an administrator.<br/>
+                        You will receive an email once your account is approved.
+                    </p>
+                    <a href="/Account/Login"
+                       class="inline-block px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+                       style="background:#094f70;">
+                        Back to Sign In
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="mb-6">
+                    <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-md"
+                         style="background:#094f70">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-900">Create an account</h2>
+                    <p class="text-sm text-gray-500 mt-1">Your request will be reviewed by an administrator</p>
+                </div>
+
+                @if (ViewBag.Error != null)
+                {
+                    <div class="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        @ViewBag.Error
+                    </div>
+                }
+
+                <form method="post" action="/Account/Register">
+                    @Html.AntiForgeryToken()
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
+                            <input type="text" name="displayName" required autofocus
+                                   class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                                   onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                   onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                                   placeholder="Your full name" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+                            <input type="text" name="username" required autocomplete="username"
+                                   class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                                   onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                   onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                                   placeholder="Choose a username" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
+                            <input type="email" name="userEmail" required autocomplete="email"
+                                   class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                                   onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                   onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                                   placeholder="your@email.com" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                            <input type="password" name="password" required autocomplete="new-password"
+                                   class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                                   onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                   onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                                   placeholder="At least 8 characters" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
+                            <input type="password" name="confirmPassword" required autocomplete="new-password"
+                                   class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all placeholder-gray-400"
+                                   onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                   onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'"
+                                   placeholder="Repeat password" />
+                        </div>
+                        @if (teams.Any())
+                        {
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1.5">Preferred Team <span class="text-gray-400 font-normal">(optional)</span></label>
+                                <select name="teamId"
+                                        class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none bg-gray-50 transition-all"
+                                        onfocus="this.style.borderColor='#094f70';this.style.boxShadow='0 0 0 3px rgba(9,79,112,0.15)'"
+                                        onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'">
+                                    <option value="">— Select a team —</option>
+                                    @foreach (var t in teams)
+                                    {
+                                        <option value="@t.Id">@t.Name</option>
+                                    }
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">An administrator will add you to the team upon approval.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <button type="submit"
+                            class="w-full mt-6 text-white font-semibold py-3 rounded-xl text-sm shadow-md hover:shadow-lg active:scale-[0.98] transition-all"
+                            style="background-color:#094f70"
+                            onmouseover="this.style.backgroundColor='#063d57'"
+                            onmouseout="this.style.backgroundColor='#094f70'">
+                        Request Access
+                    </button>
+                </form>
+
+                <p class="text-center text-sm text-gray-500 mt-6">
+                    Already have an account?
+                    <a href="/Account/Login" class="font-medium" style="color:#094f70">Sign in</a>
+                </p>
+            }
+        </div>
+
+        <p class="text-center text-xs text-gray-400 mt-6">&copy; 2026 Team Destinity Inspire</p>
+    </div>
+
+</body>
+</html>

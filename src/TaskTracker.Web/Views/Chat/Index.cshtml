@@ -1,0 +1,645 @@
+@{
+    ViewData["Title"] = "Team Chat";
+    var meName   = User.FindFirst("DisplayName")?.Value ?? "";
+    var teamName = User.FindFirst("ActiveTeamName")?.Value ?? "Team";
+    var isTeamAdmin = User.IsInRole("Admin") || User.FindFirst("TeamRole")?.Value == "TeamAdmin";
+    var channel = teamName.ToLower().Replace(' ', '-');
+}
+
+<style>
+    /* ── Slack-style light theme (custom colours + dynamic markup styled via real CSS) ── */
+    .sk-shell   { background:#ffffff; }
+    .sk-head    { border-bottom:1px solid #e8e8e8; }
+    .sk-muted   { color:#616061; }
+    .sk-faint   { color:#9a9a9a; }
+    .sk-title   { color:#1d1c1d; }
+    .sk-txt     { color:#1d1c1d; }
+    .sk-accent  { color:#094f70; }
+
+    .sk-row       { transition:background .06s; }
+    .sk-row:hover { background:#f8f8f8; }
+    .sk-row:hover .sk-ts-hover { opacity:1; }
+    .sk-row:hover .sk-actions  { opacity:1; }
+    .sk-ts-hover  { opacity:0; }
+    .sk-name      { font-weight:800; }
+    .sk-link      { color:#1264a3; text-decoration:none; }
+    .sk-link:hover{ text-decoration:underline; }
+    .sk-mention   { background:rgba(18,100,163,.12); color:#0b4f82; border-radius:3px; padding:0 2px; font-weight:600; }
+    .sk-edited    { color:#9a9a9a; font-size:11px; }
+
+    /* left/right message bubbles (sent = right, received = left) */
+    .sk-bubble  { display:inline-block; max-width:min(72%,560px); padding:6px 11px 5px; position:relative; }
+    .sk-in      { background:#ffffff; border:1px solid #e6e8ea; box-shadow:0 1px 1px rgba(0,0,0,.04); border-radius:14px 14px 14px 4px; }
+    .sk-out     { background:#e3eef6; border:1px solid #cfe0ec; border-radius:14px 14px 4px 14px; }
+    .sk-grouped { border-radius:14px !important; }
+    .sk-bname   { font-size:13px; font-weight:700; margin-bottom:1px; }
+    .sk-bmeta   { font-size:10px; color:#8a9096; text-align:right; margin-top:2px; user-select:none; }
+
+    .sk-day-line  { border-top:1px solid #e8e8e8; }
+    .sk-day-chip  { color:#616061; background:#fff; border:1px solid #e8e8e8; font-size:12px; font-weight:700; padding:2px 12px; border-radius:14px; }
+
+    .sk-react-chip { display:inline-flex; align-items:center; gap:4px; padding:1px 8px; border-radius:12px; background:#f1f2f3; border:1px solid #e0e0e0; color:#3a3a3a; font-size:13px; line-height:20px; }
+    .sk-react-chip:hover { border-color:#b9bbbe; }
+    .sk-react-mine { background:#e3eef6; border-color:#094f70; color:#094f70; }
+
+    .sk-event-card { background:#f8fafc; border:1px solid #e8e8e8; border-left:3px solid #094f70; border-radius:6px; padding:8px 12px; }
+    .sk-event-body { color:#1d1c1d; font-size:14px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+    .sk-event-meta { color:#616061; font-size:12px; margin-top:5px; }
+
+    .sk-edit-box  { background:#fff; color:#1d1c1d; border:1px solid #c9c9c9; outline:none; resize:vertical; min-height:40px; border-radius:6px; }
+
+    .sk-actions   { opacity:0; background:#fff; border:1px solid #e0e0e0; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.1); transition:opacity .12s; }
+    .sk-actbtn    { padding:5px 7px; color:#616061; }
+    .sk-actbtn:hover     { background:#f1f2f3; color:#1d1c1d; }
+    .sk-actbtn-del:hover { color:#e01e5a; }
+
+    .sk-composer  { border:1px solid #b9bbbe; border-radius:10px; transition:border-color .15s, box-shadow .15s; }
+    .sk-composer:focus-within { border-color:#094f70; box-shadow:0 0 0 1px #094f70; }
+    .sk-input     { color:#1d1c1d; }
+    .sk-input::placeholder { color:#9a9a9a; }
+    .sk-iconbtn   { color:#616061; }
+    .sk-iconbtn:hover { color:#1d1c1d; background:#f1f2f3; }
+    .sk-send      { background:#094f70; color:#fff; transition:background .15s, transform .1s; }
+    .sk-send:hover{ background:#0b6088; }
+    .sk-send:active { transform:scale(.94); }
+    .sk-send:disabled { opacity:.45; cursor:default; }
+
+    .sk-jump      { background:#fff; color:#094f70; border:1px solid #d0d3d6; box-shadow:0 3px 10px rgba(0,0,0,.14); }
+    .sk-jump:hover{ background:#f4f6f8; }
+
+    .sk-pop       { position:fixed; z-index:9999; background:#fff; border:1px solid #e0e0e0; border-radius:10px; padding:6px; box-shadow:0 6px 22px rgba(0,0,0,.18); display:flex; gap:2px; flex-wrap:wrap; max-width:250px; }
+    .sk-pop-em    { font-size:20px; padding:4px 6px; border-radius:8px; }
+    .sk-pop-em:hover { background:#f1f2f3; }
+
+    .sk-mpop { background:#fff; border:1px solid #e0e0e0; border-radius:10px; box-shadow:0 6px 22px rgba(0,0,0,.18); overflow:hidden; max-height:236px; overflow-y:auto; width:260px; }
+    .sk-mrow { display:flex; align-items:center; gap:8px; padding:7px 10px; cursor:pointer; color:#1d1c1d; }
+    .sk-mrow:hover, .sk-mrow.active { background:#f1f4f7; }
+
+    .sk-typing-dots { display:inline-flex; gap:2px; vertical-align:middle; margin-right:5px; }
+    .sk-typing-dots span { width:4px; height:4px; border-radius:50%; background:#616061; display:inline-block; animation:skblink 1.2s infinite; }
+    .sk-typing-dots span:nth-child(2){ animation-delay:.2s; }
+    .sk-typing-dots span:nth-child(3){ animation-delay:.4s; }
+    @@keyframes skblink { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
+    @@keyframes skPop { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .sk-pop-in { animation:skPop .2s ease-out; }
+
+    .sk-scroll::-webkit-scrollbar       { width:10px; }
+    .sk-scroll::-webkit-scrollbar-thumb { background:#c9ccd0; border-radius:5px; border:2px solid #fff; }
+    .sk-scroll::-webkit-scrollbar-track { background:transparent; }
+</style>
+
+<div class="sk-shell flex flex-col h-full">
+
+    <!-- header -->
+    <div class="sk-head h-14 px-5 flex items-center gap-2 shrink-0">
+        <span class="text-xl font-extrabold sk-title leading-none">#</span>
+        <span class="sk-title font-extrabold text-[17px]">@channel</span>
+        <span class="w-px h-5 bg-gray-200 mx-2 hidden sm:block"></span>
+        <span class="sk-muted text-[13px] truncate hidden sm:block">Team chat — everyone in @teamName can post</span>
+        <div class="ml-auto flex items-center gap-1">
+            <span id="chat-conn" class="sk-muted text-[11px] mr-2">connecting…</span>
+            <button onclick="_chatToggleFiles()" title="Shared files" class="sk-iconbtn p-1.5 rounded-md transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </button>
+            <button onclick="_chatToggleMembers()" title="Members" class="sk-iconbtn flex items-center gap-1 px-2 py-1.5 rounded-md transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-4.5"/></svg>
+                <span id="chat-member-count" class="text-[13px] font-semibold">0</span>
+            </button>
+            <button onclick="_chatToggleSettings(event)" title="Notification &amp; feed settings" class="sk-iconbtn p-1.5 rounded-md transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- body -->
+    <div class="flex-1 min-h-0 flex">
+        <!-- conversation -->
+        <div class="relative flex-1 min-w-0 flex flex-col">
+            <div id="chat-messages" class="sk-scroll flex-1 min-h-0 overflow-y-auto py-3"
+                 onscroll="_chatOnScroll()" ondragover="_chatDragOver(event)" ondragleave="_chatDragLeave(event)" ondrop="_chatDrop(event)">
+                <div id="chat-loadolder" class="hidden text-center py-3">
+                    <button onclick="_chatLoadOlder()" class="text-xs hover:underline sk-accent font-medium">Load earlier messages</button>
+                </div>
+                <div id="chat-welcome" class="hidden px-5 pt-8 pb-4">
+                    <h2 class="sk-title text-2xl font-extrabold">👋 Welcome to #@channel</h2>
+                    <p class="sk-muted text-sm mt-1">This is the very beginning of the <b>@teamName</b> channel. Say hello, and task &amp; sprint activity will show up here automatically.</p>
+                </div>
+                <div id="chat-empty" class="hidden text-center sk-muted text-sm py-16">No messages yet — say hello 👋</div>
+                <div id="chat-loading" class="text-center sk-muted text-sm py-16">Loading…</div>
+            </div>
+
+            <!-- jump to latest -->
+            <button id="chat-jump" onclick="_chatJumpToLatest()" class="sk-jump hidden absolute right-6 bottom-28 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-semibold">
+                <span id="chat-jump-label">Latest</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+            </button>
+
+            <!-- composer -->
+            <div class="px-5 pb-5 pt-1 shrink-0 relative">
+                @Html.AntiForgeryToken()
+                <div id="chat-mention-pop" class="sk-mpop hidden absolute left-7 bottom-full mb-2 z-30"></div>
+                <div id="chat-typing" class="h-5 px-1 text-[12px] sk-muted flex items-center"></div>
+                <div id="chat-files" class="hidden flex flex-wrap gap-2 mb-2"></div>
+                <div class="sk-composer">
+                    <textarea id="chat-input" rows="1" placeholder="Message #@channel" maxlength="4000"
+                              class="sk-input w-full resize-none border-0 focus:outline-none text-[15px] px-3 pt-2.5 bg-transparent max-h-40 sk-scroll"
+                              oninput="_chatOnInput(this)" onkeydown="_chatKeydown(event)"></textarea>
+                    <div class="flex items-center gap-1 px-2 py-1.5">
+                        <button type="button" onclick="document.getElementById('chat-file-input').click()" title="Attach files" class="sk-iconbtn p-1.5 rounded-md transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                        </button>
+                        <input id="chat-file-input" type="file" multiple class="hidden" onchange="_chatAddFiles(this.files); this.value='';">
+                        <button type="button" onclick="_chatToggleEmojiInsert(this)" title="Emoji" class="sk-iconbtn p-1.5 rounded-md transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </button>
+                        <button id="chat-send" type="button" onclick="_chatSend()" title="Send" class="sk-send ml-auto px-3 py-1.5 rounded-md flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <p class="sk-faint text-[11px] mt-1.5 px-1"><b>Enter</b> to send · <b>Shift+Enter</b> newline · <b>@@</b> to mention · <b>#123</b> links a task · attach/paste/drop files (10 MB)</p>
+            </div>
+        </div>
+
+        <!-- members panel -->
+        <div id="chat-members-panel" class="hidden w-60 shrink-0 flex-col border-l" style="border-color:#e8e8e8">
+            <div class="h-14 px-4 flex items-center shrink-0 border-b" style="border-color:#e8e8e8">
+                <span class="sk-title font-bold">Members</span>
+                <button onclick="_chatToggleMembers()" class="ml-auto sk-iconbtn p-1 rounded" title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="chat-members" class="flex-1 overflow-y-auto sk-scroll px-2 py-2 space-y-0.5"></div>
+        </div>
+
+        <!-- shared files panel -->
+        <div id="chat-files-panel" class="hidden w-72 shrink-0 flex-col border-l" style="border-color:#e8e8e8">
+            <div class="h-14 px-4 flex items-center shrink-0 border-b" style="border-color:#e8e8e8">
+                <span class="sk-title font-bold">Shared files</span>
+                <button onclick="_chatToggleFiles()" class="ml-auto sk-iconbtn p-1 rounded" title="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="chat-files-list" class="flex-1 overflow-y-auto sk-scroll pb-3"></div>
+        </div>
+    </div>
+</div>
+
+<!-- settings popover -->
+<div id="chat-settings" class="hidden fixed z-[9998] w-72 bg-white rounded-xl shadow-xl border border-gray-200 p-4 text-sm">
+    <p class="font-bold sk-title mb-2">Notifications</p>
+    <label class="flex items-center gap-2 py-1 cursor-pointer">
+        <input type="checkbox" id="set-alerts" onchange="_chatSaveSettings()" class="w-4 h-4 accent-[#094f70]">
+        <span class="sk-txt">Desktop + sound alert on <b>@@mention</b></span>
+    </label>
+    <p class="font-bold sk-title mt-4 mb-2">Show activity in this channel</p>
+    <label class="flex items-center gap-2 py-1 cursor-pointer">
+        <input type="checkbox" id="set-assign" onchange="_chatSaveSettings()" class="w-4 h-4 accent-[#094f70]">
+        <span class="sk-txt">📌 Task assignments</span>
+    </label>
+    <label class="flex items-center gap-2 py-1 cursor-pointer">
+        <input type="checkbox" id="set-status" onchange="_chatSaveSettings()" class="w-4 h-4 accent-[#094f70]">
+        <span class="sk-txt">✅ Task completed / blocked</span>
+    </label>
+    <label class="flex items-center gap-2 py-1 cursor-pointer">
+        <input type="checkbox" id="set-sprint" onchange="_chatSaveSettings()" class="w-4 h-4 accent-[#094f70]">
+        <span class="sk-txt">🏁 Sprint events</span>
+    </label>
+    <p class="sk-faint text-[11px] mt-3">Muting hides those posts for you only.</p>
+</div>
+
+<!-- image lightbox -->
+<div id="chat-lightbox" class="hidden fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-8" onclick="_chatCloseLightbox()">
+    <img id="chat-lightbox-img" src="" alt="" class="max-h-full max-w-full rounded shadow-2xl" style="object-fit:contain">
+</div>
+
+<script>
+const _chatMe      = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(meName));
+const _chatIsAdmin = @(isTeamAdmin ? "true" : "false");
+const _chatToken   = document.querySelector('input[name="__RequestVerificationToken"]').value;
+const EMOJIS       = ['👍','❤️','😂','🎉','😮','😢','🙏','👀','✅','🔥'];
+let   _chatOldestId = null;
+let   _chatPending   = [];
+const _chatSeen      = new Set();
+let   _chatLastKey   = null;
+const _chatMembers   = new Map();
+const _chatReactState= new Map();
+let   _chatMemberNames = [];
+let   _chatMentionRe   = null;
+let   _chatMention     = { open:false, index:0, matches:[], start:0 };
+const _chatTypers      = new Map();
+let   _chatTypingSent  = 0;
+let   _chatNewCount    = 0;
+let   _chatMuted       = { assign:false, status:false, sprint:false };
+
+function _esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+function _fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function _fmtTime(iso){ const d=new Date(iso); return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
+function _fmtDay(iso){ const d=new Date(iso); return d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); }
+function _initials(name){ return (name||'?').split(/\s+/).map(w=>w[0]||'').join('').substring(0,2).toUpperCase(); }
+function _nearBottom(el){ return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
+function _muteKey(){ return 'chatMuted_' + ((typeof _chatTeamId!=='undefined')?_chatTeamId:''); }
+
+function _avatarInner(m, sq){
+    const cls = 'w-9 h-9 ' + (sq ? 'rounded-md' : 'rounded-md') + ' object-cover';
+    if (m.avatarImage) return `<img src="${_esc(m.avatarImage)}" class="${cls}" alt="">`;
+    return `<div class="w-9 h-9 rounded-md flex items-center justify-center text-white text-xs font-semibold" style="background:${_esc(m.avatarColor||'#094f70')}">${_esc(_initials(m.senderName))}</div>`;
+}
+
+// Escape, then linkify URLs + #task-refs, then highlight @@mentions.
+function _renderBody(text){
+    let html = _esc(text||'');
+    html = html.replace(/(https?:\/\/[^\s<]+)/g, u => `<a href="${u}" target="_blank" rel="noopener" class="sk-link">${u}</a>`);
+    html = html.replace(/(^|[\s(])#(\d+)\b/g, (mt, pre, id) => `${pre}<a href="/Tasks?highlight=${id}" class="sk-link">#${id}</a>`);
+    if (_chatMentionRe){ _chatMentionRe.lastIndex = 0; html = html.replace(_chatMentionRe, full => `<span class="sk-mention">${full}</span>`); }
+    return html;
+}
+
+function _attHtml(a){
+    if (a.isImage)
+        return `<div class="mt-1"><img src="${_esc(a.url)}" onclick="_chatLightbox('${_esc(a.url)}')" class="max-h-72 max-w-md rounded-lg border border-gray-200 hover:brightness-95 transition" style="cursor:zoom-in" alt="${_esc(a.fileName)}"></div>`;
+    return `<a href="${_esc(a.url)}" target="_blank" class="mt-1 inline-flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition max-w-xs">
+        <svg class="w-6 h-6 shrink-0 sk-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <span class="min-w-0"><span class="block text-[13px] font-medium sk-txt truncate">${_esc(a.fileName)}</span><span class="block text-[11px] sk-muted">${_fmtSize(a.fileSize)}</span></span></a>`;
+}
+
+// ── Reactions ────────────────────────────────────────────────────────────────
+function _chatSeedReactions(m){ const st=new Map(); (m.reactions||[]).forEach(r=>st.set(r.emoji,{count:r.count,mine:r.mine})); _chatReactState.set(m.id, st); }
+function _reactionChips(mid){
+    const st = _chatReactState.get(mid); if (!st || st.size===0) return '';
+    return [...st.entries()].map(([e,v]) => `<button data-react="${e}" data-mid="${mid}" class="sk-react-chip ${v.mine?'sk-react-mine':''}"><span>${e}</span><span class="text-[11px] font-semibold">${v.count}</span></button>`).join('');
+}
+function _chatRenderReactions(mid){ const b=document.querySelector(`.chat-reactions[data-id="${mid}"]`); if(b) b.innerHTML=_reactionChips(mid); }
+function _chatApplyMyReact(mid, emoji){
+    const st=_chatReactState.get(mid)||new Map(); const cur=st.get(emoji)||{count:0,mine:false};
+    cur.mine=!cur.mine; cur.count+=cur.mine?1:-1;
+    if(cur.count<=0&&!cur.mine) st.delete(emoji); else st.set(emoji,cur);
+    _chatReactState.set(mid,st); _chatRenderReactions(mid);
+}
+function _chatOnReaction(mid, emoji, count){
+    const st=_chatReactState.get(mid)||new Map(); const cur=st.get(emoji)||{count:0,mine:false};
+    cur.count=count; if(count<=0) st.delete(emoji); else st.set(emoji,cur);
+    _chatReactState.set(mid,st); _chatRenderReactions(mid);
+}
+async function _chatReact(mid, emoji){
+    _chatClosePicker(); _chatApplyMyReact(mid, emoji);
+    const fd=new FormData(); fd.append('id',mid); fd.append('emoji',emoji); fd.append('__RequestVerificationToken',_chatToken);
+    try { const r=await fetch('/Chat/React',{method:'POST',body:fd}); const d=await r.json(); if(!d.success){ _chatApplyMyReact(mid,emoji); _chatToast(d.error||'Could not react.'); } }
+    catch { _chatApplyMyReact(mid,emoji); _chatToast('Network error.'); }
+}
+function _chatOpenPicker(mid, anchor){
+    let pop=document.getElementById('chat-emoji-pop');
+    if(!pop){ pop=document.createElement('div'); pop.id='chat-emoji-pop'; pop.className='sk-pop hidden'; document.body.appendChild(pop); }
+    pop.innerHTML=EMOJIS.map(e=>`<button data-react="${e}" data-mid="${mid}" class="sk-pop-em">${e}</button>`).join('');
+    const r=anchor.getBoundingClientRect(); pop.classList.remove('hidden');
+    pop.style.left=Math.max(8,Math.min(r.left-100,window.innerWidth-260))+'px'; pop.style.top=Math.max(8,r.top-pop.offsetHeight-6)+'px';
+}
+function _chatClosePicker(){ document.getElementById('chat-emoji-pop')?.classList.add('hidden'); }
+
+// ── Edit ─────────────────────────────────────────────────────────────────────
+function _chatBeginEdit(mid){
+    const body=document.querySelector(`.chat-body[data-id="${mid}"]`); if(!body||body.querySelector('textarea')) return;
+    const raw=body.getAttribute('data-raw')||''; body.dataset.prev=body.innerHTML;
+    body.innerHTML=`<div class="mt-1"><textarea class="sk-edit-box w-full p-2 text-[15px]">${_esc(raw)}</textarea><div class="text-[11px] mt-1 sk-muted">escape to <button class="sk-accent font-medium" data-editcancel="${mid}">cancel</button> · enter to <button class="sk-accent font-medium" data-editsave="${mid}">save</button></div></div>`;
+    const ta=body.querySelector('textarea'); ta.focus(); ta.setSelectionRange(raw.length,raw.length);
+    ta.addEventListener('keydown', ev => { if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();_chatSaveEdit(mid);} else if(ev.key==='Escape'){ev.preventDefault();_chatCancelEdit(mid);} });
+}
+function _chatCancelEdit(mid){ const b=document.querySelector(`.chat-body[data-id="${mid}"]`); if(b&&b.dataset.prev!=null){ b.innerHTML=b.dataset.prev; delete b.dataset.prev; } }
+async function _chatSaveEdit(mid){
+    const body=document.querySelector(`.chat-body[data-id="${mid}"]`); const ta=body?.querySelector('textarea'); if(!ta) return;
+    const val=ta.value.trim(); if(!val){ _chatToast('Message can’t be empty — delete it instead.'); return; }
+    const fd=new FormData(); fd.append('id',mid); fd.append('body',val); fd.append('__RequestVerificationToken',_chatToken);
+    try { const r=await fetch('/Chat/Edit',{method:'POST',body:fd}); const d=await r.json(); if(d.success) _chatApplyEdit(mid,val); else _chatToast(d.error||'Could not edit.'); }
+    catch { _chatToast('Network error.'); }
+}
+function _chatApplyEdit(mid, text){
+    const b=document.querySelector(`.chat-body[data-id="${mid}"]`); if(!b) return;
+    b.setAttribute('data-raw',text); delete b.dataset.prev; b.innerHTML=_renderBody(text)+' <span class="sk-edited">(edited)</span>';
+}
+
+// ── Message row (Slack full-width) ────────────────────────────────────────────
+function _actionsBar(m){
+    if(m.deleted) return '';
+    const canEdit=m.senderName===_chatMe, canDel=_chatIsAdmin||m.senderName===_chatMe;
+    return `<div class="sk-actions self-start flex items-center overflow-hidden shrink-0">
+        <button data-act="react" data-mid="${m.id}" title="React" class="sk-actbtn"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
+        ${canEdit?`<button data-act="edit" data-mid="${m.id}" title="Edit" class="sk-actbtn"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>`:''}
+        ${canDel?`<button data-act="del" data-mid="${m.id}" title="Delete" class="sk-actbtn sk-actbtn-del"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>`:''}
+    </div>`;
+}
+function _bodyInner(m){
+    if(m.deleted) return `<span class="text-[13px] italic sk-muted">message deleted</span>`;
+    const edited=m.editedAt?' <span class="sk-edited">(edited)</span>':'';
+    const body=m.body ? `<div class="chat-body sk-txt text-[15px] leading-relaxed whitespace-pre-wrap break-words" data-id="${m.id}" data-raw="${_esc(m.body)}">${_renderBody(m.body)}${edited}</div>` : `<div class="chat-body" data-id="${m.id}" data-raw=""></div>`;
+    const atts=(m.attachments||[]).map(_attHtml).join('');
+    return `${body}${atts}<div class="chat-reactions flex flex-wrap gap-1 mt-1.5" data-id="${m.id}"></div>`;
+}
+function _eventHtml(m){
+    const meta=m.meta||{}; const ico=meta.icon?`<span class="text-[18px]">${_esc(meta.icon)}</span>`:'';
+    const link=meta.url?` · <a href="${_esc(meta.url)}" class="sk-link font-medium">${_esc(meta.link||'Open')} →</a>`:'';
+    return `<div class="sk-row chat-msg flex gap-3 px-5 py-1" data-id="${m.id}" data-user="${_esc(m.senderName)}" data-ts="${_esc(m.createdAt)}" data-evtype="${_esc(meta.type||'')}">
+        <div class="w-9 shrink-0 flex justify-center pt-1">${ico}</div>
+        <div class="flex-1 min-w-0"><div class="sk-event-card">
+            <div class="sk-event-body">${_renderBody(m.body||'')}</div>
+            <div class="sk-event-meta">${_esc(m.senderName)} · ${_fmtTime(m.createdAt)}${link}</div>
+        </div></div></div>`;
+}
+function _msgHtml(m, grouped){
+    if(m.kind==='event') return _eventHtml(m);   // activity posts stay full-width, not left/right
+    const mine = m.senderName === _chatMe;
+    const name = (!mine && !grouped) ? `<div class="sk-bname" style="color:${_esc(m.avatarColor||'#1d1c1d')}">${_esc(m.senderName)}</div>` : '';
+    const meta = m.deleted ? '' : `<div class="sk-bmeta">${_fmtTime(m.createdAt)}</div>`;
+    const bubble = `<div class="sk-bubble ${mine?'sk-out':'sk-in'}${grouped?' sk-grouped':''}" data-mid="${m.id}">${name}${_bodyInner(m)}${meta}</div>`;
+    if(mine)
+        return `<div class="sk-row chat-msg group flex items-end justify-end gap-2 px-5 ${grouped?'py-0.5':'py-1 mt-1'}" data-id="${m.id}" data-user="${_esc(m.senderName)}" data-ts="${_esc(m.createdAt)}">
+            ${_actionsBar(m)}${bubble}</div>`;
+    return `<div class="sk-row chat-msg group flex items-end gap-2 px-5 ${grouped?'py-0.5':'py-1 mt-1'}" data-id="${m.id}" data-user="${_esc(m.senderName)}" data-ts="${_esc(m.createdAt)}">
+        ${grouped ? '<div class="w-9 shrink-0"></div>' : `<div class="shrink-0">${_avatarInner(m, true)}</div>`}
+        ${bubble}${_actionsBar(m)}</div>`;
+}
+function _dayDivider(iso){
+    return `<div class="flex items-center gap-3 my-3 px-5"><div class="flex-1 sk-day-line"></div><span class="sk-day-chip">${_esc(_fmtDay(iso))}</span><div class="flex-1 sk-day-line"></div></div>`;
+}
+
+// ── Members ──────────────────────────────────────────────────────────────────
+function _chatTrackMember(m){
+    if(!_chatMembers.has(m.senderName)){ _chatMembers.set(m.senderName,{name:m.senderName,color:m.avatarColor||'#094f70',image:m.avatarImage||null}); _chatRenderMembers(); }
+}
+function _chatRenderMembers(){
+    const roster=_chatMemberNames.length?_chatMemberNames:[..._chatMembers.keys()];
+    const cnt=document.getElementById('chat-member-count'); if(cnt) cnt.textContent=roster.length;
+    const box=document.getElementById('chat-members'); if(!box) return;
+    box.innerHTML=roster.slice().sort((a,b)=>a.localeCompare(b)).map(name=>{
+        const p=_chatMembers.get(name);
+        const av=p&&p.image?`<img src="${_esc(p.image)}" class="w-8 h-8 rounded-md object-cover" alt="">`:`<div class="w-8 h-8 rounded-md flex items-center justify-center text-white text-[11px] font-semibold" style="background:${_esc((p&&p.color)||'#094f70')}">${_esc(_initials(name))}</div>`;
+        const me=name===_chatMe?' <span class="sk-faint text-[12px]">(you)</span>':'';
+        return `<div class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-50 cursor-default"><div class="relative shrink-0">${av}<span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white" style="background:#2bac76"></span></div><span class="text-[15px] truncate sk-txt">${_esc(name)}${me}</span></div>`;
+    }).join('');
+}
+function _chatToggleMembers(){
+    const p=document.getElementById('chat-members-panel'); if(!p) return;
+    if(p.classList.contains('hidden')) document.getElementById('chat-files-panel')?.classList.add('hidden');
+    p.classList.toggle('hidden');
+}
+function _chatToggleFiles(){
+    const p=document.getElementById('chat-files-panel'); if(!p) return;
+    const willShow=p.classList.contains('hidden');
+    if(willShow) document.getElementById('chat-members-panel')?.classList.add('hidden');
+    p.classList.toggle('hidden');
+    if(willShow) _chatLoadFiles();
+}
+async function _chatLoadFiles(){
+    const box=document.getElementById('chat-files-list'); box.innerHTML='<div class="text-center sk-muted text-sm py-8">Loading…</div>';
+    try {
+        const r=await fetch('/Chat/Attachments'); const files=await r.json();
+        if(!files.length){ box.innerHTML='<div class="text-center sk-muted text-sm py-10">No files shared yet.</div>'; return; }
+        const imgs=files.filter(f=>f.isImage), docs=files.filter(f=>!f.isImage);
+        let html='';
+        if(imgs.length){
+            html+='<div class="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide sk-faint">Images ('+imgs.length+')</div>';
+            html+='<div class="grid grid-cols-3 gap-1 px-2">'+imgs.map(f=>`<img src="${_esc(f.url)}" onclick="_chatLightbox('${_esc(f.url)}')" class="w-full rounded cursor-zoom-in hover:brightness-95 transition" style="aspect-ratio:1;object-fit:cover" title="${_esc(f.fileName)}" alt="">`).join('')+'</div>';
+        }
+        if(docs.length){
+            html+='<div class="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide sk-faint">Files ('+docs.length+')</div>';
+            html+=docs.map(f=>`<a href="${_esc(f.url)}" target="_blank" class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition"><svg class="w-8 h-8 shrink-0 sk-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><span class="min-w-0"><span class="block text-[13px] font-medium sk-txt truncate">${_esc(f.fileName)}</span><span class="block text-[11px] sk-muted truncate">${_fmtSize(f.fileSize)} · ${_esc(f.senderName)}</span></span></a>`).join('');
+        }
+        box.innerHTML=html;
+    } catch { box.innerHTML='<div class="text-center sk-muted text-sm py-8">Could not load files.</div>'; }
+}
+
+// ── Mute / settings ──────────────────────────────────────────────────────────
+function _chatEventMuted(m){ return m.kind==='event' && !!(m.meta&&_chatMuted[m.meta.type]); }
+function _applyMuteVisibility(){
+    document.querySelectorAll('#chat-messages [data-evtype]').forEach(el => {
+        el.style.display = _chatMuted[el.getAttribute('data-evtype')] ? 'none' : '';
+    });
+}
+function _chatLoadSettings(){
+    try { _chatMuted = Object.assign({assign:false,status:false,sprint:false}, JSON.parse(localStorage.getItem(_muteKey())||'{}')); } catch { _chatMuted={assign:false,status:false,sprint:false}; }
+    const a=document.getElementById('set-assign'), s=document.getElementById('set-status'), p=document.getElementById('set-sprint'), al=document.getElementById('set-alerts');
+    if(a) a.checked=!_chatMuted.assign; if(s) s.checked=!_chatMuted.status; if(p) p.checked=!_chatMuted.sprint;
+    if(al) al.checked = localStorage.getItem('chatAlerts')!=='0';
+}
+function _chatSaveSettings(){
+    _chatMuted={ assign:!document.getElementById('set-assign').checked, status:!document.getElementById('set-status').checked, sprint:!document.getElementById('set-sprint').checked };
+    localStorage.setItem(_muteKey(), JSON.stringify(_chatMuted));
+    const al=document.getElementById('set-alerts');
+    localStorage.setItem('chatAlerts', al.checked?'1':'0');
+    if(al.checked && 'Notification' in window && Notification.permission==='default') Notification.requestPermission();
+    _applyMuteVisibility();
+}
+function _chatToggleSettings(ev){
+    const el=document.getElementById('chat-settings');
+    if(!el.classList.contains('hidden')){ el.classList.add('hidden'); return; }
+    _chatLoadSettings(); el.classList.remove('hidden');
+    const r=ev.currentTarget.getBoundingClientRect();
+    el.style.top=(r.bottom+6)+'px'; el.style.left=Math.max(8,r.right-288)+'px';
+}
+
+// ── Lightbox ─────────────────────────────────────────────────────────────────
+function _chatLightbox(url){ const lb=document.getElementById('chat-lightbox'); document.getElementById('chat-lightbox-img').src=url; lb.classList.remove('hidden'); }
+function _chatCloseLightbox(){ document.getElementById('chat-lightbox').classList.add('hidden'); }
+
+// ── Jump to latest ───────────────────────────────────────────────────────────
+function _chatOnScroll(){ const l=document.getElementById('chat-messages'); if(_nearBottom(l)){ _chatNewCount=0; document.getElementById('chat-jump').classList.add('hidden'); } }
+function _chatJumpToLatest(){ const l=document.getElementById('chat-messages'); l.scrollTo({top:l.scrollHeight,behavior:'smooth'}); _chatNewCount=0; document.getElementById('chat-jump').classList.add('hidden'); }
+function _chatShowJump(){ const b=document.getElementById('chat-jump'); document.getElementById('chat-jump-label').textContent=_chatNewCount>0?`${_chatNewCount} new message${_chatNewCount>1?'s':''}`:'Latest'; b.classList.remove('hidden'); }
+
+function _appendMessage(m, scroll, animate){
+    if(_chatSeen.has(m.id)) return; _chatSeen.add(m.id);
+    const list=document.getElementById('chat-messages');
+    document.getElementById('chat-empty').classList.add('hidden'); document.getElementById('chat-welcome').classList.add('hidden');
+    _chatTrackMember(m); _chatSeedReactions(m); _chatTypers.delete(m.senderName); _chatRenderTyping();
+    const isEvent=m.kind==='event';
+    const prevKey=_chatLastKey;
+    const dayNew=!prevKey||(new Date(prevKey.ts).toDateString()!==new Date(m.createdAt).toDateString());
+    const grouped=!isEvent && !dayNew && prevKey && prevKey.user===m.senderName && (new Date(m.createdAt)-new Date(prevKey.ts))<5*60*1000;
+    if(dayNew) list.insertAdjacentHTML('beforeend', _dayDivider(m.createdAt));
+    list.insertAdjacentHTML('beforeend', _msgHtml(m, grouped));
+    const el=list.lastElementChild;
+    if(animate) el?.classList.add('sk-pop-in');
+    if(isEvent && _chatMuted[(m.meta&&m.meta.type)]) el.style.display='none';
+    _chatRenderReactions(m.id);
+    _chatLastKey=isEvent?null:{ user:m.senderName, ts:m.createdAt };
+    if(scroll){ if(animate) list.scrollTo({top:list.scrollHeight,behavior:'smooth'}); else list.scrollTop=list.scrollHeight; }
+    else if(animate && el.style.display!=='none'){ _chatNewCount++; _chatShowJump(); }
+}
+
+async function _chatLoadMembers(){
+    try { const r=await fetch('/Chat/Members'); _chatMemberNames=await r.json(); } catch { _chatMemberNames=[]; }
+    const names=[..._chatMemberNames].sort((a,b)=>b.length-a.length).map(_reEsc);
+    _chatMentionRe=names.length?new RegExp('@@('+names.join('|')+')','gi'):null;
+    _chatRenderMembers();
+}
+async function _chatLoadInitial(){
+    try {
+        const r=await fetch('/Chat/Messages'); const msgs=await r.json();
+        document.getElementById('chat-loading').remove();
+        if(!msgs.length) document.getElementById('chat-welcome').classList.remove('hidden');
+        msgs.forEach(m=>_appendMessage(m,false));
+        if(msgs.length) _chatOldestId=msgs[0].id;
+        if(msgs.length>=30) document.getElementById('chat-loadolder').classList.remove('hidden');
+        _applyMuteVisibility();
+        const l=document.getElementById('chat-messages'); l.scrollTop=l.scrollHeight;
+    } catch(e){ document.getElementById('chat-loading').textContent='Could not load messages.'; }
+}
+async function _chatLoadOlder(){
+    if(!_chatOldestId) return;
+    const list=document.getElementById('chat-messages'); const prevH=list.scrollHeight;
+    const r=await fetch('/Chat/Messages?before='+_chatOldestId); const msgs=await r.json();
+    if(!msgs.length){ document.getElementById('chat-loadolder').classList.add('hidden'); return; }
+    const anchor=document.getElementById('chat-loadolder'); let prev=null; const frag=document.createElement('div'); const seeded=[];
+    msgs.forEach(m=>{
+        if(_chatSeen.has(m.id)) return; _chatSeen.add(m.id); _chatTrackMember(m); _chatSeedReactions(m); seeded.push(m.id);
+        const isEvent=m.kind==='event';
+        const dayNew=!prev||(new Date(prev.ts).toDateString()!==new Date(m.createdAt).toDateString());
+        const grouped=!isEvent && !dayNew && prev && prev.user===m.senderName && (new Date(m.createdAt)-new Date(prev.ts))<5*60*1000;
+        if(dayNew) frag.insertAdjacentHTML('beforeend', _dayDivider(m.createdAt));
+        frag.insertAdjacentHTML('beforeend', _msgHtml(m, grouped));
+        prev=isEvent?null:{ user:m.senderName, ts:m.createdAt };
+    });
+    anchor.after(...frag.childNodes);
+    seeded.forEach(id=>_chatRenderReactions(id)); _applyMuteVisibility();
+    _chatOldestId=msgs[0].id;
+    if(msgs.length<30) document.getElementById('chat-loadolder').classList.add('hidden');
+    list.scrollTop=list.scrollHeight-prevH;
+}
+
+// ── Composer ─────────────────────────────────────────────────────────────────
+function _chatAutoGrow(t){ t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,160)+'px'; }
+function _chatOnInput(t){ _chatAutoGrow(t); _chatMentionScan(); _chatTypingPing(); }
+function _chatKeydown(e){
+    if(_chatMention.open){
+        if(e.key==='ArrowDown'){e.preventDefault();_chatMention.index=(_chatMention.index+1)%_chatMention.matches.length;_chatMentionRender();return;}
+        if(e.key==='ArrowUp'){e.preventDefault();_chatMention.index=(_chatMention.index-1+_chatMention.matches.length)%_chatMention.matches.length;_chatMentionRender();return;}
+        if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();_chatMentionPick(_chatMention.index);return;}
+        if(e.key==='Escape'){e.preventDefault();_chatMentionClose();return;}
+    }
+    if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _chatSend(); }
+}
+function _chatAddFiles(fl){ for(const f of fl){ if(f.size>10*1024*1024){_chatToast(`'${f.name}' exceeds 10 MB`);continue;} _chatPending.push(f);} _chatRenderFiles(); }
+function _chatRenderFiles(){
+    const box=document.getElementById('chat-files'); box.classList.toggle('hidden',_chatPending.length===0);
+    box.innerHTML=_chatPending.map((f,i)=>`<span class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs" style="background:#f1f2f3;color:#1d1c1d;border:1px solid #e0e0e0"><span class="max-w-[160px] truncate">${_esc(f.name)}</span><span class="text-[10px] sk-muted">${_fmtSize(f.size)}</span><button onclick="_chatRemoveFile(${i})" class="sk-muted hover:text-red-500 text-sm leading-none">&times;</button></span>`).join('');
+}
+function _chatRemoveFile(i){ _chatPending.splice(i,1); _chatRenderFiles(); }
+async function _chatSend(){
+    const input=document.getElementById('chat-input'); const body=input.value.trim();
+    if(!body&&_chatPending.length===0) return;
+    const btn=document.getElementById('chat-send'); btn.disabled=true;
+    const fd=new FormData(); fd.append('body',body); _chatPending.forEach(f=>fd.append('files',f)); fd.append('__RequestVerificationToken',_chatToken);
+    try { const r=await fetch('/Chat/Send',{method:'POST',body:fd}); const d=await r.json();
+        if(d.success){ input.value=''; _chatAutoGrow(input); _chatMentionClose(); _chatPending=[]; _chatRenderFiles(); if(d.message) _appendMessage(d.message,true,true); }
+        else _chatToast(d.error||'Could not send.'); }
+    catch { _chatToast('Network error.'); }
+    finally { btn.disabled=false; input.focus(); }
+}
+async function _chatDelete(id){
+    const fd=new FormData(); fd.append('id',id); fd.append('__RequestVerificationToken',_chatToken);
+    const r=await fetch('/Chat/Delete',{method:'POST',body:fd}); const d=await r.json(); if(!d.success) _chatToast(d.error||'Could not delete.');
+}
+function _chatMarkDeleted(id){
+    const row=document.querySelector(`.chat-msg[data-id="${id}"]`); if(!row) return;
+    const b=row.querySelector(`.chat-body[data-id="${id}"]`); if(b) b.innerHTML='<span class="text-[13px] italic sk-muted">message deleted</span>';
+    row.querySelector('.sk-actions')?.remove(); row.querySelector('.chat-reactions')?.remove();
+}
+
+// ── @@mention autocomplete ────────────────────────────────────────────────────
+function _chatMentionScan(){
+    const inp=document.getElementById('chat-input'); const pos=inp.selectionStart;
+    const mm=inp.value.slice(0,pos).match(/@@([^\s@@]*)$/);
+    if(!mm||!_chatMemberNames.length){ _chatMentionClose(); return; }
+    const frag=mm[1].toLowerCase(); const matches=_chatMemberNames.filter(n=>n.toLowerCase().includes(frag)).slice(0,8);
+    if(!matches.length){ _chatMentionClose(); return; }
+    _chatMention={open:true,index:0,matches,start:pos-mm[0].length}; _chatMentionRender();
+}
+function _chatMentionRender(){
+    const pop=document.getElementById('chat-mention-pop');
+    pop.innerHTML=_chatMention.matches.map((n,i)=>`<div class="sk-mrow ${i===_chatMention.index?'active':''}" data-mention="${i}"><div class="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-semibold shrink-0" style="background:#094f70">${_esc(_initials(n))}</div><span class="truncate text-[14px]">${_esc(n)}</span></div>`).join('');
+    pop.classList.remove('hidden');
+}
+function _chatMentionClose(){ _chatMention.open=false; document.getElementById('chat-mention-pop')?.classList.add('hidden'); }
+function _chatMentionPick(i){
+    const inp=document.getElementById('chat-input'); const name=_chatMention.matches[i]; if(name==null) return;
+    const before=inp.value.slice(0,_chatMention.start); const after=inp.value.slice(inp.selectionStart); const insert='@@'+name+' ';
+    inp.value=before+insert+after; const caret=(before+insert).length; inp.focus(); inp.setSelectionRange(caret,caret);
+    _chatMentionClose(); _chatAutoGrow(inp);
+}
+
+// ── Emoji insert ─────────────────────────────────────────────────────────────
+function _chatToggleEmojiInsert(anchor){
+    let pop=document.getElementById('chat-emoji-insert');
+    if(pop&&!pop.classList.contains('hidden')){ pop.classList.add('hidden'); return; }
+    if(!pop){ pop=document.createElement('div'); pop.id='chat-emoji-insert'; pop.className='sk-pop hidden'; document.body.appendChild(pop); }
+    pop.innerHTML=EMOJIS.map(e=>`<button data-insert="${e}" class="sk-pop-em">${e}</button>`).join('');
+    const r=anchor.getBoundingClientRect(); pop.classList.remove('hidden');
+    pop.style.left=Math.max(8,Math.min(r.left-100,window.innerWidth-260))+'px'; pop.style.top=Math.max(8,r.top-pop.offsetHeight-8)+'px';
+}
+function _chatInsertText(t){
+    const inp=document.getElementById('chat-input'); if(!inp) return;
+    const s=inp.selectionStart,e=inp.selectionEnd; inp.value=inp.value.slice(0,s)+t+inp.value.slice(e);
+    const c=s+t.length; inp.focus(); inp.setSelectionRange(c,c); _chatAutoGrow(inp);
+    document.getElementById('chat-emoji-insert')?.classList.add('hidden');
+}
+
+// ── Typing ───────────────────────────────────────────────────────────────────
+function _chatTypingPing(){ const now=Date.now(); if(now-_chatTypingSent<2500) return; _chatTypingSent=now; if(typeof _srConn!=='undefined'&&_srConn.state==='Connected') _srConn.invoke('ChatTyping').catch(()=>{}); }
+function _chatOnTyping(name){ if(name===_chatMe) return; _chatTypers.set(name,Date.now()); _chatRenderTyping(); }
+function _chatRenderTyping(){
+    const el=document.getElementById('chat-typing'); if(!el) return; const now=Date.now();
+    for(const [n,t] of _chatTypers) if(now-t>4500) _chatTypers.delete(n);
+    const names=[..._chatTypers.keys()]; let txt='';
+    if(names.length===1) txt=`${names[0]} is typing`; else if(names.length===2) txt=`${names[0]} and ${names[1]} are typing`; else if(names.length>2) txt='Several people are typing';
+    el.innerHTML = txt?`<span class="sk-typing-dots"><span></span><span></span><span></span></span>${_esc(txt)}…`:'';
+}
+
+// Drag & drop + paste
+function _chatDragOver(e){ e.preventDefault(); document.getElementById('chat-messages').style.boxShadow='inset 0 0 0 2px #094f70'; }
+function _chatDragLeave(e){ document.getElementById('chat-messages').style.boxShadow=''; }
+function _chatDrop(e){ e.preventDefault(); _chatDragLeave(e); if(e.dataTransfer?.files?.length) _chatAddFiles(e.dataTransfer.files); }
+document.addEventListener('paste', e => { const items=e.clipboardData?.items; if(!items) return; const imgs=[...items].filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean); if(imgs.length&&document.getElementById('chat-input')) _chatAddFiles(imgs); });
+
+function _chatToast(msg){ const t=document.createElement('div'); t.className='fixed bottom-6 right-6 z-[10001] text-white text-sm px-4 py-2 rounded-lg shadow-lg'; t.style.background='#e01e5a'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
+
+// ── Delegation ───────────────────────────────────────────────────────────────
+function _chatWireDelegation(){
+    document.addEventListener('click', e => {
+        const chip=e.target.closest('[data-react]'); if(chip){ _chatReact(+chip.dataset.mid,chip.dataset.react); return; }
+        const ins=e.target.closest('[data-insert]'); if(ins){ _chatInsertText(ins.dataset.insert); return; }
+        const act=e.target.closest('[data-act]'); if(act){ const mid=+act.dataset.mid; if(act.dataset.act==='react') _chatOpenPicker(mid,act); else if(act.dataset.act==='edit') _chatBeginEdit(mid); else if(act.dataset.act==='del') _chatDelete(mid); return; }
+        const sv=e.target.closest('[data-editsave]'); if(sv){ _chatSaveEdit(+sv.dataset.editsave); return; }
+        const cx=e.target.closest('[data-editcancel]'); if(cx){ _chatCancelEdit(+cx.dataset.editcancel); return; }
+        const mp=e.target.closest('[data-mention]'); if(mp){ _chatMentionPick(+mp.dataset.mention); return; }
+        if(!e.target.closest('#chat-emoji-pop')) _chatClosePicker();
+        if(!e.target.closest('#chat-emoji-insert')&&!e.target.closest('button[title="Emoji"]')) document.getElementById('chat-emoji-insert')?.classList.add('hidden');
+        if(!e.target.closest('#chat-settings')&&!e.target.closest('button[title="Notification & feed settings"]')) document.getElementById('chat-settings')?.classList.add('hidden');
+        if(!e.target.closest('#chat-mention-pop')&&e.target.id!=='chat-input') _chatMentionClose();
+    });
+    document.getElementById('chat-mention-pop')?.addEventListener('mousemove', e => { const row=e.target.closest('[data-mention]'); if(!row) return; _chatMention.index=+row.dataset.mention; document.querySelectorAll('#chat-mention-pop .sk-mrow').forEach((el,i)=>el.classList.toggle('active',i===_chatMention.index)); });
+}
+
+// ── Real-time ────────────────────────────────────────────────────────────────
+function _chatWireSignalR(){
+    if(typeof _srConn==='undefined'){ setTimeout(_chatWireSignalR,300); return; }
+    const badge=document.getElementById('chat-conn');
+    const setState=()=>{ const c=_srConn.state==='Connected'; badge.innerHTML=`<span class="inline-block w-2 h-2 rounded-full mr-1 align-middle" style="background:${c?'#2bac76':'#c9c9c9'}"></span>${c?'connected':'offline'}`; };
+    _srConn.on('ChatMessage',        m  => { const l=document.getElementById('chat-messages'); const stick=_nearBottom(l); _appendMessage(m,stick,true); });
+    _srConn.on('ChatMessageDeleted', id => _chatMarkDeleted(id));
+    _srConn.on('ChatMessageEdited',  p  => _chatApplyEdit(p.id, p.body));
+    _srConn.on('ChatReaction',       p  => _chatOnReaction(p.messageId, p.emoji, p.count));
+    _srConn.on('ChatTyping',         n  => _chatOnTyping(n));
+    _srConn.onreconnected(setState); _srConn.onclose(setState); _srConn.onreconnecting(setState);
+    setState(); setInterval(setState,4000);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try { const tid=(typeof _chatTeamId!=='undefined')?_chatTeamId:''; localStorage.setItem('chatUnread_'+tid,'0'); localStorage.setItem('chatMention_'+tid,'0'); if(typeof _renderChatBadge==='function') _renderChatBadge(); } catch {}
+    _chatLoadSettings();
+    _chatWireDelegation();
+    await _chatLoadMembers();
+    _chatLoadInitial();
+    _chatWireSignalR();
+    setInterval(_chatRenderTyping,1500);
+});
+</script>

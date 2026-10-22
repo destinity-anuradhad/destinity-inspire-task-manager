@@ -1,0 +1,13 @@
+{
+  "name": "Destinity Inspire Task Manager",
+  "short_name": "Task Manager",
+  "description": "Task management for hotel software teams",
+  "start_url": "/Dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#094f70",
+  "icons": [
+    { "src": "/assets/img/destinity-inspire.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/assets/img/destinity-inspire.ico", "sizes": "48x48", "type": "image/x-icon" }
+  ]
+}

@@ -1,0 +1,210 @@
+@using TaskTracker.Services
+@model IReadOnlyList<SlaPolicySummary>
+@{
+    ViewData["Title"] = "SLA";
+    var isSysAdmin = ViewBag.IsSysAdmin as bool? ?? false;
+    var report = ViewBag.Report as SlaReport;
+    var itemTypes  = new[] { "Epic", "Feature", "Story", "Task", "Bug" };
+    var priorities = new[] { "Critical", "High", "Medium", "Low" };
+
+    (string bg, string text, string label) Badge(string status) => status switch
+    {
+        SlaStatuses.Breached => ("bg-red-50",   "text-red-700",   "Breached"),
+        SlaStatuses.AtRisk   => ("bg-amber-50", "text-amber-700", "At risk"),
+        _                    => ("bg-green-50", "text-green-700", "On track"),
+    };
+
+    string Remaining(double hours)
+    {
+        var abs = Math.Abs(hours);
+        var span = abs >= 48 ? $"{abs / 24:0.#}d" : $"{abs:0.#}h";
+        return hours < 0 ? $"{span} over" : $"{span} left";
+    }
+}
+
+<div class="max-w-5xl mx-auto mt-10 px-4 pb-16">
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-gray-900">SLA policies</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            Track whether work is resolved within target@(isSysAdmin ? " (all teams)" : $" for {ViewBag.ActiveTeam}").
+        </p>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div role="alert" class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div role="status" class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+
+    <!-- Compliance report -->
+    @if (report != null)
+    {
+        <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+                <div class="text-2xl font-bold text-green-600">@report.OnTrack</div>
+                <div class="text-xs text-gray-500 mt-1">On track</div>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+                <div class="text-2xl font-bold text-amber-600">@report.AtRisk</div>
+                <div class="text-xs text-gray-500 mt-1">At risk</div>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-2xl p-4 text-center">
+                <div class="text-2xl font-bold text-red-600">@report.Breached</div>
+                <div class="text-xs text-gray-500 mt-1">Breached</div>
+            </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-8">
+            <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+                <p class="text-sm font-semibold text-gray-800">Open work under SLA (@report.Total)</p>
+            </div>
+            @if (report.Items.Count == 0)
+            {
+                <div class="px-6 py-10 text-center text-sm text-gray-400">No open work matches an active policy.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                                <th class="px-6 py-3 font-medium">Task</th>
+                                <th class="px-4 py-3 font-medium">Policy</th>
+                                <th class="px-4 py-3 font-medium">Owner</th>
+                                <th class="px-4 py-3 font-medium">Deadline</th>
+                                <th class="px-4 py-3 font-medium">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in report.Items)
+                            {
+                                var b = Badge(i.SlaStatus);
+                                <tr class="border-b border-gray-50">
+                                    <td class="px-6 py-3">
+                                        <div class="font-medium text-gray-900">#@i.TaskId @i.Goal</div>
+                                        <div class="text-xs text-gray-400">@i.ItemType · @i.Priority</div>
+                                    </td>
+                                    <td class="px-4 py-3 text-gray-600">@i.PolicyName <span class="text-gray-400">(@i.TargetHours h)</span></td>
+                                    <td class="px-4 py-3 text-gray-500">@(string.IsNullOrEmpty(i.Owner) ? "—" : i.Owner)</td>
+                                    <td class="px-4 py-3 text-xs text-gray-500">
+                                        @i.Deadline.ToString("yyyy-MM-dd HH:mm")
+                                        <div class="text-gray-400">@Remaining(i.HoursRemaining)</div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-block @b.bg @b.text rounded-full px-2 py-0.5 text-xs font-medium">@b.label</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Create a policy -->
+    <form method="post" action="/Sla/Create" class="bg-white border border-gray-200 rounded-2xl p-6 mb-8 space-y-5">
+        @Html.AntiForgeryToken()
+        <p class="text-sm font-semibold text-gray-800">Create a policy</p>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input type="text" name="name" required maxlength="200" placeholder="e.g. Critical bugs resolved within 8 hours"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div class="grid sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Item type</label>
+                <select name="appliesToItemType" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">(any)</option>
+                    @foreach (var t in itemTypes) { <option value="@t">@t</option> }
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select name="appliesToPriority" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">(any)</option>
+                    @foreach (var p in priorities) { <option value="@p">@p</option> }
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Target (hours)</label>
+                <input type="number" name="targetHours" min="1" required value="24"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold">Create policy</button>
+        </div>
+    </form>
+
+    <!-- Existing policies -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <p class="text-sm font-semibold text-gray-800">Policies</p>
+        </div>
+        @if (Model.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">No SLA policies yet.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Policy</th>
+                            <th class="px-4 py-3 font-medium">Applies to</th>
+                            <th class="px-4 py-3 font-medium">Target</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                            <th class="px-4 py-3 font-medium"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in Model)
+                        {
+                            var scope = (p.AppliesToItemType ?? "any type") + " · " + (p.AppliesToPriority ?? "any priority");
+                            <tr class="border-b border-gray-50 @(p.IsEnabled ? "" : "opacity-60")">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-gray-900">@p.Name</div>
+                                    <div class="text-xs text-gray-400">by @(p.CreatedBy ?? "—") · @p.CreatedAt.ToString("yyyy-MM-dd")</div>
+                                </td>
+                                <td class="px-4 py-3 text-gray-600">@scope</td>
+                                <td class="px-4 py-3 text-gray-600">@p.TargetHours h</td>
+                                <td class="px-4 py-3">
+                                    @if (p.IsEnabled)
+                                    {
+                                        <span class="inline-block bg-green-50 text-green-600 rounded-full px-2 py-0.5 text-xs font-medium">Enabled</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-block bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 text-xs font-medium">Disabled</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <form method="post" action="/Sla/Toggle" class="inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@p.Id" />
+                                        <input type="hidden" name="enabled" value="@((!p.IsEnabled).ToString().ToLower())" />
+                                        <button type="submit" class="text-xs text-blue-600 hover:underline font-medium mr-3">@(p.IsEnabled ? "Disable" : "Enable")</button>
+                                    </form>
+                                    <form method="post" action="/Sla/Delete" class="inline"
+                                          onsubmit="return confirm('Delete this SLA policy?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@p.Id" />
+                                        <button type="submit" class="text-xs text-red-600 hover:underline font-medium">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
