@@ -816,7 +816,7 @@ public partial class TaskService
             ActualHours = totalActual, RemainingWorkHours = 0m,
             Reporter = task.Reporter, CreatedBy = by, CreatedAt = DateTime.Now, TeamId = task.TeamId,
             Swimlane = task.Swimlane, StartDate = task.StartDate, EndDate = task.EndDate,
-            ActualStartDate = task.ActualStartDate, ActualEndDate = DateTime.Now
+            ActualStartDate = task.ActualStartDate, ActualEndDate = DateTime.UtcNow
         };
         _db.Tasks.Add(slice);
         await _db.SaveChangesAsync();

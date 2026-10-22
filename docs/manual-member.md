@@ -169,6 +169,16 @@ Turn on or off:
 
 The **bell icon** (🔔) in the top navigation bar shows unread notifications. Click it to see alerts and mark them as read.
 
+### My API Keys
+
+A personal API key lets a tool you use, such as WorkHub, read or update your tasks on your behalf.
+
+1. Open the avatar menu → **My API Keys**.
+2. Enter a name (e.g. "WorkHub on my PC"), tick the scopes it needs (`tasks:read` to read; add `tasks:write` only if the tool must create tasks or log time), keep **Only my tasks** ticked, and pick an expiry.
+3. Click **Create key** and copy the key straight away — it is shown only once.
+
+A key acts as you, so never share it. Revoke it on the same page as soon as you stop using the tool. Keys expire after at most one year, and you can have up to 10 active keys.
+
 ---
 
 ## 11. Quick Reference

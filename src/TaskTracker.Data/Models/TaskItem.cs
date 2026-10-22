@@ -25,6 +25,8 @@ public class TaskItem
     public string? Notes           { get; set; } = "";
     public DateTime CreatedAt   { get; set; } = DateTime.Now;
     public string? CreatedBy    { get; set; }
+    // UTC. Stamped by AppDbContext on every insert/update so integrations can sync incrementally.
+    public DateTime UpdatedAt   { get; set; } = DateTime.UtcNow;
     public decimal? Weight       { get; set; }
     // Weight is always an estimate in hours.
     public string EstimateUnit { get; set; } = "Hours";

@@ -1,0 +1,195 @@
+@model IReadOnlyList<ApiClientSummary>
+@{
+    ViewData["Title"] = "My API Keys";
+    var scopes = ViewBag.AvailableScopes as IReadOnlyList<string> ?? new List<string>();
+    var maxDays = ViewBag.MaxDays as int? ?? 365;
+    var maxActive = ViewBag.MaxActiveKeys as int? ?? 10;
+    var newKey = TempData["NewApiKey"] as string;
+    var newKeyName = TempData["NewApiKeyName"] as string;
+    var scopeHelp = new Dictionary<string, string>
+    {
+        ["projects:read"] = "Read projects",
+        ["tasks:read"] = "Read tasks, comments, history and time",
+        ["tasks:write"] = "Create tasks, change status, log time, comment",
+    };
+}
+
+<div class="max-w-5xl mx-auto mt-10 px-4 pb-16">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-xl font-bold text-gray-900">My API Keys</h1>
+            <p class="text-sm text-gray-500 mt-1">
+                Personal keys for tools that work on your behalf, such as WorkHub. A key acts as you@(string.IsNullOrEmpty(ViewBag.ActiveTeam as string) ? "" : $" in {ViewBag.ActiveTeam}"), with only the scopes you choose.
+            </p>
+        </div>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">@TempData["Error"]</div>
+    }
+    @if (TempData["Success"] != null)
+    {
+        <div class="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">@TempData["Success"]</div>
+    }
+
+    @if (!string.IsNullOrEmpty(newKey))
+    {
+        <div class="mb-6 p-5 bg-amber-50 border border-amber-300 rounded-2xl">
+            <p class="text-sm font-semibold text-amber-900 mb-1">Copy your new key for “@newKeyName” now</p>
+            <p class="text-xs text-amber-700 mb-3">This is the only time the full key is shown. Store it somewhere safe — it cannot be recovered. Never share it: anyone with it can act as you.</p>
+            <div class="flex items-center gap-2">
+                <code id="newKeyValue" class="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-800 break-all">@newKey</code>
+                <button type="button" onclick="copyNewKey(event)"
+                        class="px-4 py-2 text-sm btn-primary rounded-lg font-semibold whitespace-nowrap">Copy</button>
+            </div>
+            <p class="text-xs text-amber-700 mt-3">
+                Send it as <code class="font-mono">X-Api-Key</code> or <code class="font-mono">Authorization: Bearer &lt;key&gt;</code>.
+            </p>
+        </div>
+    }
+
+    <!-- Create a new key -->
+    <form method="post" action="/MyApiKeys/Create" class="bg-white border border-gray-200 rounded-2xl p-6 mb-8 space-y-5">
+        @Html.AntiForgeryToken()
+        <p class="text-sm font-semibold text-gray-800">Create a key</p>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input type="text" name="name" required maxlength="200" placeholder="e.g. WorkHub on my PC"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Scopes</label>
+            <div class="grid sm:grid-cols-3 gap-2">
+                @foreach (var scope in scopes)
+                {
+                    <label class="flex items-start gap-2 border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" name="scopes" value="@scope" @(scope == "tasks:read" ? "checked" : "")
+                               class="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                        <span>
+                            <span class="block text-sm font-mono text-gray-700">@scope</span>
+                            <span class="block text-xs text-gray-400">@scopeHelp.GetValueOrDefault(scope, "")</span>
+                        </span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <label class="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" name="ownTasksOnly" value="true" checked class="mt-0.5 h-4 w-4 text-blue-600 border-gray-300 rounded" />
+            <span class="text-sm text-gray-700">Only my tasks (recommended)
+                <span class="block text-xs text-gray-400">The key sees and changes only tasks assigned to you, not the whole team's.</span>
+            </span>
+        </label>
+
+        <div class="flex items-end justify-between gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Expires</label>
+                <select name="expiresInDays"
+                        class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="30">In 30 days</option>
+                    <option value="90">In 90 days</option>
+                    <option value="180" selected>In 180 days</option>
+                    <option value="@maxDays">In 1 year</option>
+                </select>
+            </div>
+            <button type="submit" class="px-5 py-2 text-sm btn-primary rounded-lg font-semibold">Create key</button>
+        </div>
+        <p class="text-xs text-gray-400">Up to @maxActive active keys. Revoke a key as soon as you stop using it.</p>
+    </form>
+
+    <!-- Existing keys -->
+    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <p class="text-sm font-semibold text-gray-800">Your keys</p>
+        </div>
+        @if (Model.Count == 0)
+        {
+            <div class="px-6 py-10 text-center text-sm text-gray-400">You have no API keys.</div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                            <th class="px-6 py-3 font-medium">Name</th>
+                            <th class="px-4 py-3 font-medium">Prefix</th>
+                            <th class="px-4 py-3 font-medium">Scopes</th>
+                            <th class="px-4 py-3 font-medium">Expires</th>
+                            <th class="px-4 py-3 font-medium">Last used</th>
+                            <th class="px-4 py-3 font-medium">Status</th>
+                            <th class="px-4 py-3 font-medium"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in Model)
+                        {
+                            var expired = c.RevokedAt == null && c.ExpiresAt != null && c.ExpiresAt <= DateTime.UtcNow;
+                            <tr class="border-b border-gray-50 @(c.IsActive ? "" : "opacity-60")">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-gray-900">@c.Name</div>
+                                    <div class="text-xs text-gray-400 whitespace-nowrap">@(c.TeamName ?? "all teams") · created @c.CreatedAt.ToString("yyyy-MM-dd")</div>
+                                </td>
+                                <td class="px-4 py-3 font-mono text-xs text-gray-600">@c.KeyPrefix</td>
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach (var s in ApiScopes.Parse(c.Scopes))
+                                        {
+                                            <span class="inline-block bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 text-[11px] font-mono">@s</span>
+                                        }
+                                        @if (c.OwnTasksOnly)
+                                        {
+                                            <span class="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 text-[11px]">own tasks only</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">@(c.ExpiresAt?.ToString("yyyy-MM-dd") ?? "never")</td>
+                                <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">@(c.LastUsedAt?.ToString("yyyy-MM-dd HH:mm") ?? "never")</td>
+                                <td class="px-4 py-3">
+                                    @if (c.RevokedAt != null)
+                                    {
+                                        <span class="inline-block bg-red-50 text-red-600 rounded-full px-2 py-0.5 text-xs font-medium">Revoked</span>
+                                    }
+                                    else if (expired)
+                                    {
+                                        <span class="inline-block bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 text-xs font-medium">Expired</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-block bg-green-50 text-green-600 rounded-full px-2 py-0.5 text-xs font-medium">Active</span>
+                                    }
+                                </td>
+                                <td class="px-4 py-3 text-right">
+                                    @if (c.RevokedAt == null)
+                                    {
+                                        <form method="post" action="/MyApiKeys/Revoke" onsubmit="return confirm('Revoke this key? Tools using it will stop working immediately.');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@c.Id" />
+                                            <button type="submit" class="text-xs text-red-600 hover:underline font-medium">Revoke</button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<script>
+    function copyNewKey(event) {
+        const el = document.getElementById('newKeyValue');
+        if (!el) return;
+        const btn = event.target;
+        navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = original; }, 1500);
+        });
+    }
+</script>

@@ -317,7 +317,7 @@ public class SprintService(AppDbContext db, IChatService chat) : ISprintService
                     ActualHours = totalActual, RemainingWorkHours = 0m,
                     Reporter = t.Reporter, CreatedBy = completedBy, CreatedAt = DateTime.Now, TeamId = t.TeamId,
                     Swimlane = t.Swimlane, StartDate = t.StartDate, EndDate = t.EndDate,
-                    ActualStartDate = t.ActualStartDate, ActualEndDate = DateTime.Now
+                    ActualStartDate = t.ActualStartDate, ActualEndDate = DateTime.UtcNow
                 };
                 _db.Tasks.Add(slice);
                 await _db.SaveChangesAsync();   // materialise slice.Id

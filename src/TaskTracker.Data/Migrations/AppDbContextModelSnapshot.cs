@@ -118,6 +118,9 @@ namespace TaskTracker.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool>("OwnTasksOnly")
+                        .HasColumnType("bit");
+
                     b.Property<int>("OwnerUserId")
                         .HasColumnType("int");
 
@@ -1452,6 +1455,11 @@ namespace TaskTracker.Migrations
                     b.Property<int?>("TeamId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
                     b.Property<decimal?>("Weight")
                         .HasColumnType("decimal(18,6)");
 
@@ -1493,6 +1501,8 @@ namespace TaskTracker.Migrations
                     b.HasIndex("WorkflowDefinitionId");
 
                     b.HasIndex("TeamId", "IsDeleted", "Status");
+
+                    b.HasIndex("TeamId", "UpdatedAt");
 
                     b.ToTable("Tasks");
                 });

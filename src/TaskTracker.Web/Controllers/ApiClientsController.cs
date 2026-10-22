@@ -25,7 +25,7 @@ public class ApiClientsController(IApiClientService apiClients, IActivityService
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(string name, string[]? scopes, int expiresInDays)
+    public async Task<IActionResult> Create(string name, string[]? scopes, int expiresInDays, bool ownTasksOnly = false)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -50,11 +50,11 @@ public class ApiClientsController(IApiClientService apiClients, IActivityService
         DateTime? expiresAt = expiresInDays > 0 ? DateTime.UtcNow.AddDays(expiresInDays) : null;
 
         var request = new ApiClientCreateRequest(
-            name.Trim(), CurrentUserId(), teamId, ApiScopes.Parse(normalized), expiresAt);
+            name.Trim(), CurrentUserId(), teamId, ApiScopes.Parse(normalized), expiresAt, ownTasksOnly);
         var result = await apiClients.CreateAsync(request);
 
         await activity.LogAsync(CurrentDisplayName(), "API Key Created", "System",
-            $"Key '{result.Client.Name}' ({result.Client.KeyPrefix}), scopes: {result.Client.Scopes}",
+            $"Key '{result.Client.Name}' ({result.Client.KeyPrefix}), scopes: {result.Client.Scopes}" + (ownTasksOnly ? ", own tasks only" : ""),
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             HttpContext.Request.Headers.UserAgent.ToString());
 
