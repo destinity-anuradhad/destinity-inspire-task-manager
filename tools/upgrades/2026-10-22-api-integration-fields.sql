@@ -6,26 +6,41 @@
      - Tasks.UpdatedAt        datetime2 NOT NULL DEFAULT SYSUTCDATETIME()  (UTC; incremental API sync, ETags)
      - IX_Tasks_TeamId_UpdatedAt
      - ApiClients.OwnTasksOnly bit NOT NULL DEFAULT 0                      (personal keys limited to own tasks)
-   Backfills Tasks.UpdatedAt once, from each task's latest ActivityLog entry (or CreatedAt), converting
-   server-local time to UTC with the database server's current offset.
+   Backfills Tasks.UpdatedAt from each task's latest ActivityLog entry (or CreatedAt), converting
+   server-local time to UTC with the database server's current offset: every row when the column is
+   new, otherwise only the empty ones.
 
-   Issues no DROP, DELETE, TRUNCATE or ALTER COLUMN. Existing rows keep every value; existing API keys
-   get OwnTasksOnly = 0, i.e. today's behaviour. Safe to run more than once. */
+   Databases upgraded from v1 already have a legacy, nullable Tasks.UpdatedAt that is mostly empty. The
+   script keeps that column and its existing values, fills only its NULLs and gives it a default for new
+   rows (the app reads it as always set).
+
+   Issues no DROP, DELETE, TRUNCATE or ALTER COLUMN. Existing rows keep every value they have; existing
+   API keys get OwnTasksOnly = 0, i.e. today's behaviour. Safe to run more than once. */
 SET XACT_ABORT ON;
 SET NOCOUNT ON;
 BEGIN TRANSACTION;
+
+-- The backfill value; dynamic SQL because the column may not exist when this batch is compiled.
+DECLARE @backfill nvarchar(max) = N'
+    UPDATE t
+    SET t.UpdatedAt = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()),
+            COALESCE((SELECT MAX(a.ChangedAt) FROM dbo.ActivityLog a WHERE a.TaskId = t.Id), t.CreatedAt))
+    FROM dbo.Tasks t';
 
 IF COL_LENGTH(N'dbo.Tasks', N'UpdatedAt') IS NULL
 BEGIN
     ALTER TABLE dbo.Tasks ADD UpdatedAt datetime2 NOT NULL
         CONSTRAINT DF_Tasks_UpdatedAt DEFAULT (SYSUTCDATETIME());
-
-    -- Dynamic SQL: the new column does not exist yet when this batch is compiled.
-    EXEC (N'
-        UPDATE t
-        SET t.UpdatedAt = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()),
-                COALESCE((SELECT MAX(a.ChangedAt) FROM dbo.ActivityLog a WHERE a.TaskId = t.Id), t.CreatedAt))
-        FROM dbo.Tasks t;');
+    EXEC (@backfill);   -- new column: every row
+END
+ELSE
+BEGIN
+    -- Legacy column: fill only the empty values, and default new rows if nothing else does.
+    EXEC (@backfill + N' WHERE t.UpdatedAt IS NULL');
+    IF NOT EXISTS (SELECT 1 FROM sys.default_constraints
+                   WHERE parent_object_id = OBJECT_ID(N'dbo.Tasks')
+                     AND parent_column_id = COLUMNPROPERTY(OBJECT_ID(N'dbo.Tasks'), N'UpdatedAt', 'ColumnId'))
+        EXEC (N'ALTER TABLE dbo.Tasks ADD CONSTRAINT DF_Tasks_UpdatedAt DEFAULT (SYSUTCDATETIME()) FOR UpdatedAt;');
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Tasks') AND name = N'IX_Tasks_TeamId_UpdatedAt')
