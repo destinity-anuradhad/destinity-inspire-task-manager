@@ -365,7 +365,7 @@ public partial class TaskService(AppDbContext db, IConfiguration config, IHubCon
         parent.Status = autoStatus;
 
         if (TaskStatusRules.IsTerminal(parent.ItemType, autoStatus) && !TaskStatusRules.IsTerminal(parent.ItemType, prevStatus))
-            parent.ActualEndDate = DateTime.Now;
+            parent.ActualEndDate = DateTime.UtcNow;   // UTC, like the status path (ApiTime)
         else if (TaskStatusRules.IsDone(parent.ItemType, prevStatus) && !TaskStatusRules.IsDone(parent.ItemType, autoStatus))
             parent.ActualEndDate = null;
 

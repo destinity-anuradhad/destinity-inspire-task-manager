@@ -67,6 +67,7 @@ public sealed class ApiClientService(AppDbContext db) : IApiClientService
             TeamId      = request.TeamId,
             CreatedAt   = DateTime.UtcNow,
             ExpiresAt   = request.ExpiresAt,
+            OwnTasksOnly = request.OwnTasksOnly,
         };
         db.ApiClients.Add(client);
         await db.SaveChangesAsync(ct);
@@ -149,7 +150,56 @@ public sealed class ApiClientService(AppDbContext db) : IApiClientService
 
         return new ApiClientPrincipal(
             client.Id, client.Name, user.Id, user.Username, user.DisplayName, user.Role,
-            teamId, teamName, teamRole, ApiScopes.Parse(client.Scopes));
+            teamId, teamName, teamRole, ApiScopes.Parse(client.Scopes), client.OwnTasksOnly);
+    }
+
+    public async Task<IReadOnlyList<ApiClientSummary>> ListForOwnerAsync(int ownerUserId, CancellationToken ct = default)
+    {
+        var clients = await db.ApiClients.AsNoTracking()
+            .Where(c => c.OwnerUserId == ownerUserId)
+            .OrderByDescending(c => c.RevokedAt == null)
+            .ThenByDescending(c => c.Id)
+            .ToListAsync(ct);
+
+        var owners = await db.AppUsers.AsNoTracking()
+            .Where(u => u.Id == ownerUserId)
+            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var teamIds = clients.Where(c => c.TeamId != null).Select(c => c.TeamId!.Value).Distinct().ToList();
+        var teamNames = await db.Teams.AsNoTracking()
+            .Where(t => teamIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+
+        var now = DateTime.UtcNow;
+        return clients.Select(c => ToSummary(c, owners, teamNames, now)).ToList();
+    }
+
+    public async Task<ApiClientCreateResult> CreatePersonalAsync(PersonalKeyRequest request, CancellationToken ct = default)
+    {
+        if (request.ExpiresInDays is < 1 or > PersonalKeyRules.MaxDays)
+            throw new ArgumentException($"A personal key must expire within {PersonalKeyRules.MaxDays} days.", nameof(request));
+        if (request.TeamId is null && !request.OwnerIsAdmin)
+            throw new ArgumentException("Select a team before creating an API key.", nameof(request));
+
+        var now = DateTime.UtcNow;
+        var active = await db.ApiClients.CountAsync(c =>
+            c.OwnerUserId == request.OwnerUserId && c.RevokedAt == null && (c.ExpiresAt == null || c.ExpiresAt > now), ct);
+        if (active >= PersonalKeyRules.MaxActiveKeys)
+            throw new ArgumentException($"You already have {active} active keys. Revoke one you no longer use first.", nameof(request));
+
+        return await CreateAsync(new ApiClientCreateRequest(
+            request.Name, request.OwnerUserId, request.TeamId, request.Scopes,
+            now.AddDays(request.ExpiresInDays), request.OwnTasksOnly), ct);
+    }
+
+    public async Task<bool> RevokeOwnAsync(int id, int ownerUserId, CancellationToken ct = default)
+    {
+        var client = await db.ApiClients.FirstOrDefaultAsync(c => c.Id == id && c.OwnerUserId == ownerUserId, ct);
+        if (client == null) return false;
+        if (client.RevokedAt != null) return true;   // already revoked — idempotent
+
+        client.RevokedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
@@ -180,7 +230,7 @@ public sealed class ApiClientService(AppDbContext db) : IApiClientService
             c.Id, c.Name, c.KeyPrefix, c.Scopes,
             c.OwnerUserId, owners.GetValueOrDefault(c.OwnerUserId, $"User #{c.OwnerUserId}"),
             c.TeamId, c.TeamId is int tid ? teamNames.GetValueOrDefault(tid) : null,
-            c.CreatedAt, c.ExpiresAt, c.RevokedAt, c.LastUsedAt, c.LastUsedIp, active);
+            c.CreatedAt, c.ExpiresAt, c.RevokedAt, c.LastUsedAt, c.LastUsedIp, active, c.OwnTasksOnly);
     }
 
     private static string RandomToken(int bytes)

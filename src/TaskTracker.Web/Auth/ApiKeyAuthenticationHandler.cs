@@ -13,6 +13,15 @@ public static class ApiKeyDefaults
     public const string HeaderName    = "X-Api-Key";
     public const string ClientIdClaim = "ApiClientId";
     public const string ScopeClaim    = "scope";
+    /// <summary>Present ("true") when the key may only see and change its owner's own tasks.</summary>
+    public const string OwnTasksOnlyClaim = "api_own_tasks_only";
+}
+
+/// <summary>The v1 API's rate limit ("api" policy), also published in response headers.</summary>
+public static class ApiRateLimits
+{
+    public const int PermitLimit   = 120;
+    public const int WindowSeconds = 60;
 }
 
 /// <summary>
@@ -55,6 +64,8 @@ public sealed class ApiKeyAuthenticationHandler(
 
         foreach (var scope in principal.Scopes)
             identity.AddClaim(new Claim(ApiKeyDefaults.ScopeClaim, scope));
+        if (principal.OwnTasksOnly)
+            identity.AddClaim(new Claim(ApiKeyDefaults.OwnTasksOnlyClaim, "true"));
 
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), ApiKeyDefaults.Scheme);
         return AuthenticateResult.Success(ticket);

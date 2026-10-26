@@ -86,6 +86,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<TaskItem>().HasIndex(t => t.SprintId);
         modelBuilder.Entity<TaskItem>().HasIndex(t => t.WorkflowDefinitionId);
         modelBuilder.Entity<TaskItem>().HasIndex(t => t.ProjectId);
+        // Incremental API sync: "tasks in my team changed since T".
+        modelBuilder.Entity<TaskItem>().HasIndex(t => new { t.TeamId, t.UpdatedAt });
+        modelBuilder.Entity<TaskItem>()
+            .Property(t => t.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
 
         // TaskLinks indexes
         modelBuilder.Entity<TaskLink>().HasIndex(l => l.FromTaskId);
@@ -420,5 +424,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasForeignKey(u => u.RequestedTeamId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampTaskUpdatedAt();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampTaskUpdatedAt();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    // Every task insert/update (status, owners, soft delete, …) moves UpdatedAt, which the v1 API's
+    // updatedSince filter and ETags rely on. Tasks are only ever changed through the change tracker.
+    private void StampTaskUpdatedAt()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var entry in ChangeTracker.Entries<TaskItem>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+                entry.Entity.UpdatedAt = now;
+        }
     }
 }

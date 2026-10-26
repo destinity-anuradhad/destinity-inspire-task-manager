@@ -57,6 +57,13 @@ builder.Services.AddHttpClient();   // used for Google reCAPTCHA verification
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Tell throttled clients when to come back.
+    options.OnRejected = (context, _) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+        return ValueTask.CompletedTask;
+    };
     options.AddPolicy("login", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -87,8 +94,8 @@ builder.Services.AddRateLimiter(options =>
 
         return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 120,
-            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = ApiRateLimits.PermitLimit,
+            Window = TimeSpan.FromSeconds(ApiRateLimits.WindowSeconds),
             QueueLimit = 0,
             AutoReplenishment = true
         });
@@ -110,6 +117,23 @@ builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
 builder.Services.AddScoped<IRecurringTaskService, RecurringTaskService>();
 builder.Services.AddScoped<ICustomFieldService, CustomFieldService>();
 builder.Services.AddScoped<IApiClientService, ApiClientService>();
+builder.Services.AddScoped<IApiTaskQueryService, ApiTaskQueryService>();
+// OpenAPI description of the v1 integration API only (not the MVC UI).
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.ShouldInclude = description =>
+        description.RelativePath?.StartsWith("api/v1/", StringComparison.OrdinalIgnoreCase) == true;
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info.Title = "Destinity Inspire Task Manager API";
+        document.Info.Version = "v1";
+        document.Info.Description =
+            "Integration API. Authenticate with an API key (X-Api-Key or Authorization: Bearer) or a signed-in session. "
+            + "Instants carry a UTC offset; plain dates are yyyy-MM-dd. Rate limit: "
+            + $"{ApiRateLimits.PermitLimit} requests per {ApiRateLimits.WindowSeconds} seconds per key. See docs/api-v1.md.";
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddScoped<IIdempotencyStore, IdempotencyStore>();
 builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddHostedService<WebhookBackgroundService>();
@@ -526,5 +550,11 @@ app.MapControllerRoute(
     pattern: "{controller=Dashboard}/{action=Index}/{id?}");
 
 app.MapHub<TaskHub>("/hubs/tasks");
+
+// Signed-in users and API-key clients can read the API description; anonymous callers cannot.
+app.MapOpenApi("/api/v1/openapi.json")
+   .RequireAuthorization(policy => policy
+       .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme, ApiKeyDefaults.Scheme)
+       .RequireAuthenticatedUser());
 
 app.Run();

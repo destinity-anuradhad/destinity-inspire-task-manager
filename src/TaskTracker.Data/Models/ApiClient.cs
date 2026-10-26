@@ -18,4 +18,6 @@ public class ApiClient
     public DateTime? RevokedAt { get; set; }
     public DateTime? LastUsedAt { get; set; }
     [MaxLength(45)] public string? LastUsedIp { get; set; }
+    // When set, the key only sees and changes tasks its owner is assigned to (TaskOwners).
+    public bool OwnTasksOnly { get; set; }
 }

@@ -69,5 +69,7 @@ test/
 tools/*
 !tools/phase0/
 !tools/phase0/*.sql
+!tools/upgrades/
+!tools/upgrades/*.sql
 !tools/loadtest/
 !tools/loadtest/*

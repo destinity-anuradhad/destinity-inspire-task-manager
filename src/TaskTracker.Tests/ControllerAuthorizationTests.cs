@@ -43,6 +43,15 @@ public class ControllerAuthorizationTests
         => Assert.Equal(expectedPolicy, MethodPolicy(typeof(SprintsController), action));
 
     [Fact]
+    public void MyApiKeys_IsOpenToEverySignedInUser()
+    {
+        // Personal keys are self-service: any signed-in user, no elevated policy. The service limits
+        // them to the caller's own keys, an expiry and their active team.
+        Assert.Contains(typeof(MyApiKeysController).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true), _ => true);
+        Assert.Null(ClassPolicy(typeof(MyApiKeysController)));
+    }
+
+    [Fact]
     public void SprintReads_StayOpenToMembers()
     {
         // The sprint board (Index) and these read endpoints are intentionally reachable by any
